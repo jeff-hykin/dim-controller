@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="Live Viewer"
+     stroke="#7f97ab" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- ground plane -->
+  <path d="M3 16.5 L12 21 L21 16.5" />
+  <path d="M12 21 L12 12.5" opacity="0.5" />
+  <!-- robot body -->
+  <path d="M8.5 11 L12 12.8 L15.5 11 L12 9.2 Z" fill="#ffb454" stroke="none" />
+  <path d="M8.5 11 L8.5 13 L12 14.8 L12 12.8 Z" fill="#e0952f" stroke="none" />
+  <path d="M15.5 11 L15.5 13 L12 14.8 L12 12.8 Z" fill="#c97f20" stroke="none" />
+  <!-- lidar points -->
+  <circle cx="5" cy="15" r="0.8" fill="#45e0ff" stroke="none" />
+  <circle cx="19" cy="15" r="0.8" fill="#45e0ff" stroke="none" />
+  <circle cx="7.5" cy="18.2" r="0.8" fill="#45e0ff" stroke="none" />
+  <circle cx="16.5" cy="18.2" r="0.8" fill="#45e0ff" stroke="none" />
+  <!-- planned path -->
+  <path d="M6 18 C 9 15.5, 15 15.5, 18 13" stroke="#7CFF6B" stroke-dasharray="0.1 2.2" />
+</svg>

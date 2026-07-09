@@ -1,0 +1,414 @@
+<!doctype html>
+<!--
+  Live Viewer. A PimSim-style 3D scene for a LIVE DimOS stack: the robot body +
+  pose/trail (odometry), lidar & costmap point clouds placed via the TF tree,
+  the planned path, and a first-person camera PIP. Backend (main.js) discovers
+  the streams on the bridge and feeds decoded frames.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Viewer · DimOS</title>
+<link rel="stylesheet" href="/assets/theme.css" />
+<style>
+  html, body { height: 100%; margin: 0; overflow: hidden; font-family: var(--sans); }
+  #scene { position: absolute; inset: 0;
+    background: radial-gradient(125% 95% at 50% 0%, oklch(0.99 0.002 250) 0%, oklch(0.955 0.004 250) 46%, oklch(0.9 0.006 252) 100%); }
+  body.dark #scene {
+    background: radial-gradient(120% 90% at 50% 0%, oklch(0.28 0.03 250) 0%, oklch(0.19 0.02 256) 42%, oklch(0.13 0.015 258) 100%); }
+  #scene canvas { display: block; }
+
+  .topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
+    display: flex; align-items: center; gap: 10px; padding: 0 16px;
+    border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--card) 82%, transparent);
+    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); }
+  .topbar .brand { width: 22px; height: 22px; flex: none; }
+  .topbar .title { font-size: 14px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg); }
+  .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; }
+  .topbar .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px;
+    color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+    background: color-mix(in oklch, var(--card) 60%, transparent); }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-fg); transition: background .3s; }
+  .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
+  .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
+
+  .panel { position: absolute; top: 60px; left: 12px; width: 238px; z-index: 4;
+    background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
+    padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 84px); overflow: auto; }
+  .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
+    color: var(--muted-fg); font-weight: 700; }
+  .panel h2:not(:first-child) { margin-top: 15px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .row:hover { background: var(--accent); }
+  .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
+  .row .nm { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .tag { display: inline-flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-fg);
+    background: var(--secondary); border-radius: 999px; padding: 2px 7px; flex: none; }
+  .row .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--kc, var(--muted-fg)); }
+  .kc-cloud { --kc: oklch(0.72 0.13 210); }   /* lidar/cloud — cyan */
+  .kc-odom  { --kc: oklch(0.78 0.14 70); }    /* odometry — amber */
+  .kc-path  { --kc: oklch(0.78 0.18 145); }   /* path — green */
+  .kc-image { --kc: oklch(0.68 0.15 300); }   /* camera — violet */
+  .kc-tf    { --kc: oklch(0.7 0.02 260); }    /* tf — grey */
+  .empty { color: var(--muted-fg); padding: 4px 2px; }
+  input[type=checkbox] { accent-color: var(--primary); }
+  select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
+    background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
+  .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
+  .legend { display: grid; gap: 5px; margin-top: 2px; }
+  .legend .li { display: flex; align-items: center; gap: 8px; color: var(--secondary-fg); font-size: 11px; }
+  .legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .legend .sw.dot { width: 9px; height: 9px; border-radius: 50%; }
+
+  .cam { position: absolute; bottom: 14px; right: 14px; z-index: 4; width: 300px;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; display: none; backdrop-filter: blur(10px); }
+  .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
+    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700; }
+  .cam .cam-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.68 0.15 300);
+    box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.68 0.15 300) 22%, transparent); }
+  .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
+
+  #help { position: absolute; bottom: 14px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://esm.sh/three@0.160.0" } }
+</script>
+</head>
+<body class="science">
+<script>
+  (function () { const m = matchMedia("(prefers-color-scheme: light)");
+    const a = () => document.body.classList.toggle("dark", !m.matches); a(); m.addEventListener("change", a) })()
+</script>
+
+<div id="scene"></div>
+
+<div class="topbar">
+  <img class="brand" src="icon.svg" alt="" />
+  <span class="title">Live&nbsp;Viewer</span>
+  <span class="sub">· live DimOS scene</span>
+  <span class="spacer"></span>
+  <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">connecting…</span></span>
+</div>
+
+<div class="panel">
+  <h2>Streams</h2>
+  <div id="stream-list"><div class="empty">none yet</div></div>
+  <h2>Legend</h2>
+  <div class="legend">
+    <div class="li"><span class="sw dot" style="background:oklch(0.78 0.14 70)"></span>robot pose &amp; body</div>
+    <div class="li"><span class="sw" style="background:oklch(0.72 0.13 210)"></span>odometry trail</div>
+    <div class="li"><span class="sw" style="background:oklch(0.78 0.18 145)"></span>planned path</div>
+    <div class="li"><span class="sw dot" style="background:oklch(0.72 0.13 210)"></span>lidar / costmap points</div>
+  </div>
+  <h2>Cloud color</h2>
+  <div class="ctrl-label">gradient</div>
+  <select id="gradient">
+    <option value="turbo">Turbo</option>
+    <option value="viridis">Viridis</option>
+    <option value="cool">Cool (blue→cyan)</option>
+    <option value="inferno">Inferno</option>
+    <option value="grayscale">Grayscale</option>
+  </select>
+  <div class="ctrl-label">gradient axis</div>
+  <select id="axis">
+    <option value="2">Z (height)</option>
+    <option value="0">X</option>
+    <option value="1">Y</option>
+  </select>
+</div>
+
+<div class="cam" id="cam">
+  <div class="cam-head" id="cam-head">Robot Cam</div>
+  <canvas id="cam-canvas" width="320" height="180"></canvas>
+</div>
+
+<div id="help">DRAG ORBIT · SCROLL ZOOM · RIGHT-DRAG PAN</div>
+
+<script type="module">
+import * as THREE from "three"
+import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?external=three"
+import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
+
+// ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
+const clamp01 = (x) => Math.min(1, Math.max(0, x))
+const GRADIENTS = {
+  turbo: (t) => [clamp01(1.0 - Math.abs(2.4 * t - 1.7)), clamp01(1.0 - Math.abs(2.4 * t - 1.2)), clamp01(1.0 - Math.abs(2.4 * t - 0.4))],
+  viridis: (t) => [clamp01(0.28 + t * (0.99 - 0.28)) * (0.4 + 0.6 * t), clamp01(0.02 + t * 0.88), clamp01(0.33 + Math.sin(t * 3.14) * 0.3 - t * 0.2)],
+  cool: (t) => [0.1 + 0.1 * t, 0.4 + 0.6 * t, 1.0 - 0.2 * t],
+  inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
+  grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
+}
+let gradName = "turbo", axisIdx = 2
+
+// ── three.js scene (ROS convention: Z up) ──
+const host = document.getElementById("scene")
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+renderer.setClearColor(0x000000, 0)   // transparent: the theme-aware CSS gradient shows through
+renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+host.appendChild(renderer.domElement)
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
+camera.up.set(0, 0, 1)
+camera.position.set(6, -6, 4)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+// Grid + lighting follow the light/dark theme (read the media query directly so
+// we don't depend on the class-toggle listener order).
+const THEME = {
+  dark:  { grid1: 0x2b3a44, grid2: 0x19242b, sky: 0xbfd8ff, ground: 0x101820 },
+  light: { grid1: 0x9aa7b2, grid2: 0xc3ccd4, sky: 0xffffff, ground: 0xb6c2ce },
+}
+const isDark = () => !matchMedia("(prefers-color-scheme: light)").matches
+let grid = null, hemi = null
+function applyTheme() {
+  const t = isDark() ? THEME.dark : THEME.light
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose() }
+  grid = new THREE.GridHelper(40, 40, t.grid1, t.grid2)
+  grid.rotation.x = Math.PI / 2   // grid in the XY (ground) plane for Z-up
+  scene.add(grid)
+  if (hemi) scene.remove(hemi)
+  hemi = new THREE.HemisphereLight(t.sky, t.ground, 1.1)
+  scene.add(hemi)
+}
+applyTheme()
+scene.add(new THREE.AxesHelper(1.5))
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
+
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
+}
+new ResizeObserver(resize).observe(host); resize()
+;(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera) })()
+
+// ── TF tree: child -> { parent, matrix(T_parent_child) } ──
+const tf = new Map()
+const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion()
+function setTf(parent, child, t, q) {
+  const m = new THREE.Matrix4().compose(tmpV.set(t[0], t[1], t[2]), tmpQ.set(q[0], q[1], q[2], q[3]), { x: 1, y: 1, z: 1 })
+  tf.set(child, { parent, matrix: m })
+}
+function worldMatrix(frame) {
+  const chain = []
+  let f = frame, guard = 0
+  while (f && tf.has(f) && guard++ < 64) { const e = tf.get(f); chain.push(e.matrix); f = e.parent }
+  const m = new THREE.Matrix4()
+  for (let i = chain.length - 1; i >= 0; i--) m.multiply(chain[i])
+  return m
+}
+
+function b64ToBuf(b64) {
+  const bin = atob(b64); const u = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
+  return u.buffer
+}
+
+// ── point clouds (lidar, costmap) ──
+const clouds = new Map()   // stream -> { points, geom, frame }
+function ensureCloud(stream) {
+  let c = clouds.get(stream)
+  if (c) return c
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3))
+  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3))
+  const mat = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
+  const points = new THREE.Points(geom, mat)
+  points.matrixAutoUpdate = false
+  scene.add(points)
+  c = { points, geom, frame: "" }
+  clouds.set(stream, c)
+  return c
+}
+function recolor(c) {
+  const pos = c.geom.getAttribute("position"); if (!pos || !pos.count) return
+  const col = c.geom.getAttribute("color")
+  const arr = pos.array, n = pos.count
+  let lo = Infinity, hi = -Infinity
+  for (let i = 0; i < n; i++) { const v = arr[i * 3 + axisIdx]; if (v < lo) lo = v; if (v > hi) hi = v }
+  const span = hi > lo ? hi - lo : 1
+  const g = GRADIENTS[gradName] || GRADIENTS.turbo
+  const cArr = col.array
+  for (let i = 0; i < n; i++) {
+    const [r, gg, b] = g((arr[i * 3 + axisIdx] - lo) / span)
+    cArr[i * 3] = r; cArr[i * 3 + 1] = gg; cArr[i * 3 + 2] = b
+  }
+  col.needsUpdate = true
+}
+function onCloud(p) {
+  const c = ensureCloud(p.stream)
+  c.frame = p.frame
+  const xyz = new Float32Array(b64ToBuf(p.b64))
+  c.geom.setAttribute("position", new THREE.BufferAttribute(xyz, 3))
+  c.geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(xyz.length), 3))
+  c.geom.computeBoundingSphere()
+  recolor(c)
+  c.points.matrix.copy(worldMatrix(p.frame))
+  refreshStreams()
+}
+
+// ── odometry: robot body + pose gizmo + trail per stream ──
+const odoms = new Map()  // stream -> { group, trail, positions[], geom }
+function ensureOdom(stream) {
+  let o = odoms.get(stream)
+  if (o) return o
+  const group = new THREE.Group(); group.matrixAutoUpdate = false
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.28, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0xffb454, metalness: 0.1, roughness: 0.6 }))
+  body.position.z = 0.11
+  group.add(body); group.add(new THREE.AxesHelper(0.6))
+  const trailGeom = new THREE.BufferGeometry()
+  trailGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 4000), 3))
+  trailGeom.setDrawRange(0, 0)
+  const trail = new THREE.Line(trailGeom, new THREE.LineBasicMaterial({ color: 0x45e0ff }))
+  scene.add(group); scene.add(trail)
+  o = { group, trail, positions: [], geom: trailGeom }
+  odoms.set(stream, o)
+  return o
+}
+let framed = false
+function onOdom(p) {
+  const o = ensureOdom(p.stream)
+  const pose = new THREE.Matrix4().compose(
+    tmpV.set(p.pos[0], p.pos[1], p.pos[2]), tmpQ.set(p.quat[0], p.quat[1], p.quat[2], p.quat[3]), { x: 1, y: 1, z: 1 })
+  const world = worldMatrix(p.frame).multiply(pose)
+  o.group.matrix.copy(world)
+  const wp = new THREE.Vector3().setFromMatrixPosition(world)
+  // Follow the robot: keep the orbit target on it (frame once, then track gently).
+  if (!framed) {
+    camera.position.set(wp.x + 7, wp.y - 7, wp.z + 5)
+    framed = true
+  }
+  controls.target.lerp(wp, framed ? 0.2 : 1.0)
+  o.positions.push(wp.x, wp.y, wp.z)
+  if (o.positions.length > 3 * 4000) o.positions.splice(0, 3)
+  const arr = o.geom.getAttribute("position").array
+  arr.set(o.positions)
+  o.geom.getAttribute("position").needsUpdate = true
+  o.geom.setDrawRange(0, o.positions.length / 3)
+  refreshStreams()
+}
+
+// ── planned path per stream ──
+const paths = new Map()   // stream -> { line, geom }
+function ensurePath(stream) {
+  let pa = paths.get(stream)
+  if (pa) return pa
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 4000), 3))
+  geom.setDrawRange(0, 0)
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x7CFF6B, linewidth: 2 }))
+  line.matrixAutoUpdate = false
+  scene.add(line)
+  pa = { line, geom }
+  paths.set(stream, pa)
+  return pa
+}
+function onPath(p) {
+  const pa = ensurePath(p.stream)
+  const xyz = new Float32Array(b64ToBuf(p.b64))
+  const cap = pa.geom.getAttribute("position")
+  if (xyz.length > cap.array.length) {
+    pa.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
+  } else {
+    cap.array.set(xyz); cap.needsUpdate = true
+  }
+  pa.geom.setDrawRange(0, xyz.length / 3)
+  pa.line.matrix.copy(worldMatrix(p.frame))
+  refreshStreams()
+}
+
+// ── first-person camera PIP ──
+const camBox = document.getElementById("cam"), camHead = document.getElementById("cam-head")
+const camCanvas = document.getElementById("cam-canvas"), camCtx = camCanvas.getContext("2d")
+let camRaw = null   // reusable ImageData
+function onFrame(p) {
+  camBox.style.display = "block"
+  camHead.textContent = "Robot Cam · " + p.stream.split("#")[0]
+  if (p.kind === "compressed") {
+    const img = new Image()
+    img.onload = () => {
+      if (camCanvas.width !== img.width || camCanvas.height !== img.height) { camCanvas.width = img.width; camCanvas.height = img.height }
+      camCtx.drawImage(img, 0, 0)
+    }
+    img.src = `data:image/${(p.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${p.b64}`
+    return
+  }
+  // raw Image: rgb8 / bgr8 / rgba8 / mono8
+  const w = p.width, h = p.height; if (!w || !h) return
+  const src = new Uint8Array(b64ToBuf(p.b64))
+  const enc = (p.encoding || "rgb8").toLowerCase()
+  const ch = enc === "rgba8" ? 4 : enc === "mono8" ? 1 : 3
+  const step = p.step || w * ch
+  if (camCanvas.width !== w || camCanvas.height !== h) { camCanvas.width = w; camCanvas.height = h; camRaw = null }
+  if (!camRaw) camRaw = camCtx.createImageData(w, h)
+  const dst = camRaw.data
+  const bgr = enc === "bgr8" || enc === "bgra8"
+  for (let y = 0; y < h; y++) {
+    let si = y * step, di = y * w * 4
+    for (let x = 0; x < w; x++) {
+      if (ch === 1) { const v = src[si]; dst[di] = v; dst[di + 1] = v; dst[di + 2] = v; dst[di + 3] = 255; si += 1 }
+      else {
+        const r = src[si + (bgr ? 2 : 0)], g = src[si + 1], b = src[si + (bgr ? 0 : 2)]
+        dst[di] = r; dst[di + 1] = g; dst[di + 2] = b; dst[di + 3] = 255; si += ch
+      }
+      di += 4
+    }
+  }
+  camCtx.putImageData(camRaw, 0, 0)
+}
+
+// ── stream checklist ──
+const known = new Map()   // name -> { kind, on }
+function setVisible(name, on) {
+  const c = clouds.get(name); if (c) c.points.visible = on
+  const o = odoms.get(name); if (o) { o.group.visible = on; o.trail.visible = on }
+  const pa = paths.get(name); if (pa) pa.line.visible = on
+}
+function refreshStreams() {
+  const list = document.getElementById("stream-list")
+  if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
+  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, s]) =>
+    `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${s.on ? "checked" : ""}>` +
+    `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label><span class="tag kc-${s.kind}">${s.kind}</span></div>`).join("")
+  if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
+}
+document.getElementById("stream-list").addEventListener("change", (e) => {
+  const cb = e.target.closest("input[data-s]"); if (!cb) return
+  const name = decodeURIComponent(cb.dataset.s)
+  const s = known.get(name); if (s) { s.on = cb.checked; setVisible(name, cb.checked) }
+})
+function addStream(name, kind) {
+  const cur = known.get(name)
+  if (!cur) { known.set(name, { kind: kind || "…", on: true }); refreshStreams() }
+  else if (kind && cur.kind !== kind) { cur.kind = kind; refreshStreams() }
+}
+
+// ── controls ──
+document.getElementById("gradient").addEventListener("change", (e) => { gradName = e.target.value; clouds.forEach(recolor) })
+document.getElementById("axis").addEventListener("change", (e) => { axisIdx = +e.target.value; clouds.forEach(recolor) })
+
+// ── app bus ──
+let bridgeUp = false
+const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
+function setStatus() { pill.classList.toggle("on", bridgeUp); statEl.textContent = bridgeUp ? `live · ${known.size} streams` : "waiting for bridge…" }
+const dimApp = new DimAppFrontend()
+dimApp.receiveRequest((kind, p) => {
+  if (kind === "status") { bridgeUp = !!p.bridge; setStatus() }
+  else if (kind === "streams") { for (const s of p.streams || []) addStream(s.name, s.kind); setStatus() }
+  else if (kind === "tf") { for (const t of p.transforms || []) setTf(t.parent, t.child, t.t, t.q) }
+  else if (kind === "cloud") { addStream(p.stream, "cloud"); if (known.get(p.stream)?.on !== false) onCloud(p); setStatus() }
+  else if (kind === "odom") { addStream(p.stream, "odom"); if (known.get(p.stream)?.on !== false) onOdom(p); setStatus() }
+  else if (kind === "path") { addStream(p.stream, "path"); if (known.get(p.stream)?.on !== false) onPath(p); setStatus() }
+  else if (kind === "frame") { addStream(p.stream, "image"); onFrame(p); setStatus() }
+})
+dimApp.send("hello"); setStatus()
+</script>
+</body>
+</html>
