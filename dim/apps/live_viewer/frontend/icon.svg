@@ -1,17 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="Live Viewer"
-     stroke="#7f97ab" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-  <!-- ground plane -->
-  <path d="M3 16.5 L12 21 L21 16.5" />
-  <path d="M12 21 L12 12.5" opacity="0.5" />
-  <!-- robot body -->
-  <path d="M8.5 11 L12 12.8 L15.5 11 L12 9.2 Z" fill="#ffb454" stroke="none" />
-  <path d="M8.5 11 L8.5 13 L12 14.8 L12 12.8 Z" fill="#e0952f" stroke="none" />
-  <path d="M15.5 11 L15.5 13 L12 14.8 L12 12.8 Z" fill="#c97f20" stroke="none" />
-  <!-- lidar points -->
-  <circle cx="5" cy="15" r="0.8" fill="#45e0ff" stroke="none" />
-  <circle cx="19" cy="15" r="0.8" fill="#45e0ff" stroke="none" />
-  <circle cx="7.5" cy="18.2" r="0.8" fill="#45e0ff" stroke="none" />
-  <circle cx="16.5" cy="18.2" r="0.8" fill="#45e0ff" stroke="none" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Live Viewer">
+  <!-- perspective ground grid -->
+  <g stroke="#5b7386" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M32 20 L56 34 L32 48 L8 34 Z" stroke-width="2" opacity="0.55"/>
+    <path d="M20 27 L44 41 M44 27 L20 41" stroke-width="1.4" opacity="0.3"/>
+  </g>
+  <!-- lidar point ring on the floor -->
+  <g fill="#45e0ff">
+    <circle cx="14" cy="34" r="1.5"/>
+    <circle cx="50" cy="34" r="1.5"/>
+    <circle cx="24" cy="42" r="1.5" opacity="0.85"/>
+    <circle cx="40" cy="42" r="1.5" opacity="0.85"/>
+    <circle cx="24" cy="26" r="1.5" opacity="0.7"/>
+    <circle cx="40" cy="26" r="1.5" opacity="0.7"/>
+  </g>
   <!-- planned path -->
-  <path d="M6 18 C 9 15.5, 15 15.5, 18 13" stroke="#7CFF6B" stroke-dasharray="0.1 2.2" />
+  <path d="M15 37 C 24 45, 42 45, 51 33" stroke="#7CFF6B" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="3.4 3.2"/>
+  <!-- robot: isometric body -->
+  <g stroke-linejoin="round">
+    <path d="M32 20 L44 27 L32 34 L20 27 Z" fill="#ffb454"/>
+    <path d="M20 27 L20 35 L32 42 L32 34 Z" fill="#c97f20"/>
+    <path d="M44 27 L44 35 L32 42 L32 34 Z" fill="#e0952f"/>
+  </g>
+  <!-- sensor / camera eye -->
+  <circle cx="32" cy="26.5" r="2.4" fill="#0b0f14"/>
+  <circle cx="32" cy="26.5" r="1.1" fill="#45e0ff"/>
+  <!-- live pulse indicator -->
+  <circle cx="51" cy="14" r="6.5" fill="none" stroke="#ff5c72" stroke-width="1.6" opacity="0.45"/>
+  <circle cx="51" cy="14" r="3.2" fill="#ff5c72"/>
 </svg>
