@@ -37,7 +37,7 @@
   .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
   .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
 
-  .panel { position: absolute; top: 60px; left: 12px; width: 238px; z-index: 4;
+  .panel { position: absolute; top: 60px; left: 12px; width: 288px; z-index: 4;
     background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
     padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 84px); overflow: auto; }
@@ -62,7 +62,7 @@
   select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
     background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
   .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
-  .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
+  .row select.axis-pick { width: 38px; }
   .legend { display: grid; gap: 5px; margin-top: 2px; }
   .legend .li { display: flex; align-items: center; gap: 8px; color: var(--secondary-fg); font-size: 11px; }
   .legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
@@ -118,13 +118,6 @@
     <div class="li"><span class="sw" style="background:oklch(0.78 0.18 145)"></span>planned path</div>
     <div class="li"><span class="sw dot" style="background:oklch(0.72 0.13 210)"></span>lidar / costmap points</div>
   </div>
-  <h2>Cloud color</h2>
-  <div class="ctrl-label">gradient axis (per-stream picker above)</div>
-  <select id="axis">
-    <option value="2">Z (height)</option>
-    <option value="0">X</option>
-    <option value="1">Y</option>
-  </select>
 </div>
 
 <div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · ALT-DRAG PAN · SCROLL DOLLY · RIGHT-DRAG PAN · DBLCLICK RECENTER<span id="campos"></span></div>
@@ -142,7 +135,6 @@ const GRADIENTS = {
   inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
   grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
 }
-let axisIdx = 2
 const GRAD_NAMES = Object.keys(GRADIENTS)
 // Each new cloud stream starts on a different gradient so clouds are easy to tell apart.
 function nextDefaultGradient() {
@@ -363,10 +355,12 @@ function recolor(c) {
   const pos = c.geom.getAttribute("position"); if (!pos || !pos.count) return
   const col = c.geom.getAttribute("color")
   const arr = pos.array, n = pos.count
+  const streamEntry = known.get(c.stream)
+  const axisIdx = streamEntry?.axis ?? 2
   let lo = Infinity, hi = -Infinity
   for (let i = 0; i < n; i++) { const v = arr[i * 3 + axisIdx]; if (v < lo) lo = v; if (v > hi) hi = v }
   const span = hi > lo ? hi - lo : 1
-  const g = GRADIENTS[known.get(c.stream)?.grad] || GRADIENTS.turbo
+  const g = GRADIENTS[streamEntry?.grad] || GRADIENTS.turbo
   const cArr = col.array
   for (let i = 0; i < n; i++) {
     const [r, gg, b] = g((arr[i * 3 + axisIdx] - lo) / span)
@@ -574,9 +568,12 @@ function refreshStreams() {
   const list = document.getElementById("stream-list")
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
   const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, s]) => {
+    const axis = s.axis ?? 2
     const control = s.kind === "cloud"
       ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
-        GRAD_NAMES.map((g) => `<option value="${g}" ${g === s.grad ? "selected" : ""}>${g}</option>`).join("") + `</select>`
+        GRAD_NAMES.map((g) => `<option value="${g}" ${g === s.grad ? "selected" : ""}>${g}</option>`).join("") + `</select>` +
+        `<select class="grad-pick axis-pick" data-a="${encodeURIComponent(name)}">` +
+        [["2", "z"], ["0", "x"], ["1", "y"]].map(([v, l]) => `<option value="${v}" ${+v === axis ? "selected" : ""}>${l}</option>`).join("") + `</select>`
       : `<span class="tag kc-${s.kind}">${s.kind}</span>`
     return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${s.on ? "checked" : ""}>` +
       `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
@@ -585,11 +582,13 @@ function refreshStreams() {
 }
 document.getElementById("stream-list").addEventListener("change", (e) => {
   const gradPick = e.target.closest("select[data-g]")
-  if (gradPick) {
-    const name = decodeURIComponent(gradPick.dataset.g)
+  const axisPick = e.target.closest("select[data-a]")
+  if (gradPick || axisPick) {
+    const name = decodeURIComponent(gradPick ? gradPick.dataset.g : axisPick.dataset.a)
     const s = known.get(name)
     if (s) {
-      s.grad = gradPick.value
+      if (gradPick) s.grad = gradPick.value
+      else s.axis = +axisPick.value
       const c = clouds.get(name); if (c) recolor(c)
       refreshStreams()
     }
@@ -614,7 +613,6 @@ function addStream(name, kind) {
 
 // ── controls ──
 document.getElementById("topbar").addEventListener("click", () => document.body.classList.toggle("panel-hidden"))
-document.getElementById("axis").addEventListener("change", (e) => { axisIdx = +e.target.value; clouds.forEach(recolor) })
 
 // ── app bus ──
 let bridgeUp = false
