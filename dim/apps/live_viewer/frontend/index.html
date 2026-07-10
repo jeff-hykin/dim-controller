@@ -22,7 +22,10 @@
   .topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
     display: flex; align-items: center; gap: 10px; padding: 0 16px;
     border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--card) 82%, transparent);
-    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); }
+    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); cursor: pointer; user-select: none; }
+  .topbar .chev { color: var(--muted-fg); font-size: 10px; transition: transform .15s; }
+  body.panel-hidden .topbar .chev { transform: rotate(-90deg); }
+  body.panel-hidden .panel { display: none; }
   .topbar .brand { width: 22px; height: 22px; flex: none; }
   .topbar .title { font-size: 14px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg); }
   .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; }
@@ -58,20 +61,28 @@
   input[type=checkbox] { accent-color: var(--primary); }
   select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
     background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
+  .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
   .ctrl-label { color: var(--muted-fg); margin-top: 8px; font-size: 11px; }
   .legend { display: grid; gap: 5px; margin-top: 2px; }
   .legend .li { display: flex; align-items: center; gap: 8px; color: var(--secondary-fg); font-size: 11px; }
   .legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
   .legend .sw.dot { width: 9px; height: 9px; border-radius: 50%; }
 
-  .cam { position: absolute; bottom: 14px; right: 14px; z-index: 4; width: 300px;
+  .cam { position: absolute; z-index: 4; width: 300px;
     border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; display: none; backdrop-filter: blur(10px); }
+    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; backdrop-filter: blur(10px); }
   .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
-    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700; }
+    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700;
+    cursor: grab; user-select: none; touch-action: none; }
   .cam .cam-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.68 0.15 300);
-    box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.68 0.15 300) 22%, transparent); }
+    box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.68 0.15 300) 22%, transparent); flex: none; }
+  .cam .cam-head .fold-chev { margin-left: auto; opacity: 0.6; transition: transform 0.15s; }
+  .cam.folded .cam-head { border-bottom: none; }
+  .cam.folded .cam-head .fold-chev { transform: rotate(-90deg); }
   .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
+  .cam.folded canvas, .cam.folded .cam-resize { display: none; }
+  .cam .cam-resize { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none;
+    background: linear-gradient(135deg, transparent 55%, color-mix(in oklch, var(--muted-fg) 55%, transparent) 55%); }
 
   #help { position: absolute; bottom: 14px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
@@ -88,10 +99,11 @@
 
 <div id="scene"></div>
 
-<div class="topbar">
+<div class="topbar" id="topbar" title="Toggle panel">
   <img class="brand" src="icon.svg" alt="" />
   <span class="title">Live&nbsp;Viewer</span>
   <span class="sub">· live DimOS scene</span>
+  <span class="chev">▼</span>
   <span class="spacer"></span>
   <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">connecting…</span></span>
 </div>
@@ -107,15 +119,7 @@
     <div class="li"><span class="sw dot" style="background:oklch(0.72 0.13 210)"></span>lidar / costmap points</div>
   </div>
   <h2>Cloud color</h2>
-  <div class="ctrl-label">gradient</div>
-  <select id="gradient">
-    <option value="turbo">Turbo</option>
-    <option value="viridis">Viridis</option>
-    <option value="cool">Cool (blue→cyan)</option>
-    <option value="inferno">Inferno</option>
-    <option value="grayscale">Grayscale</option>
-  </select>
-  <div class="ctrl-label">gradient axis</div>
+  <div class="ctrl-label">gradient axis (per-stream picker above)</div>
   <select id="axis">
     <option value="2">Z (height)</option>
     <option value="0">X</option>
@@ -123,16 +127,10 @@
   </select>
 </div>
 
-<div class="cam" id="cam">
-  <div class="cam-head" id="cam-head">Robot Cam</div>
-  <canvas id="cam-canvas" width="320" height="180"></canvas>
-</div>
-
-<div id="help">DRAG ORBIT · SCROLL ZOOM · RIGHT-DRAG PAN</div>
+<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · ALT-DRAG PAN · SCROLL DOLLY · RIGHT-DRAG PAN · DBLCLICK RECENTER<span id="campos"></span></div>
 
 <script type="module">
 import * as THREE from "three"
-import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?external=three"
 import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
 
 // ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
@@ -144,7 +142,13 @@ const GRADIENTS = {
   inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
   grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
 }
-let gradName = "turbo", axisIdx = 2
+let axisIdx = 2
+const GRAD_NAMES = Object.keys(GRADIENTS)
+// Each new cloud stream starts on a different gradient so clouds are easy to tell apart.
+function nextDefaultGradient() {
+    const used = [...known.values()].filter((s) => s.grad).length
+    return GRAD_NAMES[used % GRAD_NAMES.length]
+}
 
 // ── three.js scene (ROS convention: Z up) ──
 const host = document.getElementById("scene")
@@ -155,9 +159,81 @@ host.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
 camera.up.set(0, 0, 1)
-camera.position.set(6, -6, 4)
-const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableDamping = true
+
+// ── first-person fly controls: WASD move, click-drag to look ──
+const look = { yaw: 0, pitch: 0 }
+function viewDir() {
+    const cosPitch = Math.cos(look.pitch)
+    return new THREE.Vector3(cosPitch * Math.cos(look.yaw), cosPitch * Math.sin(look.yaw), Math.sin(look.pitch))
+}
+function setLookFrom(position, target) {
+    camera.position.copy(position)
+    const dir = new THREE.Vector3().subVectors(target, position).normalize()
+    look.yaw = Math.atan2(dir.y, dir.x)
+    look.pitch = Math.asin(THREE.MathUtils.clamp(dir.z, -1, 1))
+}
+setLookFrom(new THREE.Vector3(6, -6, 4), new THREE.Vector3(0, 0, 0))
+const heldKeys = new Set()
+window.addEventListener("keydown", (e) => {
+    if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return
+    heldKeys.add(e.code)
+    if (e.code === "Space") e.preventDefault()
+})
+window.addEventListener("keyup", (e) => heldKeys.delete(e.code))
+window.addEventListener("blur", () => heldKeys.clear())
+let dragButton = -1   // 0 = look, 2 = pan
+renderer.domElement.addEventListener("pointerdown", (e) => {
+    dragButton = e.button
+    // Synthetic pointer events (automated tests) have no active pointer to capture.
+    try { renderer.domElement.setPointerCapture(e.pointerId) } catch { /* InvalidPointerId */ }
+})
+renderer.domElement.addEventListener("pointerup", () => { dragButton = -1 })
+renderer.domElement.addEventListener("pointercancel", () => { dragButton = -1 })
+renderer.domElement.addEventListener("pointermove", (e) => {
+    if (dragButton === -1) return
+    if (e.buttons === 0) { dragButton = -1; return }   // missed pointerup (e.g. released off-window)
+    if (dragButton === 0 && e.altKey) {
+        // Alt+drag: pan along the camera's sideways axis and world Z only
+        // (never tilted, unlike right-drag's screen-up pan).
+        const forward = viewDir()
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+        camera.position.addScaledVector(right, -e.movementX * 0.015)
+        camera.position.z += e.movementY * 0.015
+    } else if (dragButton === 0) {
+        // Grab-the-world: the scene follows the cursor. Pitch stays inside ±80°
+        // so looking near straight up/down can never turn yaw into apparent roll.
+        look.yaw += e.movementX * 0.0025
+        look.pitch = THREE.MathUtils.clamp(look.pitch + e.movementY * 0.0025, -1.4, 1.4)
+    } else if (dragButton === 2) {
+        const forward = viewDir()
+        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+        const screenUp = new THREE.Vector3().crossVectors(right, forward)
+        camera.position.addScaledVector(right, -e.movementX * 0.015)
+        camera.position.addScaledVector(screenUp, e.movementY * 0.015)
+    }
+})
+renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault())
+// Scroll = fly forward/back along the view direction, same as W/S.
+// Per-event clamp keeps trackpad momentum flings from teleporting the camera.
+renderer.domElement.addEventListener("wheel", (e) => {
+    camera.position.addScaledVector(viewDir(), THREE.MathUtils.clamp(-e.deltaY * 0.01, -1, 1))
+}, { passive: true })
+let homeTarget = new THREE.Vector3(0, 0, 0)
+renderer.domElement.addEventListener("dblclick", () => {
+    setLookFrom(new THREE.Vector3(homeTarget.x + 6, homeTarget.y - 6, homeTarget.z + 4), homeTarget)
+})
+function updateCamera(dt) {
+    const forward = viewDir()
+    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+    const speed = (heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight") ? 15 : 5) * dt
+    if (heldKeys.has("KeyW")) camera.position.addScaledVector(forward, speed)
+    if (heldKeys.has("KeyS")) camera.position.addScaledVector(forward, -speed)
+    if (heldKeys.has("KeyA")) camera.position.addScaledVector(right, -speed)
+    if (heldKeys.has("KeyD")) camera.position.addScaledVector(right, speed)
+    if (heldKeys.has("KeyE") || heldKeys.has("Space")) camera.position.z += speed
+    if (heldKeys.has("KeyQ")) camera.position.z -= speed
+    camera.lookAt(new THREE.Vector3().addVectors(camera.position, forward))
+}
 // Grid + lighting follow the light/dark theme (read the media query directly so
 // we don't depend on the class-toggle listener order).
 const THEME = {
@@ -177,15 +253,73 @@ function applyTheme() {
   scene.add(hemi)
 }
 applyTheme()
-scene.add(new THREE.AxesHelper(1.5))
+// Solid cylinder axes instead of AxesHelper: 1px lines lying in the grid plane
+// z-fight with the GridHelper; real thickness (and a tiny z lift) avoids that.
+function makeAxes(length, radius) {
+    const axesGroup = new THREE.Group()
+    const axisSpecs = [
+        { color: 0xef4444, dir: new THREE.Vector3(1, 0, 0) },
+        { color: 0x22c55e, dir: new THREE.Vector3(0, 1, 0) },
+        { color: 0x3b82f6, dir: new THREE.Vector3(0, 0, 1) },
+    ]
+    for (const { color, dir } of axisSpecs) {
+        const rod = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius, radius, length, 12),
+            new THREE.MeshBasicMaterial({ color }),
+        )
+        rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
+        rod.position.copy(dir).multiplyScalar(length / 2)
+        axesGroup.add(rod)
+    }
+    axesGroup.position.z = 0.002
+    return axesGroup
+}
+scene.add(makeAxes(1.5, 0.02))
+
+// A few landmark props so an empty scene still reads spatially (Z-up).
+{
+    const propMaterial = (color) => new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.7 })
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), propMaterial(0x8a6d3b))
+    crate.position.set(3, 2, 0.3)
+    const smallCrate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), propMaterial(0x7a5cb8))
+    smallCrate.position.set(3.6, 1.5, 0.2)
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 24), propMaterial(0x3b82a0))
+    drum.rotation.x = Math.PI / 2
+    drum.position.set(-2.5, 3, 0.4)
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 24), propMaterial(0xd97a3d))
+    cone.rotation.x = Math.PI / 2
+    cone.position.set(1.5, -2.8, 0.35)
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), propMaterial(0x4caf7d))
+    ball.position.set(-3, -2, 0.3)
+    scene.add(crate, smallCrate, drum, cone, ball)
+}
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
 
+const BASE_VFOV = 60, MAX_HFOV = 100   // degrees; wide windows would otherwise hit ~130° horizontal
 function resize() {
   const w = host.clientWidth, h = host.clientHeight
-  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
+  // updateStyle must stay true: without CSS sizing the canvas displays at its
+  // attribute size (w × pixelRatio), i.e. double-size on retina, clipped to the
+  // top-left quarter — which put the scene center at the window's bottom-right.
+  renderer.setSize(w, h)
+  camera.aspect = w / h
+  // Cap the horizontal FOV: on very wide windows keep hfov ≤ MAX_HFOV by
+  // shrinking the vertical fov, so edges don't get fisheye-stretched.
+  const halfH = Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_VFOV) / 2) * camera.aspect)
+  camera.fov = halfH > THREE.MathUtils.degToRad(MAX_HFOV) / 2
+    ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(MAX_HFOV) / 2) / camera.aspect))
+    : BASE_VFOV
+  camera.updateProjectionMatrix()
 }
 new ResizeObserver(resize).observe(host); resize()
-;(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera) })()
+const clock = new THREE.Clock()
+const camposEl = document.getElementById("campos")
+;(function loop() {
+    requestAnimationFrame(loop)
+    updateCamera(Math.min(clock.getDelta(), 0.1))
+    camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)} YAW ${(look.yaw * 57.3).toFixed(0)}° PITCH ${(look.pitch * 57.3).toFixed(0)}°`
+    renderer.render(scene, camera)
+})()
 
 // ── TF tree: child -> { parent, matrix(T_parent_child) } ──
 const tf = new Map()
@@ -221,7 +355,7 @@ function ensureCloud(stream) {
   const points = new THREE.Points(geom, mat)
   points.matrixAutoUpdate = false
   scene.add(points)
-  c = { points, geom, frame: "" }
+  c = { points, geom, frame: "", stream }
   clouds.set(stream, c)
   return c
 }
@@ -232,7 +366,7 @@ function recolor(c) {
   let lo = Infinity, hi = -Infinity
   for (let i = 0; i < n; i++) { const v = arr[i * 3 + axisIdx]; if (v < lo) lo = v; if (v > hi) hi = v }
   const span = hi > lo ? hi - lo : 1
-  const g = GRADIENTS[gradName] || GRADIENTS.turbo
+  const g = GRADIENTS[known.get(c.stream)?.grad] || GRADIENTS.turbo
   const cArr = col.array
   for (let i = 0; i < n; i++) {
     const [r, gg, b] = g((arr[i * 3 + axisIdx] - lo) / span)
@@ -262,7 +396,7 @@ function ensureOdom(stream) {
     new THREE.BoxGeometry(0.5, 0.28, 0.22),
     new THREE.MeshStandardMaterial({ color: 0xffb454, metalness: 0.1, roughness: 0.6 }))
   body.position.z = 0.11
-  group.add(body); group.add(new THREE.AxesHelper(0.6))
+  group.add(body); group.add(makeAxes(0.6, 0.012))
   const trailGeom = new THREE.BufferGeometry()
   trailGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 4000), 3))
   trailGeom.setDrawRange(0, 0)
@@ -280,12 +414,12 @@ function onOdom(p) {
   const world = worldMatrix(p.frame).multiply(pose)
   o.group.matrix.copy(world)
   const wp = new THREE.Vector3().setFromMatrixPosition(world)
-  // Follow the robot: keep the orbit target on it (frame once, then track gently).
+  homeTarget.copy(wp)
+  // Frame the robot once when it first appears; after that the camera is free-fly.
   if (!framed) {
-    camera.position.set(wp.x + 7, wp.y - 7, wp.z + 5)
+    setLookFrom(new THREE.Vector3(wp.x + 7, wp.y - 7, wp.z + 5), wp)
     framed = true
   }
-  controls.target.lerp(wp, framed ? 0.2 : 1.0)
   o.positions.push(wp.x, wp.y, wp.z)
   if (o.positions.length > 3 * 4000) o.positions.splice(0, 3)
   const arr = o.geom.getAttribute("position").array
@@ -324,18 +458,82 @@ function onPath(p) {
   refreshStreams()
 }
 
-// ── first-person camera PIP ──
-const camBox = document.getElementById("cam"), camHead = document.getElementById("cam-head")
-const camCanvas = document.getElementById("cam-canvas"), camCtx = camCanvas.getContext("2d")
-let camRaw = null   // reusable ImageData
+// ── camera stream overlays ──
+// One draggable/foldable/resizable window per image stream. Position, width,
+// and folded state persist in localStorage keyed by stream name.
+const camViews = new Map()   // stream -> { box, canvas, ctx, raw }
+let camTopZ = 30
+const camStateKey = (stream) => "lv-cam:" + stream
+function ensureCamView(stream) {
+    let view = camViews.get(stream)
+    if (view) return view
+    const box = document.createElement("div")
+    box.className = "cam"
+    const head = document.createElement("div")
+    head.className = "cam-head"
+    head.innerHTML = `<span class="cam-title"></span><span class="fold-chev">▼</span>`
+    head.querySelector(".cam-title").textContent = stream.split("#")[0]
+    const canvas = document.createElement("canvas")
+    canvas.width = 320; canvas.height = 180
+    const grip = document.createElement("div")
+    grip.className = "cam-resize"
+    box.append(head, canvas, grip)
+    document.body.appendChild(box)
+    let saved = null
+    try { saved = JSON.parse(localStorage.getItem(camStateKey(stream))) } catch { /* corrupt entry */ }
+    const width = saved?.w || 300
+    // New views cascade up-left from the bottom-right corner so every header stays visible.
+    const defaultY = innerHeight - 260 - camViews.size * 34
+    box.style.width = width + "px"
+    box.style.left = THREE.MathUtils.clamp(saved?.x ?? (innerWidth - width - 14 - camViews.size * 34), 0, Math.max(0, innerWidth - 80)) + "px"
+    box.style.top = THREE.MathUtils.clamp(saved?.y ?? defaultY, 0, Math.max(0, innerHeight - 40)) + "px"
+    if (saved?.folded) box.classList.add("folded")
+    // New windows spawn beneath existing ones (so the cascade keeps every header
+    // peeking out); any interaction brings a window to the front.
+    box.style.zIndex = String(30 - camViews.size)
+    box.addEventListener("pointerdown", () => { box.style.zIndex = String(++camTopZ) })
+    const save = () => localStorage.setItem(camStateKey(stream), JSON.stringify({
+        x: parseFloat(box.style.left), y: parseFloat(box.style.top),
+        w: parseFloat(box.style.width), folded: box.classList.contains("folded"),
+    }))
+    // Drag the header to move; a click with (almost) no movement toggles fold.
+    head.addEventListener("pointerdown", (e) => {
+        e.preventDefault()
+        const startLeft = parseFloat(box.style.left), startTop = parseFloat(box.style.top)
+        const startX = e.clientX, startY = e.clientY
+        let moved = 0
+        const onMove = (ev) => {
+            moved += Math.abs(ev.movementX) + Math.abs(ev.movementY)
+            box.style.left = (startLeft + ev.clientX - startX) + "px"
+            box.style.top = (startTop + ev.clientY - startY) + "px"
+        }
+        const onUp = () => {
+            removeEventListener("pointermove", onMove); removeEventListener("pointerup", onUp)
+            if (moved < 5) box.classList.toggle("folded")
+            save()
+        }
+        addEventListener("pointermove", onMove); addEventListener("pointerup", onUp)
+    })
+    // Drag the corner grip to resize (width only; height follows the frame aspect).
+    grip.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); e.stopPropagation()
+        const startWidth = parseFloat(box.style.width), startX = e.clientX
+        const onMove = (ev) => { box.style.width = Math.max(120, startWidth + ev.clientX - startX) + "px" }
+        const onUp = () => { removeEventListener("pointermove", onMove); removeEventListener("pointerup", onUp); save() }
+        addEventListener("pointermove", onMove); addEventListener("pointerup", onUp)
+    })
+    view = { box, canvas, ctx: canvas.getContext("2d"), raw: null }
+    camViews.set(stream, view)
+    return view
+}
 function onFrame(p) {
-  camBox.style.display = "block"
-  camHead.textContent = "Robot Cam · " + p.stream.split("#")[0]
+  const view = ensureCamView(p.stream)
+  const { canvas, ctx } = view
   if (p.kind === "compressed") {
     const img = new Image()
     img.onload = () => {
-      if (camCanvas.width !== img.width || camCanvas.height !== img.height) { camCanvas.width = img.width; camCanvas.height = img.height }
-      camCtx.drawImage(img, 0, 0)
+      if (canvas.width !== img.width || canvas.height !== img.height) { canvas.width = img.width; canvas.height = img.height }
+      ctx.drawImage(img, 0, 0)
     }
     img.src = `data:image/${(p.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${p.b64}`
     return
@@ -346,9 +544,9 @@ function onFrame(p) {
   const enc = (p.encoding || "rgb8").toLowerCase()
   const ch = enc === "rgba8" ? 4 : enc === "mono8" ? 1 : 3
   const step = p.step || w * ch
-  if (camCanvas.width !== w || camCanvas.height !== h) { camCanvas.width = w; camCanvas.height = h; camRaw = null }
-  if (!camRaw) camRaw = camCtx.createImageData(w, h)
-  const dst = camRaw.data
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; view.raw = null }
+  if (!view.raw) view.raw = ctx.createImageData(w, h)
+  const dst = view.raw.data
   const bgr = enc === "bgr8" || enc === "bgra8"
   for (let y = 0; y < h; y++) {
     let si = y * step, di = y * w * 4
@@ -361,7 +559,7 @@ function onFrame(p) {
       di += 4
     }
   }
-  camCtx.putImageData(camRaw, 0, 0)
+  ctx.putImageData(view.raw, 0, 0)
 }
 
 // ── stream checklist ──
@@ -370,28 +568,52 @@ function setVisible(name, on) {
   const c = clouds.get(name); if (c) c.points.visible = on
   const o = odoms.get(name); if (o) { o.group.visible = on; o.trail.visible = on }
   const pa = paths.get(name); if (pa) pa.line.visible = on
+  const v = camViews.get(name); if (v) v.box.style.display = on ? "" : "none"
 }
 function refreshStreams() {
   const list = document.getElementById("stream-list")
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
-  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, s]) =>
-    `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${s.on ? "checked" : ""}>` +
-    `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label><span class="tag kc-${s.kind}">${s.kind}</span></div>`).join("")
+  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, s]) => {
+    const control = s.kind === "cloud"
+      ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
+        GRAD_NAMES.map((g) => `<option value="${g}" ${g === s.grad ? "selected" : ""}>${g}</option>`).join("") + `</select>`
+      : `<span class="tag kc-${s.kind}">${s.kind}</span>`
+    return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${s.on ? "checked" : ""}>` +
+      `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
+  }).join("")
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
 }
 document.getElementById("stream-list").addEventListener("change", (e) => {
+  const gradPick = e.target.closest("select[data-g]")
+  if (gradPick) {
+    const name = decodeURIComponent(gradPick.dataset.g)
+    const s = known.get(name)
+    if (s) {
+      s.grad = gradPick.value
+      const c = clouds.get(name); if (c) recolor(c)
+      refreshStreams()
+    }
+    return
+  }
   const cb = e.target.closest("input[data-s]"); if (!cb) return
   const name = decodeURIComponent(cb.dataset.s)
   const s = known.get(name); if (s) { s.on = cb.checked; setVisible(name, cb.checked) }
 })
 function addStream(name, kind) {
   const cur = known.get(name)
-  if (!cur) { known.set(name, { kind: kind || "…", on: true }); refreshStreams() }
-  else if (kind && cur.kind !== kind) { cur.kind = kind; refreshStreams() }
+  if (!cur) {
+    const entry = { kind: kind || "…", on: true }
+    if (kind === "cloud") entry.grad = nextDefaultGradient()
+    known.set(name, entry); refreshStreams()
+  } else if (kind && cur.kind !== kind) {
+    cur.kind = kind
+    if (kind === "cloud" && !cur.grad) cur.grad = nextDefaultGradient()
+    refreshStreams()
+  }
 }
 
 // ── controls ──
-document.getElementById("gradient").addEventListener("change", (e) => { gradName = e.target.value; clouds.forEach(recolor) })
+document.getElementById("topbar").addEventListener("click", () => document.body.classList.toggle("panel-hidden"))
 document.getElementById("axis").addEventListener("change", (e) => { axisIdx = +e.target.value; clouds.forEach(recolor) })
 
 // ── app bus ──
@@ -399,7 +621,7 @@ let bridgeUp = false
 const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
 function setStatus() { pill.classList.toggle("on", bridgeUp); statEl.textContent = bridgeUp ? `live · ${known.size} streams` : "waiting for bridge…" }
 const dimApp = new DimAppFrontend()
-dimApp.receiveRequest((kind, p) => {
+const handleAppMessage = (kind, p) => {
   if (kind === "status") { bridgeUp = !!p.bridge; setStatus() }
   else if (kind === "streams") { for (const s of p.streams || []) addStream(s.name, s.kind); setStatus() }
   else if (kind === "tf") { for (const t of p.transforms || []) setTf(t.parent, t.child, t.t, t.q) }
@@ -407,7 +629,9 @@ dimApp.receiveRequest((kind, p) => {
   else if (kind === "odom") { addStream(p.stream, "odom"); if (known.get(p.stream)?.on !== false) onOdom(p); setStatus() }
   else if (kind === "path") { addStream(p.stream, "path"); if (known.get(p.stream)?.on !== false) onPath(p); setStatus() }
   else if (kind === "frame") { addStream(p.stream, "image"); onFrame(p); setStatus() }
-})
+}
+dimApp.receiveRequest(handleAppMessage)
+window.__lv_inject = handleAppMessage   // manual/automated testing without a robot
 dimApp.send("hello"); setStatus()
 </script>
 </body>
