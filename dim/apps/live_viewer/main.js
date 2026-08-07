@@ -13,13 +13,16 @@ const ctx = dimContext()
 const METER = "__meta/streams"
 
 const MAX_PTS = 24000
-const CLOUD_HZ = 8
-const IMG_HZ = 10
-const PATH_HZ = 10
+// Only the newest message per stream is ever sent; while the socket is backed up past
+// this many bytes everything queued behind it is dropped, so the viewer stays live
+// instead of falling minutes behind replaying stale frames.
+const HIGH_WATER = 1 << 20
+const DRAIN_MS = 16
 
 let watched = new Set()
 let dataConn = null
-const lastSent = new Map()
+const pending = new Map()   // stream -> newest undelivered { kind, msg }
+let droppedCount = 0
 
 // Duck-type a decoded message into a render kind.
 function kindOfMsg(m) {
@@ -49,12 +52,6 @@ function asBytes(d) {
     return new Uint8Array(0)
 }
 function frameId(msg) { return msg?.header?.frame_id || "" }
-function rl(stream, hz) {
-    const now = Date.now()
-    if (now - (lastSent.get(stream) || 0) < 1000 / hz) return false
-    lastSent.set(stream, now)
-    return true
-}
 
 function parseCloud(msg) {
     const fields = msg.fields || []
@@ -90,10 +87,19 @@ function parsePath(msg) {
     return { n: k, b64: toB64(new Uint8Array(out.buffer, 0, k * 3 * 4)) }
 }
 
+// Newest message wins: an unsent message for the same stream is simply overwritten.
+// tf is the exception — transforms are incremental state, so they go straight out.
 function forward(stream, msg) {
     const kind = kindOfMsg(msg)
+    if (!kind) return
+    if (kind === "tf") { send(stream, kind, msg); return }
+    if (pending.has(stream)) { droppedCount++ }
+    pending.set(stream, { kind, msg })
+}
+// Serializing is the expensive part (point striding + base64), so it happens here at
+// send time rather than on arrival — dropped messages cost nothing.
+function send(stream, kind, msg) {
     if (kind === "cloud") {
-        if (!rl(stream, CLOUD_HZ)) return
         const c = parseCloud(msg)
         if (c) dimApp.send("cloud", { stream, frame: frameId(msg), n: c.n, b64: c.b64 })
     } else if (kind === "odom") {
@@ -108,11 +114,9 @@ function forward(stream, msg) {
         }))
         if (transforms.length) dimApp.send("tf", { transforms })
     } else if (kind === "path") {
-        if (!rl(stream, PATH_HZ)) return
         const pl = parsePath(msg)
         dimApp.send("path", { stream, frame: frameId(msg), n: pl.n, b64: pl.b64 })
     } else if (kind === "image") {
-        if (!rl(stream, IMG_HZ)) return
         try {
             if (msg.format !== undefined && msg.width === undefined) {
                 dimApp.send("frame", { stream, kind: "compressed", format: String(msg.format || "jpeg"), b64: toB64(asBytes(msg.data)) })
@@ -126,6 +130,27 @@ function forward(stream, msg) {
         } catch { /* unserializable frame — skip */ }
     }
 }
+
+// The dim-app SDK sends straight to the socket with no flow control, so pacing has to
+// come from the socket's own backlog: nothing new goes out until it has drained.
+const backlog = () => dimApp._ws?.bufferedAmount ?? 0
+setInterval(() => {
+    if (!pending.size) return
+    for (const [stream, { kind, msg }] of pending) {
+        if (backlog() > HIGH_WATER) return   // stay queued; a newer message may replace it
+        pending.delete(stream)
+        try { send(stream, kind, msg) } catch { /* undecodable message — drop it */ }
+    }
+}, DRAIN_MS)
+
+// Report how much is being dropped, so a saturated link is visible instead of just
+// looking like a slow robot.
+let reportedDrops = 0
+setInterval(() => {
+    const rate = droppedCount - reportedDrops
+    reportedDrops = droppedCount
+    dimApp.send("status", { bridge: !!dataConn || watched.size > 0, dropped: rate })
+}, 1000)
 
 function connectData(streams) {
     try { dataConn?.close() } catch { /* closed */ }

@@ -617,24 +617,6 @@ function makeAxes(length, radius) {
 }
 scene.add(makeAxes(1.5, 0.02))
 
-// A few landmark props so an empty scene still reads spatially (Z-up).
-{
-  const propMaterial = (color) => new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.7 })
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), propMaterial(0x8a6d3b))
-  crate.position.set(3, 2, 0.3)
-  const smallCrate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), propMaterial(0x7a5cb8))
-  smallCrate.position.set(3.6, 1.5, 0.2)
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 24), propMaterial(0x3b82a0))
-  drum.rotation.x = Math.PI / 2
-  drum.position.set(-2.5, 3, 0.4)
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 24), propMaterial(0xd97a3d))
-  cone.rotation.x = Math.PI / 2
-  cone.position.set(1.5, -2.8, 0.35)
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), propMaterial(0x4caf7d))
-  ball.position.set(-3, -2, 0.3)
-  scene.add(crate, smallCrate, drum, cone, ball)
-}
-
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
 
 // Cap the horizontal FOV: on very wide windows keep hfov ≤ MAX_HFOV by shrinking
@@ -1123,9 +1105,9 @@ function ensureOdom(stream) {
   if (odom) { return odom }
   const color = TRAIL_COLORS[odoms.size % TRAIL_COLORS.length]
   const group = new THREE.Group(); group.matrixAutoUpdate = false
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.28, 0.22),
-    new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 }))
+  const body = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.5, 0.28, 0.22)),
+    new THREE.LineBasicMaterial({ color }))
   body.position.z = 0.11
   group.add(body); group.add(makeAxes(0.6, 0.012))
   const geom = new THREE.BufferGeometry()
@@ -1232,12 +1214,35 @@ function onPath(payload) {
 const camLayer = document.getElementById("cam-layer")
 const imageWindows = new Map()   // name -> { el, canvas, ctx, titleEl, badgeEl, raw }
 let camCascade = 0
-// Depth images carry per-pixel distance (uint16 mm or float32 m) rather than color, so
-// they're colorized with a jet ramp instead of shown as raw (near-black) grayscale.
-const DEPTH_ENCODINGS = new Set(["16uc1", "mono16", "16sc1", "32fc1"])
-function isDepthPayload(payload) {
+// How each sensor_msgs/Image encoding is laid out in the byte buffer. Getting this
+// wrong reads a 2-byte depth pixel as an rgb8 triple, which smears the image into
+// diagonal bands — so the encoding decides the layout, never the stream name.
+const IMAGE_ENCODINGS = {
+  mono8: { bytes: 1, channels: 1 },
+  rgb8: { bytes: 3, channels: 3 },
+  bgr8: { bytes: 3, channels: 3, bgr: true },
+  rgba8: { bytes: 4, channels: 4 },
+  bgra8: { bytes: 4, channels: 4, bgr: true },
+  mono16: { bytes: 2, read: "uint16" },
+  "16uc1": { bytes: 2, read: "uint16", depth: true, scale: 0.001 },   // millimeters
+  "16sc1": { bytes: 2, read: "int16", depth: true, scale: 0.001 },
+  "32fc1": { bytes: 4, read: "float32", depth: true, scale: 1 },      // meters
+  "64fc1": { bytes: 8, read: "float64", depth: true, scale: 1 },
+  "32fc3": { bytes: 12, channels: 3, read: "float32" },
+}
+// Only fall back to the stream name when the publisher left the encoding blank.
+function imageLayout(payload) {
   const encoding = String(payload.encoding || "").toLowerCase()
-  return DEPTH_ENCODINGS.has(encoding) || /depth/i.test(payload.stream)
+  const layout = IMAGE_ENCODINGS[encoding]
+  if (layout) { return layout }
+  if (/depth/i.test(payload.stream)) { return IMAGE_ENCODINGS["16uc1"] }
+  return IMAGE_ENCODINGS.rgb8
+}
+// A 16-bit single-channel frame is distance for a depth stream and brightness for a
+// grayscale one; both need normalizing, only depth gets the jet ramp.
+function isDepthPayload(payload) {
+  const layout = imageLayout(payload)
+  return !!layout.depth || (!layout.channels && /depth/i.test(payload.stream))
 }
 // Classic "jet" colormap: near (t≈0) → red, far (t≈1) → blue, so closer surfaces read hot.
 function jetColor(t) {
@@ -1362,42 +1367,52 @@ function drawColorImage(win, payload) {
     return
   }
   const width = payload.width, height = payload.height; if (!width || !height) { return }
+  const layout = imageLayout(payload)
+  if (!layout.channels) { drawScalarImage(win, payload, layout, false); return }
   const source = new Uint8Array(b64ToBuffer(payload.b64))
-  const encoding = (payload.encoding || "rgb8").toLowerCase()
-  const channels = encoding === "rgba8" || encoding === "bgra8" ? 4 : encoding === "mono8" ? 1 : 3
-  const step = payload.step || width * channels
+  const step = payload.step || width * layout.bytes
+  if (source.length < height * step) { return }   // truncated frame: better nothing than smear
   if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
   if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
   const destination = win.raw.data
-  const isBgr = encoding === "bgr8" || encoding === "bgra8"
+  const isBgr = !!layout.bgr
   for (let y = 0; y < height; y++) {
     let sourceIndex = y * step, destIndex = y * width * 4
     for (let x = 0; x < width; x++) {
-      if (channels === 1) { const value = source[sourceIndex]; destination[destIndex] = value; destination[destIndex + 1] = value; destination[destIndex + 2] = value; destination[destIndex + 3] = 255; sourceIndex += 1 }
+      if (layout.channels === 1) { const value = source[sourceIndex]; destination[destIndex] = value; destination[destIndex + 1] = value; destination[destIndex + 2] = value; destination[destIndex + 3] = 255 }
       else {
-        const r = source[sourceIndex + (isBgr ? 2 : 0)], g = source[sourceIndex + 1], b = source[sourceIndex + (isBgr ? 0 : 2)]
-        destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255; sourceIndex += channels
+        destination[destIndex] = source[sourceIndex + (isBgr ? 2 : 0)]
+        destination[destIndex + 1] = source[sourceIndex + 1]
+        destination[destIndex + 2] = source[sourceIndex + (isBgr ? 0 : 2)]
+        destination[destIndex + 3] = 255
       }
-      destIndex += 4
+      sourceIndex += layout.bytes; destIndex += 4
     }
   }
   win.ctx.putImageData(win.raw, 0, 0)
 }
-function drawDepthImage(win, payload) {
-  const width = payload.width, height = payload.height; if (!width || !height) { return }
+// Single-channel non-8-bit frames: depth (distance per pixel) or 16-bit grayscale.
+// Zero and non-finite mean "no return" and stay black; the rest is normalized over the
+// valid range, then jet-ramped for depth or shown as gray for mono16.
+const SCALAR_READERS = {
+  uint16: (view, offset, littleEndian) => view.getUint16(offset, littleEndian),
+  int16: (view, offset, littleEndian) => view.getInt16(offset, littleEndian),
+  float32: (view, offset, littleEndian) => view.getFloat32(offset, littleEndian),
+  float64: (view, offset, littleEndian) => view.getFloat64(offset, littleEndian),
+}
+function drawScalarImage(win, payload, layout, colorize) {
+  const width = payload.width, height = payload.height
   const buffer = b64ToBuffer(payload.b64)
-  const isFloat = String(payload.encoding || "").toLowerCase() === "32fc1"
   const littleEndian = !payload.bigendian
   const view = new DataView(buffer)
-  const bytesPerPixel = isFloat ? 4 : 2
-  const step = payload.step || width * bytesPerPixel
-  const readAt = (offset) => isFloat ? view.getFloat32(offset, littleEndian) : view.getUint16(offset, littleEndian)
-  // find the valid depth range (ignore zero / NaN = no return) for normalization
+  const readAt = SCALAR_READERS[layout.read]
+  const step = payload.step || width * layout.bytes
+  if (buffer.byteLength < height * step) { return }
   let low = Infinity, high = -Infinity
   for (let y = 0; y < height; y++) {
     let offset = y * step
-    for (let x = 0; x < width; x++, offset += bytesPerPixel) {
-      const value = readAt(offset)
+    for (let x = 0; x < width; x++, offset += layout.bytes) {
+      const value = readAt(view, offset, littleEndian)
       if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
     }
   }
@@ -1407,14 +1422,19 @@ function drawDepthImage(win, payload) {
   const destination = win.raw.data
   for (let y = 0; y < height; y++) {
     let offset = y * step, destIndex = y * width * 4
-    for (let x = 0; x < width; x++, offset += bytesPerPixel, destIndex += 4) {
-      const value = readAt(offset)
-      if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; destination[destIndex + 3] = 255; continue }
-      const [r, g, b] = jetColor((value - low) / span)
-      destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255
+    for (let x = 0; x < width; x++, offset += layout.bytes, destIndex += 4) {
+      const value = readAt(view, offset, littleEndian)
+      destination[destIndex + 3] = 255
+      if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; continue }
+      const t = (value - low) / span
+      const [r, g, b] = colorize ? jetColor(t) : [Math.round(t * 255), Math.round(t * 255), Math.round(t * 255)]
+      destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b
     }
   }
   win.ctx.putImageData(win.raw, 0, 0)
+  if (colorize && layout.scale && high >= low) {
+    win.badgeEl.textContent = `${(low * layout.scale).toFixed(1)}–${(high * layout.scale).toFixed(1)}m`
+  }
 }
 function onFrame(payload) {
   addStream(payload.stream, "image")
@@ -1426,7 +1446,7 @@ function onFrame(payload) {
   win.el.style.display = visible ? "flex" : "none"
   if (!visible) { return }   // skip the decode work while hidden
   if (depth && payload.kind === "compressed") { drawCompressedDepth(win, payload) }
-  else if (depth) { drawDepthImage(win, payload) }
+  else if (depth) { drawScalarImage(win, payload, imageLayout(payload), true) }
   else { drawColorImage(win, payload) }
 }
 
@@ -1576,16 +1596,17 @@ toggleAllBtn.addEventListener("click", (event) => {
 const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
 
 // ── status pill ──
-let bridgeUp = false
+let bridgeUp = false, droppedPerSecond = 0
 function setStatus() {
   pill.classList.toggle("on", bridgeUp)
-  statEl.textContent = bridgeUp ? `live · ${known.size} streams` : "waiting for bridge…"
+  const drops = droppedPerSecond ? ` · ${droppedPerSecond} dropped/s` : ""
+  statEl.textContent = bridgeUp ? `live · ${known.size} streams${drops}` : "waiting for bridge…"
 }
 
 // ── app bus (live: frames stream straight from the bridge, no transport) ──
 const app = new DimAppFrontend()
 function handleAppMessage(kind, payload) {
-  if (kind === "status") { bridgeUp = !!payload.bridge; setStatus() }
+  if (kind === "status") { bridgeUp = !!payload.bridge; droppedPerSecond = payload.dropped || 0; setStatus() }
   else if (kind === "cloud") { onCloud(payload); setStatus() }
   else if (kind === "odom") { onOdom(payload); setStatus() }
   else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
@@ -1594,6 +1615,7 @@ function handleAppMessage(kind, payload) {
 }
 app.receiveRequest(handleAppMessage)
 window.__lv_inject = handleAppMessage   // test hook: feed synthetic bus messages
+window.__lv_scene = scene               // test hook: inspect the rendered scene graph
 app.send("hello")
 setStatus()
 </script>
