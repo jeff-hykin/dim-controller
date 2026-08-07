@@ -2,8 +2,10 @@
 <!--
   Live Viewer. A PimSim-style 3D scene for a LIVE DimOS stack: the robot body +
   pose/trail (odometry), lidar & costmap point clouds placed via the TF tree,
-  the planned path, and a first-person camera PIP. Backend (main.js) discovers
-  the streams on the bridge and feeds decoded frames.
+  planned paths, and floating camera windows. Point clouds can be accumulated
+  into a map, voxelized, filtered/downsampled, height-gradient colored, and
+  clipped by height; floor markers and a top-slice complete the toolkit.
+  Backend (main.js) discovers the streams on the bridge and feeds decoded frames.
 -->
 <html lang="en">
 <head>
@@ -22,14 +24,14 @@
   .topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
     display: flex; align-items: center; gap: 10px; padding: 0 16px;
     border-bottom: 1px solid var(--border); background: color-mix(in oklch, var(--card) 82%, transparent);
-    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); cursor: pointer; user-select: none; }
-  .topbar .chev { color: var(--muted-fg); font-size: 10px; transition: transform .15s; }
-  body.panel-hidden .topbar .chev { transform: rotate(-90deg); }
-  body.panel-hidden .panel { display: none; }
+    backdrop-filter: blur(10px); box-shadow: var(--shadow-xs); }
   .topbar .brand { width: 22px; height: 22px; flex: none; }
   .topbar .title { font-size: 14px; font-weight: 650; letter-spacing: 0.02em; color: var(--fg); }
-  .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; }
+  .topbar .sub { font-size: 11px; color: var(--muted-fg); letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
   .topbar .spacer { flex: 1; }
+  .btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--fg); cursor: pointer;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; }
+  .btn:hover { background: var(--accent); }
   .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px;
     color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
     background: color-mix(in oklch, var(--card) 60%, transparent); }
@@ -37,14 +39,27 @@
   .pill.on { color: color-mix(in oklch, var(--info) 70%, var(--fg)); border-color: color-mix(in oklch, var(--info) 35%, var(--border)); }
   .pill.on .dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 22%, transparent); }
 
-  .panel { position: absolute; top: 60px; left: 12px; width: 288px; z-index: 4;
+  .panel { position: absolute; top: 60px; left: 12px; width: fit-content; min-width: 288px; max-width: min(560px, 46vw); z-index: 4;
     background: color-mix(in oklch, var(--card) 90%, transparent); border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-md); backdrop-filter: blur(10px);
-    padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 84px); overflow: auto; }
+    padding: 12px 12px 14px; font-size: 12px; max-height: calc(100% - 150px); overflow: auto; }
   .panel h2 { margin: 0 0 6px; font-size: 9.5px; letter-spacing: var(--track-label); text-transform: uppercase;
     color: var(--muted-fg); font-weight: 700; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .mini-btn { font: inherit; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted-fg); background: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 2px 7px; margin: 0 0 6px; cursor: pointer; flex: none; white-space: nowrap; }
+  .mini-btn:hover { color: var(--fg); }
+  .panel.collapsed #toggle-all { display: none; }
   .panel h2:not(:first-child) { margin-top: 15px; }
-  .row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .panel h2.toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .panel h2.toggle::before { content: "▾"; font-size: 8px; transition: transform 0.15s; }
+  .panel.collapsed { width: auto; min-width: 0; padding: 8px 12px; overflow: visible; }
+  .panel.collapsed h2 { margin: 0; }
+  .panel.collapsed h2.toggle::before { transform: rotate(-90deg); }
+  .panel.collapsed #stream-list { display: none; }
+  .row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 2px; border-radius: var(--radius-sm); }
+  .row select.accum-pick { width: 64px; }
   .row:hover { background: var(--accent); }
   .row label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1; min-width: 0; }
   .row .nm { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -52,40 +67,104 @@
     letter-spacing: 0.06em; text-transform: uppercase; color: var(--secondary-fg);
     background: var(--secondary); border-radius: 999px; padding: 2px 7px; flex: none; }
   .row .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--kc, var(--muted-fg)); }
-  .kc-cloud { --kc: oklch(0.72 0.13 210); }   /* lidar/cloud — cyan */
-  .kc-odom  { --kc: oklch(0.78 0.14 70); }    /* odometry — amber */
-  .kc-path  { --kc: oklch(0.78 0.18 145); }   /* path — green */
-  .kc-image { --kc: oklch(0.68 0.15 300); }   /* camera — violet */
-  .kc-tf    { --kc: oklch(0.7 0.02 260); }    /* tf — grey */
+  .kc-cloud { --kc: oklch(0.72 0.13 210); }
+  .kc-odom  { --kc: oklch(0.78 0.14 70); }
+  .kc-path  { --kc: oklch(0.78 0.18 145); }
+  .kc-image { --kc: oklch(0.68 0.15 300); }
+  .kc-tf    { --kc: oklch(0.7 0.02 260); }
   .empty { color: var(--muted-fg); padding: 4px 2px; }
   input[type=checkbox] { accent-color: var(--primary); }
   select { width: 100%; appearance: none; font: inherit; font-size: 12px; color: var(--fg); cursor: pointer;
     background: var(--card); border: 1px solid var(--input); border-radius: var(--radius); padding: 6px 9px; margin-top: 4px; }
   .row select.grad-pick { width: 78px; flex: none; font-size: 10px; padding: 2px 5px; margin: 0; }
   .row select.axis-pick { width: 38px; }
+
+  /* legend */
   .legend { display: grid; gap: 5px; margin-top: 2px; }
   .legend .li { display: flex; align-items: center; gap: 8px; color: var(--secondary-fg); font-size: 11px; }
   .legend .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
   .legend .sw.dot { width: 9px; height: 9px; border-radius: 50%; }
-
-  .cam { position: absolute; z-index: 4; width: 300px;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-    background: color-mix(in oklch, var(--card) 90%, transparent); overflow: hidden; backdrop-filter: blur(10px); }
-  .cam .cam-head { font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase; color: var(--muted-fg);
-    padding: 7px 11px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; font-weight: 700;
-    cursor: grab; user-select: none; touch-action: none; }
-  .cam .cam-head::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.68 0.15 300);
-    box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.68 0.15 300) 22%, transparent); flex: none; }
-  .cam .cam-head .fold-chev { margin-left: auto; opacity: 0.6; transition: transform 0.15s; }
-  .cam.folded .cam-head { border-bottom: none; }
-  .cam.folded .cam-head .fold-chev { transform: rotate(-90deg); }
-  .cam canvas { display: block; width: 100%; background: oklch(0.14 0.015 258); }
-  .cam.folded canvas, .cam.folded .cam-resize { display: none; }
-  .cam .cam-resize { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none;
-    background: linear-gradient(135deg, transparent 55%, color-mix(in oklch, var(--muted-fg) 55%, transparent) 55%); }
+  .panel.collapsed #legend-wrap { display: none; }
 
   #help { position: absolute; bottom: 14px; left: 16px; z-index: 4; color: var(--muted-fg); opacity: 0.6;
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; user-select: none; }
+
+  /* Floating image windows layer: spans the view but only the windows catch pointer
+     events, so dragging empty space still orbits the 3D scene. */
+  #cam-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  .cam-win { position: absolute; pointer-events: auto; display: flex; flex-direction: column;
+    width: 280px; height: 210px; min-width: 140px; min-height: 116px; resize: both; overflow: hidden;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+    background: color-mix(in oklch, var(--card) 90%, transparent); backdrop-filter: blur(10px); }
+  .cam-win .cam-head { flex: 0 0 auto; font-size: 9px; letter-spacing: var(--track-label); text-transform: uppercase;
+    color: var(--muted-fg); padding: 6px 9px; border-bottom: 1px solid var(--border); cursor: move;
+    display: flex; align-items: center; gap: 7px; font-weight: 700; }
+  .cam-win .cam-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cam-win .cam-badge { flex: 0 0 auto; font-size: 8px; padding: 1px 5px; border-radius: 999px;
+    background: color-mix(in oklch, var(--kc, var(--muted-fg)) 26%, transparent); color: var(--fg); }
+  .cam-win .cam-close { flex: 0 0 auto; cursor: pointer; color: var(--muted-fg); background: none; border: none;
+    font: inherit; font-size: 13px; line-height: 1; padding: 0 2px; }
+  .cam-win .cam-close:hover { color: var(--fg); }
+  .cam-win .cam-body { flex: 1 1 auto; min-height: 0; background: oklch(0.14 0.015 258); }
+  .cam-win canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .cam-win.collapsed { height: auto !important; min-height: 0; resize: none; }
+  .cam-win.collapsed .cam-body { display: none; }
+
+  #ctxmenu { position: absolute; z-index: 9; min-width: 156px; display: none; padding: 4px;
+    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
+  #ctxmenu button { display: block; width: 100%; text-align: left; font: inherit; font-size: 12px;
+    color: var(--fg); background: none; border: none; border-radius: var(--radius-sm); padding: 6px 10px; cursor: pointer; }
+  #ctxmenu button:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); }
+  #marker-coords { position: absolute; bottom: 16px; right: 16px; z-index: 4; display: none;
+    font-family: var(--mono); font-size: 11px; color: var(--fg); letter-spacing: 0.04em; padding: 7px 11px;
+    background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(10px); }
+  #marker-coords .mc-label { display: block; margin-bottom: 3px; color: var(--muted-fg); font-size: 9px;
+    text-transform: uppercase; letter-spacing: var(--track-label); }
+  /* top-slice: double-ended vertical z clip on the right edge */
+  #zslice { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; user-select: none; }
+  #zslice-label { font: inherit; font-size: 9px; color: var(--muted-fg); text-transform: uppercase;
+    letter-spacing: var(--track-label); }
+  #zslice-track { position: relative; width: 10px; height: 42vh; border-radius: 999px;
+    background: color-mix(in oklch, var(--card) 88%, transparent); border: 1px solid var(--border);
+    box-shadow: var(--shadow-md); backdrop-filter: blur(10px); cursor: pointer; }
+  #zslice-fill { position: absolute; left: 0; right: 0; border-radius: 999px;
+    background: color-mix(in oklch, var(--primary) 45%, transparent); }
+  .zslice-thumb { position: absolute; left: 50%; width: 20px; height: 20px; border-radius: 50%;
+    transform: translate(-50%, -50%); background: var(--primary); border: 2px solid var(--card);
+    box-shadow: var(--shadow-md); cursor: grab; touch-action: none; }
+  .zslice-thumb:active { cursor: grabbing; }
+  #zslice-readout { font-family: var(--mono); font-size: 10px; color: var(--fg); letter-spacing: 0.03em;
+    min-height: 13px; text-align: center; }
+  .row .cust-btn { font: inherit; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--secondary-fg); background: var(--secondary); border: none;
+    border-radius: 999px; padding: 3px 9px; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 5px; }
+  .row .cust-btn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.72 0.13 210); }
+  .row .cust-btn .cb-hover { display: none; }
+  .row .cust-btn:hover .cb-idle { display: none; }
+  .row .cust-btn:hover .cb-hover { display: inline; }
+  #cust-panel { position: absolute; z-index: 9; display: none; padding: 9px; min-width: 158px;
+    background: color-mix(in oklch, var(--card) 96%, transparent); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px); }
+  #cust-panel .cp-title { display: block; margin-bottom: 6px; color: var(--muted-fg); font-size: 9px;
+    text-transform: uppercase; letter-spacing: var(--track-label); font-family: var(--mono);
+    max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cust-panel .cp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 1px; font-size: 11px; color: var(--fg); }
+  #cust-panel .cp-row > span { color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; }
+  #cust-panel input[type=color] { width: 42px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  #cust-panel input.cp-hue { -webkit-appearance: none; appearance: none; width: 104px; height: 12px; margin: 0;
+    border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%); }
+  #cust-panel input.cp-hue::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 8px; height: 16px;
+    border-radius: 2px; background: var(--fg); border: 1px solid #000; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
+  #cust-panel input.cp-hue::-moz-range-thumb { width: 8px; height: 16px; border-radius: 2px; background: var(--fg); border: 1px solid #000; }
+  #cust-panel select { font: inherit; font-size: 11px; padding: 2px 4px; }
+  #cust-panel .cp-num { width: 58px; font: inherit; font-size: 11px; padding: 2px 4px; color: var(--fg);
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  #cust-panel .cp-sep { margin: 7px 1px 3px; padding-top: 6px; border-top: 1px solid var(--border);
+    color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.05em; font-size: 8.5px; font-weight: 700; }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://esm.sh/three@0.160.0" } }
@@ -93,544 +172,1430 @@
 </head>
 <body class="science">
 <script>
-  (function () { const m = matchMedia("(prefers-color-scheme: light)");
-    const a = () => document.body.classList.toggle("dark", !m.matches); a(); m.addEventListener("change", a) })()
+  (function () { const media = matchMedia("(prefers-color-scheme: light)");
+    const apply = () => document.body.classList.toggle("dark", !media.matches); apply(); media.addEventListener("change", apply) })()
 </script>
 
 <div id="scene"></div>
 
-<div class="topbar" id="topbar" title="Toggle panel">
+<div class="topbar">
   <img class="brand" src="icon.svg" alt="" />
   <span class="title">Live&nbsp;Viewer</span>
   <span class="sub">· live DimOS scene</span>
-  <span class="chev">▼</span>
   <span class="spacer"></span>
+  <button class="btn" id="top-view" title="Bird's-eye: look straight down on the whole map">Top-down</button>
+  <button class="btn" id="fit-top" title="Auto-fit the camera to frame the whole scene">Fit view</button>
   <span class="pill" id="pill"><span class="dot" id="dot"></span><span id="stat">connecting…</span></span>
 </div>
 
-<div class="panel">
-  <h2>Streams</h2>
+<div class="panel" id="panel">
+  <div class="panel-head">
+    <h2 class="toggle" id="streams-toggle" title="Click to collapse/expand">Streams</h2>
+    <button class="mini-btn" id="toggle-all" title="Show or hide all streams at once">Hide all</button>
+  </div>
   <div id="stream-list"><div class="empty">none yet</div></div>
-  <h2>Legend</h2>
-  <div class="legend">
-    <div class="li"><span class="sw dot" style="background:oklch(0.78 0.14 70)"></span>robot pose &amp; body</div>
-    <div class="li"><span class="sw" style="background:oklch(0.72 0.13 210)"></span>odometry trail</div>
-    <div class="li"><span class="sw" style="background:oklch(0.78 0.18 145)"></span>planned path</div>
-    <div class="li"><span class="sw dot" style="background:oklch(0.72 0.13 210)"></span>lidar / costmap points</div>
+  <div id="legend-wrap">
+    <h2>Legend</h2>
+    <div class="legend">
+      <div class="li"><span class="sw dot" style="background:oklch(0.78 0.14 70)"></span>robot pose &amp; body</div>
+      <div class="li"><span class="sw" style="background:oklch(0.72 0.13 210)"></span>odometry trail</div>
+      <div class="li"><span class="sw" style="background:oklch(0.78 0.18 145)"></span>planned path</div>
+      <div class="li"><span class="sw dot" style="background:oklch(0.72 0.13 210)"></span>lidar / costmap points</div>
+    </div>
   </div>
 </div>
 
-<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · ALT-DRAG PAN · SCROLL DOLLY · RIGHT-DRAG PAN · DBLCLICK RECENTER<span id="campos"></span></div>
+<div id="cam-layer"></div>
+
+<div id="zslice" title="Top slice: drag the handles to clip everything above/below a height (cut away a roof)">
+  <span id="zslice-label">Z slice</span>
+  <div id="zslice-track">
+    <div id="zslice-fill"></div>
+    <div id="zslice-thumb-top" class="zslice-thumb"></div>
+    <div id="zslice-thumb-bot" class="zslice-thumb"></div>
+  </div>
+  <span id="zslice-readout"></span>
+</div>
+
+<div id="help">WASD MOVE · Q/E DOWN/UP · DRAG LOOK · SCROLL DOLLY · RIGHT-DRAG PAN · RIGHT-CLICK MARKER · DBLCLICK RECENTER<span id="campos"></span></div>
+
+<div id="ctxmenu">
+  <button id="ctx-move">Move this marker</button>
+  <button id="ctx-place">Place marker here</button>
+  <button id="ctx-clear">Clear markers</button>
+</div>
+<div id="marker-coords"><span class="mc-label">Marker · floor (m)</span><span id="marker-coords-val"></span></div>
+<div id="cust-panel">
+  <span class="cp-title" id="cp-title"></span>
+  <div class="cp-row"><span>Start</span><input type="range" min="0" max="359" id="cp-start" class="cp-hue"></div>
+  <div class="cp-row"><span>Mid</span><input type="range" min="0" max="359" id="cp-mid" class="cp-hue"></div>
+  <div class="cp-row"><span>End</span><input type="range" min="0" max="359" id="cp-end" class="cp-hue"></div>
+  <div class="cp-row"><span>Axis</span><select id="cp-axis"><option value="2">z</option><option value="0">x</option><option value="1">y</option></select></div>
+  <div class="cp-row"><span>Voxels</span><input type="checkbox" id="cp-voxel"></div>
+  <div class="cp-row"><span>Size</span><select id="cp-voxel-size"><option value="0.05">5&nbsp;cm</option><option value="0.1" selected>10&nbsp;cm</option><option value="0.2">20&nbsp;cm</option><option value="0.4">40&nbsp;cm</option></select></div>
+  <div class="cp-sep">Filter &amp; downsample</div>
+  <div class="cp-row"><span>Downsample</span><select id="cp-down"><option value="1">none</option><option value="2">2&times;</option><option value="4">4&times;</option><option value="8">8&times;</option><option value="16">16&times;</option></select></div>
+  <div class="cp-row"><span>Max range</span><select id="cp-range"><option value="0">none</option><option value="3">3&nbsp;m</option><option value="5">5&nbsp;m</option><option value="10">10&nbsp;m</option><option value="20">20&nbsp;m</option><option value="50">50&nbsp;m</option></select></div>
+  <div class="cp-row"><span>Z min</span><input type="number" id="cp-zmin" class="cp-num" step="0.1" placeholder="—"></div>
+  <div class="cp-row"><span>Z max</span><input type="number" id="cp-zmax" class="cp-num" step="0.1" placeholder="—"></div>
+</div>
 
 <script type="module">
 import * as THREE from "three"
 import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
 
-// ── colormaps: t in [0,1] -> [r,g,b] (0..1) ──
-const clamp01 = (x) => Math.min(1, Math.max(0, x))
-const GRADIENTS = {
-  turbo: (t) => [clamp01(1.0 - Math.abs(2.4 * t - 1.7)), clamp01(1.0 - Math.abs(2.4 * t - 1.2)), clamp01(1.0 - Math.abs(2.4 * t - 0.4))],
-  viridis: (t) => [clamp01(0.28 + t * (0.99 - 0.28)) * (0.4 + 0.6 * t), clamp01(0.02 + t * 0.88), clamp01(0.33 + Math.sin(t * 3.14) * 0.3 - t * 0.2)],
-  cool: (t) => [0.1 + 0.1 * t, 0.4 + 0.6 * t, 1.0 - 0.2 * t],
-  inferno: (t) => [clamp01(t * 1.6), clamp01(t * t * 1.1 - 0.1), clamp01(0.3 * Math.sin(t * 3.14) + t * t * 0.3)],
-  grayscale: (t) => [0.15 + 0.85 * t, 0.15 + 0.85 * t, 0.15 + 0.85 * t],
+// ── cloud coloring: a start→end color gradient mapped along one axis ──
+const clamp01 = (value) => Math.min(1, Math.max(0, value))
+function hexToRgb01(hex) {
+  const value = parseInt(String(hex || "#ffffff").slice(1), 16)
+  return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255]
 }
-const GRAD_NAMES = Object.keys(GRADIENTS)
-// Each new cloud stream starts on a different gradient so clouds are easy to tell apart.
+// The color pickers are hue-only (a rainbow slider, 0..359°), so every picked color
+// is a fully-saturated, mid-lightness hue. These convert between the slider's hue and
+// the hex the rest of the pipeline stores/interpolates.
+function hueToHex(hue) {
+    const sector = (((hue % 360) + 360) % 360) / 60
+    const x = 1 - Math.abs((sector % 2) - 1)
+    let r = 0, g = 0, b = 0
+    if (sector < 1) { r = 1; g = x } else if (sector < 2) { r = x; g = 1 }
+    else if (sector < 3) { g = 1; b = x } else if (sector < 4) { g = x; b = 1 }
+    else if (sector < 5) { r = x; b = 1 } else { r = 1; b = x }
+    const toByte = (channel) => Math.round(channel * 255).toString(16).padStart(2, "0")
+    return "#" + toByte(r) + toByte(g) + toByte(b)
+}
+function hexToHue(hex) {
+    const [r, g, b] = hexToRgb01(hex)
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
+    if (delta === 0) { return 0 }
+    let hue
+    if (max === r) { hue = ((g - b) / delta) % 6 }
+    else if (max === g) { hue = (b - r) / delta + 2 }
+    else { hue = (r - g) / delta + 4 }
+    return (hue * 60 + 360) % 360
+}
+// Channel-average of two hex colors, used as the default mid stop so a fresh
+// stream still reads as a smooth two-color gradient until the user sets a mid.
+function midpointHex(startHex, endHex) {
+    const [sr, sg, sb] = hexToRgb01(startHex)
+    const [er, eg, eb] = hexToRgb01(endHex)
+    const toByte = (channel) => Math.round(clamp01(channel) * 255).toString(16).padStart(2, "0")
+    return "#" + toByte((sr + er) / 2) + toByte((sg + eg) / 2) + toByte((sb + eb) / 2)
+}
+// Each new cloud stream cycles through a default start/end pair so overlapping
+// clouds are easy to tell apart at a glance; the user can customize per-stream.
+const GRAD_PAIRS = [
+  ["#1130ff", "#ff2a12"],
+  ["#3b0f9e", "#f2f21a"],
+  ["#0b3f8f", "#7ffcff"],
+  ["#101010", "#ff9a00"],
+  ["#2a2a2a", "#ffffff"],
+]
+// Per-stream accumulation: "latest" (one frame), "all" (built-up map/path), or a
+// time window in seconds. Sent to the backend so seeks rebuild the same set.
+const ACCUM_OPTIONS = [["latest", "latest"], ["all", "accum"], ["2", "2s"], ["5", "5s"], ["10", "10s"], ["30", "30s"]]
 function nextDefaultGradient() {
-    const used = [...known.values()].filter((s) => s.grad).length
-    return GRAD_NAMES[used % GRAD_NAMES.length]
+  const used = [...known.values()].filter((entry) => entry.gradStart).length
+  return GRAD_PAIRS[used % GRAD_PAIRS.length]
 }
 
 // ── three.js scene (ROS convention: Z up) ──
 const host = document.getElementById("scene")
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-renderer.setClearColor(0x000000, 0)   // transparent: the theme-aware CSS gradient shows through
+renderer.setClearColor(0x000000, 0)
 renderer.setPixelRatio(Math.min(2, devicePixelRatio))
 host.appendChild(renderer.domElement)
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
 camera.up.set(0, 0, 1)
 
-// ── first-person fly controls: WASD move, click-drag to look ──
+// Auto-fit state (declared before the input handlers, which flip userMovedCamera).
+let userMovedCamera = false, framed = false
+
+// ── first-person fly controls: WASD move, Q/E down/up, drag to look, right-drag
+// pan, scroll to dolly, double-click to recenter. Any manual input turns off the
+// auto-fit so the camera stops jumping as new frames stream in.
 const look = { yaw: 0, pitch: 0 }
 function viewDir() {
-    const cosPitch = Math.cos(look.pitch)
-    return new THREE.Vector3(cosPitch * Math.cos(look.yaw), cosPitch * Math.sin(look.yaw), Math.sin(look.pitch))
+  const cosPitch = Math.cos(look.pitch)
+  return new THREE.Vector3(cosPitch * Math.cos(look.yaw), cosPitch * Math.sin(look.yaw), Math.sin(look.pitch))
 }
 function setLookFrom(position, target) {
-    camera.position.copy(position)
-    const dir = new THREE.Vector3().subVectors(target, position).normalize()
-    look.yaw = Math.atan2(dir.y, dir.x)
-    look.pitch = Math.asin(THREE.MathUtils.clamp(dir.z, -1, 1))
+  camera.position.copy(position)
+  const direction = new THREE.Vector3().subVectors(target, position).normalize()
+  look.yaw = Math.atan2(direction.y, direction.x)
+  look.pitch = Math.asin(THREE.MathUtils.clamp(direction.z, -1, 1))
 }
 setLookFrom(new THREE.Vector3(6, -6, 4), new THREE.Vector3(0, 0, 0))
 const heldKeys = new Set()
-window.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return
-    heldKeys.add(e.code)
-    if (e.code === "Space") e.preventDefault()
+window.addEventListener("keydown", (event) => {
+  if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) { return }
+  heldKeys.add(event.code)
+  if (event.code === "Space") { event.preventDefault() }
 })
-window.addEventListener("keyup", (e) => heldKeys.delete(e.code))
+window.addEventListener("keyup", (event) => heldKeys.delete(event.code))
 window.addEventListener("blur", () => heldKeys.clear())
 let dragButton = -1   // 0 = look, 2 = pan
-renderer.domElement.addEventListener("pointerdown", (e) => {
-    dragButton = e.button
-    // Synthetic pointer events (automated tests) have no active pointer to capture.
-    try { renderer.domElement.setPointerCapture(e.pointerId) } catch { /* InvalidPointerId */ }
+let rightDragDist = 0   // right-button travel; a real pan suppresses the marker menu
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (movingMarker) {   // a left-click while repositioning drops the marker where it sits
+    if (event.button === 0) { event.preventDefault(); commitMovingMarker(); return }
+    if (event.button === 2) { event.preventDefault(); cancelMovingMarker(); return }
+  }
+  dragButton = event.button; userMovedCamera = true
+  if (event.button === 2) { rightDragDist = 0 }
+  renderer.domElement.setPointerCapture(event.pointerId)
 })
 renderer.domElement.addEventListener("pointerup", () => { dragButton = -1 })
 renderer.domElement.addEventListener("pointercancel", () => { dragButton = -1 })
-renderer.domElement.addEventListener("pointermove", (e) => {
-    if (dragButton === -1) return
-    if (e.buttons === 0) { dragButton = -1; return }   // missed pointerup (e.g. released off-window)
-    if (dragButton === 0 && e.altKey) {
-        // Alt+drag: pan along the camera's sideways axis and world Z only
-        // (never tilted, unlike right-drag's screen-up pan).
-        const forward = viewDir()
-        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
-        camera.position.addScaledVector(right, -e.movementX * 0.015)
-        camera.position.z += e.movementY * 0.015
-    } else if (dragButton === 0) {
-        // Grab-the-world: the scene follows the cursor. Pitch stays inside ±80°
-        // so looking near straight up/down can never turn yaw into apparent roll.
-        look.yaw += e.movementX * 0.0025
-        look.pitch = THREE.MathUtils.clamp(look.pitch + e.movementY * 0.0025, -1.4, 1.4)
-    } else if (dragButton === 2) {
-        const forward = viewDir()
-        const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
-        const screenUp = new THREE.Vector3().crossVectors(right, forward)
-        camera.position.addScaledVector(right, -e.movementX * 0.015)
-        camera.position.addScaledVector(screenUp, e.movementY * 0.015)
-    }
-})
-renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault())
-// Scroll = fly forward/back along the view direction, same as W/S.
-// Per-event clamp keeps trackpad momentum flings from teleporting the camera.
-renderer.domElement.addEventListener("wheel", (e) => {
-    camera.position.addScaledVector(viewDir(), THREE.MathUtils.clamp(-e.deltaY * 0.01, -1, 1))
-}, { passive: true })
-let homeTarget = new THREE.Vector3(0, 0, 0)
-renderer.domElement.addEventListener("dblclick", () => {
-    setLookFrom(new THREE.Vector3(homeTarget.x + 6, homeTarget.y - 6, homeTarget.z + 4), homeTarget)
-})
-function updateCamera(dt) {
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (dragButton === -1) { return }
+  if (event.buttons === 0) { dragButton = -1; return }   // missed pointerup (released off-window)
+  if (dragButton === 0) {
+    // Grab-the-world look; pitch clamped to ±80° so yaw never reads as roll.
+    look.yaw += event.movementX * 0.004
+    look.pitch = THREE.MathUtils.clamp(look.pitch + event.movementY * 0.004, -1.4, 1.4)
+  } else if (dragButton === 2) {
+    rightDragDist += Math.abs(event.movementX) + Math.abs(event.movementY)
     const forward = viewDir()
     const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
-    const speed = (heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight") ? 15 : 5) * dt
-    if (heldKeys.has("KeyW")) camera.position.addScaledVector(forward, speed)
-    if (heldKeys.has("KeyS")) camera.position.addScaledVector(forward, -speed)
-    if (heldKeys.has("KeyA")) camera.position.addScaledVector(right, -speed)
-    if (heldKeys.has("KeyD")) camera.position.addScaledVector(right, speed)
-    if (heldKeys.has("KeyE") || heldKeys.has("Space")) camera.position.z += speed
-    if (heldKeys.has("KeyQ")) camera.position.z -= speed
-    camera.lookAt(new THREE.Vector3().addVectors(camera.position, forward))
+    const screenUp = new THREE.Vector3().crossVectors(right, forward)
+    camera.position.addScaledVector(right, -event.movementX * 0.015)
+    camera.position.addScaledVector(screenUp, event.movementY * 0.015)
+  }
+})
+// A plain right-click (no pan drag) opens the marker menu at the cursor.
+renderer.domElement.addEventListener("contextmenu", (event) => {
+  event.preventDefault()
+  if (rightDragDist > 6) { return }
+  if (movingMarker) { return }   // right-click already handled as a move-cancel
+  ctxClientX = event.clientX; ctxClientY = event.clientY
+  ctxMenuMarker = pickMarkerAt(event.clientX, event.clientY)
+  document.getElementById("ctx-move").style.display = ctxMenuMarker ? "block" : "none"
+  ctxMenu.style.left = event.clientX + "px"; ctxMenu.style.top = event.clientY + "px"
+  ctxMenu.style.display = "block"
+})
+// Scroll = fly forward/back along the view direction. Per-event clamp keeps
+// trackpad momentum flings from teleporting the camera.
+renderer.domElement.addEventListener("wheel", (event) => {
+  userMovedCamera = true
+  camera.position.addScaledVector(viewDir(), THREE.MathUtils.clamp(-event.deltaY * 0.01, -1, 1))
+}, { passive: true })
+renderer.domElement.addEventListener("dblclick", () => { userMovedCamera = false; fitView() })
+
+// ── floor markers: right-click drops a pin where the cursor ray meets the ground ──
+const raycaster = new THREE.Raycaster()
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)   // z = 0 ground
+const markerGroup = new THREE.Group()
+scene.add(markerGroup)
+const ctxMenu = document.getElementById("ctxmenu")
+const markerCoordsBox = document.getElementById("marker-coords")
+const markerCoordsVal = document.getElementById("marker-coords-val")
+let ctxClientX = 0, ctxClientY = 0
+function floorPointFromScreen(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(ndc, camera)
+  const hit = new THREE.Vector3()
+  return raycaster.ray.intersectPlane(floorPlane, hit) ? hit : null
 }
-// Grid + lighting follow the light/dark theme (read the media query directly so
-// we don't depend on the class-toggle listener order).
+function makeMarker(point) {
+  // Ground ring + vertical stalk + ball, depth-tested so nearer geometry (point
+  // clouds, etc.) occludes the pin like a real object in the scene.
+  const material = () => new THREE.MeshBasicMaterial({ color: 0xffcc33, side: THREE.DoubleSide })
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.19, 28), material())
+  ring.position.z = 0.01
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 8), material())
+  stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1))
+  stalk.position.z = 0.25
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 12), material())
+  ball.position.z = 0.5
+  const marker = new THREE.Group()
+  marker.add(ring, stalk, ball)
+  marker.position.set(point.x, point.y, 0)
+  return marker
+}
+function placeMarker(clientX, clientY) {
+  const point = floorPointFromScreen(clientX, clientY)
+  if (!point) { return }
+  markerGroup.add(makeMarker(point))
+  markerCoordsVal.textContent = `x ${point.x.toFixed(2)}   y ${point.y.toFixed(2)}   z 0.00`
+  markerCoordsBox.style.display = "block"
+}
+function clearMarkers() {
+  while (markerGroup.children.length) {
+    const marker = markerGroup.children.pop()
+    marker.traverse((object) => { if (object.geometry) { object.geometry.dispose() }; if (object.material) { object.material.dispose() } })
+  }
+  markerCoordsBox.style.display = "none"
+}
+// ── move an existing marker: right-click one, pick "Move", then it follows the
+// cursor across the floor until a left-click drops it (right-click / Esc cancels) ──
+let movingMarker = null
+let movingMarkerOrigin = null
+function pickMarkerAt(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(ndc, camera)
+  const hits = raycaster.intersectObjects(markerGroup.children, true)
+  if (hits.length) {
+    let object = hits[0].object
+    while (object.parent && object.parent !== markerGroup) { object = object.parent }
+    return object
+  }
+  // fallback: a marker's thin geometry can be missed, so also grab the nearest
+  // pin within a small radius of where the cursor ray meets the floor.
+  const point = floorPointFromScreen(clientX, clientY)
+  if (!point) { return null }
+  let nearest = null, nearestDist = 0.45
+  for (const marker of markerGroup.children) {
+    const dist = Math.hypot(marker.position.x - point.x, marker.position.y - point.y)
+    if (dist < nearestDist) { nearestDist = dist; nearest = marker }
+  }
+  return nearest
+}
+function startMovingMarker(marker) {
+  movingMarker = marker
+  movingMarkerOrigin = marker.position.clone()
+  renderer.domElement.style.cursor = "grabbing"
+  markerCoordsBox.style.display = "block"
+}
+function commitMovingMarker() {
+  movingMarker = null; movingMarkerOrigin = null
+  renderer.domElement.style.cursor = ""
+}
+function cancelMovingMarker() {
+  if (movingMarker && movingMarkerOrigin) { movingMarker.position.copy(movingMarkerOrigin) }
+  commitMovingMarker()
+}
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (!movingMarker) { return }
+  const point = floorPointFromScreen(event.clientX, event.clientY)
+  if (!point) { return }
+  movingMarker.position.set(point.x, point.y, 0)
+  markerCoordsVal.textContent = `x ${point.x.toFixed(2)}   y ${point.y.toFixed(2)}   z 0.00`
+})
+function hideCtxMenu() { ctxMenu.style.display = "none" }
+let ctxMenuMarker = null
+document.getElementById("ctx-move").addEventListener("click", () => { if (ctxMenuMarker) { startMovingMarker(ctxMenuMarker) }; hideCtxMenu() })
+document.getElementById("ctx-place").addEventListener("click", () => { placeMarker(ctxClientX, ctxClientY); hideCtxMenu() })
+document.getElementById("ctx-clear").addEventListener("click", () => { clearMarkers(); hideCtxMenu() })
+window.addEventListener("pointerdown", (event) => { if (!ctxMenu.contains(event.target)) { hideCtxMenu() } }, true)
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCtxMenu(); cancelMovingMarker() } })
+
+// ── per-cloud customize popup (start color / end color / gradient axis) ──
+const custPanel = document.getElementById("cust-panel")
+const custStart = document.getElementById("cp-start")
+const custMid = document.getElementById("cp-mid")
+const custEnd = document.getElementById("cp-end")
+const custAxis = document.getElementById("cp-axis")
+const custVoxel = document.getElementById("cp-voxel")
+const custVoxelSize = document.getElementById("cp-voxel-size")
+const custDown = document.getElementById("cp-down")
+const custRange = document.getElementById("cp-range")
+const custZmin = document.getElementById("cp-zmin")
+const custZmax = document.getElementById("cp-zmax")
+let custStream = null
+function hideCustPanel() { custPanel.style.display = "none"; custStream = null }
+function openCustPanel(name, button) {
+  const entry = known.get(name); if (!entry) { return }
+  custStream = name
+  document.getElementById("cp-title").textContent = name.split("#")[0]
+  const startHex = entry.gradStart || GRAD_PAIRS[0][0]
+  const endHex = entry.gradEnd || GRAD_PAIRS[0][1]
+  custStart.value = String(Math.round(hexToHue(startHex)))
+  custMid.value = String(Math.round(hexToHue(entry.gradMid || midpointHex(startHex, endHex))))
+  custEnd.value = String(Math.round(hexToHue(endHex)))
+  custAxis.value = String(entry.axis ?? 2)
+  custVoxel.checked = !!entry.voxel
+  custVoxelSize.value = String(entry.voxelSize ?? 0.1)
+  custDown.value = String(entry.downsample ?? 1)
+  custRange.value = String(entry.rangeMax ?? 0)
+  custZmin.value = Number.isFinite(entry.zMin) ? String(entry.zMin) : ""
+  custZmax.value = Number.isFinite(entry.zMax) ? String(entry.zMax) : ""
+  custPanel.style.display = "block"
+  const rect = button.getBoundingClientRect()
+  const width = custPanel.offsetWidth, height = custPanel.offsetHeight
+  const left = Math.min(rect.left, innerWidth - width - 8)
+  const top = rect.bottom + height + 8 > innerHeight ? rect.top - height - 6 : rect.bottom + 6
+  custPanel.style.left = `${Math.max(8, left)}px`
+  custPanel.style.top = `${Math.max(8, top)}px`
+}
+document.getElementById("stream-list").addEventListener("click", (event) => {
+  const custButton = event.target.closest(".cust-btn")
+  if (custButton) {
+    event.preventDefault()
+    openCustPanel(decodeURIComponent(custButton.dataset.cust), custButton)
+    return
+  }
+})
+// Apply on "change" (commit), not "input": the native color pickers fire "input"
+// continuously while dragging, and recoloring every accumulated frame per tick chugs.
+// "change" fires once the user settles on a color (and on select/number commit).
+custPanel.addEventListener("change", () => {
+  const entry = custStream && known.get(custStream); if (!entry) { return }
+  entry.gradStart = hueToHex(+custStart.value)
+  entry.gradMid = hueToHex(+custMid.value)
+  entry.gradEnd = hueToHex(+custEnd.value)
+  entry.axis = +custAxis.value
+  const wasVoxel = entry.voxel
+  entry.voxel = custVoxel.checked
+  entry.voxelSize = +custVoxelSize.value
+  const prevDown = entry.downsample, prevRange = entry.rangeMax, prevZmin = entry.zMin, prevZmax = entry.zMax
+  entry.downsample = +custDown.value || 1
+  entry.rangeMax = +custRange.value || 0
+  entry.zMin = custZmin.value === "" ? null : +custZmin.value
+  entry.zMax = custZmax.value === "" ? null : +custZmax.value
+  const displayChanged = entry.downsample !== prevDown || entry.rangeMax !== prevRange
+    || entry.zMin !== prevZmin || entry.zMax !== prevZmax
+  const cloud = clouds.get(custStream)
+  if (cloud) { if (displayChanged) { applyCloudDisplay(cloud) } else { recolor(cloud) } }
+  if (entry.voxel !== wasVoxel) { refreshStreams() }
+  saveStreamStyle(custStream, entry)
+})
+window.addEventListener("pointerdown", (event) => {
+  if (custStream && !custPanel.contains(event.target) && !event.target.closest(".cust-btn")) { hideCustPanel() }
+}, true)
+window.addEventListener("keydown", (event) => { if (event.code === "Escape") { hideCustPanel() } })
+function updateCamera(dt) {
+  const forward = viewDir()
+  const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize()
+  const speed = (heldKeys.has("ShiftLeft") || heldKeys.has("ShiftRight") ? 15 : 5) * dt
+  let moved = false
+  if (heldKeys.has("KeyW")) { camera.position.addScaledVector(forward, speed); moved = true }
+  if (heldKeys.has("KeyS")) { camera.position.addScaledVector(forward, -speed); moved = true }
+  if (heldKeys.has("KeyA")) { camera.position.addScaledVector(right, -speed); moved = true }
+  if (heldKeys.has("KeyD")) { camera.position.addScaledVector(right, speed); moved = true }
+  if (heldKeys.has("KeyE") || heldKeys.has("Space")) { camera.position.z += speed; moved = true }
+  if (heldKeys.has("KeyQ")) { camera.position.z -= speed; moved = true }
+  if (moved) { userMovedCamera = true }
+  camera.lookAt(new THREE.Vector3().addVectors(camera.position, forward))
+}
+
 const THEME = {
   dark:  { grid1: 0x2b3a44, grid2: 0x19242b, sky: 0xbfd8ff, ground: 0x101820 },
   light: { grid1: 0x9aa7b2, grid2: 0xc3ccd4, sky: 0xffffff, ground: 0xb6c2ce },
 }
 const isDark = () => !matchMedia("(prefers-color-scheme: light)").matches
-let grid = null, hemi = null
+let grid = null, hemi = null, sun = null
 function applyTheme() {
-  const t = isDark() ? THEME.dark : THEME.light
+  const theme = isDark() ? THEME.dark : THEME.light
   if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose() }
-  grid = new THREE.GridHelper(40, 40, t.grid1, t.grid2)
-  grid.rotation.x = Math.PI / 2   // grid in the XY (ground) plane for Z-up
+  grid = new THREE.GridHelper(40, 40, theme.grid1, theme.grid2)
+  grid.rotation.x = Math.PI / 2
   scene.add(grid)
-  if (hemi) scene.remove(hemi)
-  hemi = new THREE.HemisphereLight(t.sky, t.ground, 1.1)
+  if (hemi) { scene.remove(hemi) }
+  hemi = new THREE.HemisphereLight(theme.sky, theme.ground, 1.1)
   scene.add(hemi)
+  // A directional key light (from above/side, Z-up scene) so lit meshes — the
+  // voxel cubes especially — get clear facet shading instead of a flat fill.
+  if (!sun) { sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(6, 4, 12); scene.add(sun) }
 }
 applyTheme()
 // Solid cylinder axes instead of AxesHelper: 1px lines lying in the grid plane
 // z-fight with the GridHelper; real thickness (and a tiny z lift) avoids that.
 function makeAxes(length, radius) {
-    const axesGroup = new THREE.Group()
-    const axisSpecs = [
-        { color: 0xef4444, dir: new THREE.Vector3(1, 0, 0) },
-        { color: 0x22c55e, dir: new THREE.Vector3(0, 1, 0) },
-        { color: 0x3b82f6, dir: new THREE.Vector3(0, 0, 1) },
-    ]
-    for (const { color, dir } of axisSpecs) {
-        const rod = new THREE.Mesh(
-            new THREE.CylinderGeometry(radius, radius, length, 12),
-            new THREE.MeshBasicMaterial({ color }),
-        )
-        rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
-        rod.position.copy(dir).multiplyScalar(length / 2)
-        axesGroup.add(rod)
-    }
-    axesGroup.position.z = 0.002
-    return axesGroup
+  const axesGroup = new THREE.Group()
+  const axisSpecs = [
+    { color: 0xef4444, dir: new THREE.Vector3(1, 0, 0) },
+    { color: 0x22c55e, dir: new THREE.Vector3(0, 1, 0) },
+    { color: 0x3b82f6, dir: new THREE.Vector3(0, 0, 1) },
+  ]
+  for (const { color, dir } of axisSpecs) {
+    const rod = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, length, 12),
+      new THREE.MeshBasicMaterial({ color }))
+    rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir)
+    rod.position.copy(dir).multiplyScalar(length / 2)
+    axesGroup.add(rod)
+  }
+  axesGroup.position.z = 0.002
+  return axesGroup
 }
 scene.add(makeAxes(1.5, 0.02))
 
 // A few landmark props so an empty scene still reads spatially (Z-up).
 {
-    const propMaterial = (color) => new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.7 })
-    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), propMaterial(0x8a6d3b))
-    crate.position.set(3, 2, 0.3)
-    const smallCrate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), propMaterial(0x7a5cb8))
-    smallCrate.position.set(3.6, 1.5, 0.2)
-    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 24), propMaterial(0x3b82a0))
-    drum.rotation.x = Math.PI / 2
-    drum.position.set(-2.5, 3, 0.4)
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 24), propMaterial(0xd97a3d))
-    cone.rotation.x = Math.PI / 2
-    cone.position.set(1.5, -2.8, 0.35)
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), propMaterial(0x4caf7d))
-    ball.position.set(-3, -2, 0.3)
-    scene.add(crate, smallCrate, drum, cone, ball)
+  const propMaterial = (color) => new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.7 })
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), propMaterial(0x8a6d3b))
+  crate.position.set(3, 2, 0.3)
+  const smallCrate = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), propMaterial(0x7a5cb8))
+  smallCrate.position.set(3.6, 1.5, 0.2)
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 24), propMaterial(0x3b82a0))
+  drum.rotation.x = Math.PI / 2
+  drum.position.set(-2.5, 3, 0.4)
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 24), propMaterial(0xd97a3d))
+  cone.rotation.x = Math.PI / 2
+  cone.position.set(1.5, -2.8, 0.35)
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), propMaterial(0x4caf7d))
+  ball.position.set(-3, -2, 0.3)
+  scene.add(crate, smallCrate, drum, cone, ball)
 }
+
 matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => setTimeout(applyTheme, 0))
 
-const BASE_VFOV = 60, MAX_HFOV = 100   // degrees; wide windows would otherwise hit ~130° horizontal
+// Cap the horizontal FOV: on very wide windows keep hfov ≤ MAX_HFOV by shrinking
+// the vertical fov, so edges don't get fisheye-stretched.
+const BASE_VFOV = 60, MAX_HFOV = 100
 function resize() {
-  const w = host.clientWidth, h = host.clientHeight
-  // updateStyle must stay true: without CSS sizing the canvas displays at its
-  // attribute size (w × pixelRatio), i.e. double-size on retina, clipped to the
-  // top-left quarter — which put the scene center at the window's bottom-right.
-  renderer.setSize(w, h)
-  camera.aspect = w / h
-  // Cap the horizontal FOV: on very wide windows keep hfov ≤ MAX_HFOV by
-  // shrinking the vertical fov, so edges don't get fisheye-stretched.
-  const halfH = Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_VFOV) / 2) * camera.aspect)
-  camera.fov = halfH > THREE.MathUtils.degToRad(MAX_HFOV) / 2
+  const width = host.clientWidth, height = host.clientHeight
+  // setSize's updateStyle must stay true (default): without CSS sizing the canvas
+  // displays at its attribute size (w × pixelRatio), clipped to the top-left quarter,
+  // which pushes the scene center to the window's bottom-right.
+  renderer.setSize(width, height)
+  camera.aspect = width / height
+  const halfHorizontal = Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_VFOV) / 2) * camera.aspect)
+  camera.fov = halfHorizontal > THREE.MathUtils.degToRad(MAX_HFOV) / 2
     ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(MAX_HFOV) / 2) / camera.aspect))
     : BASE_VFOV
   camera.updateProjectionMatrix()
 }
 new ResizeObserver(resize).observe(host); resize()
-const clock = new THREE.Clock()
+
+// ── camera framing: auto-fit the whole scene until the user moves, then leave it ──
+const fitBox = new THREE.Box3(), fitTmp = new THREE.Box3(), fitVec = new THREE.Vector3()
+function sceneBounds() {
+  // Prefer the trajectory extent — it is the meaningful scene size. Cloud scans can
+  // carry long-range outliers that would otherwise blow the fit out to nothing.
+  fitBox.makeEmpty()
+  let haveTrail = false
+  odoms.forEach((odom) => {
+    if (!odom.trail.visible || !odom.count) { return }
+    const array = odom.geom.getAttribute("position").array   // world-space, bound only written verts
+    for (let i = 0; i < odom.count; i++) {
+      fitVec.set(array[i * 3], array[i * 3 + 1], array[i * 3 + 2]); fitBox.expandByPoint(fitVec); haveTrail = true
+    }
+  })
+  if (haveTrail) { return fitBox }
+  clouds.forEach((cloud) => {
+    if (!cloud.group.visible) { return }
+    for (const frame of cloud.frames) {
+      frame.geom.computeBoundingBox()
+      if (frame.geom.boundingBox) { fitTmp.copy(frame.geom.boundingBox).applyMatrix4(frame.points.matrix); fitBox.union(fitTmp) }
+    }
+  })
+  return fitBox
+}
+function fitView() {
+  const box = sceneBounds()
+  if (box.isEmpty()) { return }
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const horizontal = Math.max(size.x, size.y, 1)
+  const distance = (horizontal * 0.5 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.2
+  // Look ACROSS the longer horizontal axis (not down it) so a long corridor spreads
+  // over the screen width instead of foreshortening to a line; elevate for a 3/4 view.
+  const position = size.x >= size.y
+    ? new THREE.Vector3(center.x - distance * 0.12, center.y - distance * 0.72, center.z + distance * 0.62)
+    : new THREE.Vector3(center.x + distance * 0.72, center.y - distance * 0.12, center.z + distance * 0.62)
+  setLookFrom(position, center)
+  camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
+}
+document.getElementById("fit-top").addEventListener("click", () => { userMovedCamera = false; fitView() })
+// Bird's-eye: hover the camera almost straight over the scene center looking down, so
+// the whole map reads as a 2D floor plan. A tiny south offset keeps the fly-cam's
+// world-Z-up stable (a true nadir view is degenerate with an up vector along Z).
+function birdsEyeView() {
+  const box = sceneBounds()
+  if (box.isEmpty()) { return }
+  const center = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const horizontal = Math.max(size.x, size.y, 1)
+  const distance = (horizontal * 0.5 / Math.tan((camera.fov * Math.PI / 180) / 2)) * 1.25
+  const position = new THREE.Vector3(center.x, center.y - horizontal * 0.02, center.z + distance)
+  setLookFrom(position, center)
+  camera.far = Math.max(distance * 30, 5000); camera.near = Math.max(0.05, distance / 800); camera.updateProjectionMatrix()
+}
+document.getElementById("top-view").addEventListener("click", () => { userMovedCamera = true; birdsEyeView() })
+
+// ── top-slice: two global clipping planes (world Z-up) that hide everything above
+// the top handle and below the bottom handle, so you can lift off a roof. Handle
+// fractions run 0 (bottom of the scene) .. 1 (top); wide-open = clipping off. ──
+const zClipTopPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
+const zClipBottomPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
+let zSliceTopFraction = 1, zSliceBottomFraction = 0
+const zSliceTrack = document.getElementById("zslice-track")
+const zSliceFill = document.getElementById("zslice-fill")
+const zSliceThumbTop = document.getElementById("zslice-thumb-top")
+const zSliceThumbBottom = document.getElementById("zslice-thumb-bot")
+const zSliceReadout = document.getElementById("zslice-readout")
+function zSceneExtent() {
+  // World-space min/max Z across whatever is currently drawn (clouds + trajectory).
+  let low = Infinity, high = -Infinity
+  clouds.forEach((cloud) => {
+    if (!cloud.group.visible) { return }
+    for (const frame of cloud.frames) {
+      frame.geom.computeBoundingBox()
+      if (!frame.geom.boundingBox) { continue }
+      fitTmp.copy(frame.geom.boundingBox).applyMatrix4(frame.points.matrix)
+      if (fitTmp.min.z < low) { low = fitTmp.min.z }
+      if (fitTmp.max.z > high) { high = fitTmp.max.z }
+    }
+  })
+  odoms.forEach((odom) => {
+    if (!odom.trail.visible || !odom.count) { return }
+    const array = odom.geom.getAttribute("position").array
+    for (let i = 0; i < odom.count; i++) {
+      const z = array[i * 3 + 2]
+      if (z < low) { low = z }
+      if (z > high) { high = z }
+    }
+  })
+  if (!isFinite(low) || !isFinite(high) || high - low < 0.1) { return [0, 3] }
+  const pad = (high - low) * 0.04
+  return [low - pad, high + pad]
+}
+let zSliceExtentCache = null   // recomputed at drag-start; reused for the drag's duration
+function applyZSlice() {
+  const topActive = zSliceTopFraction < 0.999
+  const bottomActive = zSliceBottomFraction > 0.001
+  let zTop = 0, zBottom = 0
+  if (topActive || bottomActive) {   // only touch the (later-defined) scene maps when actually clipping
+    const [low, high] = zSliceExtentCache ?? zSceneExtent()
+    const span = high - low
+    zTop = low + zSliceTopFraction * span
+    zBottom = low + zSliceBottomFraction * span
+  }
+  const planes = []
+  if (topActive) { zClipTopPlane.constant = zTop; planes.push(zClipTopPlane) }
+  if (bottomActive) { zClipBottomPlane.constant = -zBottom; planes.push(zClipBottomPlane) }
+  renderer.clippingPlanes = planes
+  // handle + fill positions (0 = bottom of track, so top handle sits higher up)
+  zSliceThumbTop.style.top = `${(1 - zSliceTopFraction) * 100}%`
+  zSliceThumbBottom.style.top = `${(1 - zSliceBottomFraction) * 100}%`
+  zSliceFill.style.top = `${(1 - zSliceTopFraction) * 100}%`
+  zSliceFill.style.height = `${(zSliceTopFraction - zSliceBottomFraction) * 100}%`
+  if (topActive || bottomActive) {
+    const shownTop = topActive ? `${zTop.toFixed(2)}` : "top"
+    const shownBottom = bottomActive ? `${zBottom.toFixed(2)}` : "flr"
+    zSliceReadout.textContent = `${shownBottom} – ${shownTop} m`
+  } else {
+    zSliceReadout.textContent = ""
+  }
+}
+let zSliceActiveThumb = null
+function zSliceFractionFromEvent(event) {
+  const rect = zSliceTrack.getBoundingClientRect()
+  return THREE.MathUtils.clamp(1 - (event.clientY - rect.top) / rect.height, 0, 1)
+}
+function zSliceStartDrag(thumb, event) {
+  event.preventDefault(); event.stopPropagation()
+  zSliceActiveThumb = thumb
+  zSliceExtentCache = zSceneExtent()
+  window.addEventListener("pointermove", zSliceOnDrag)
+  window.addEventListener("pointerup", zSliceEndDrag)
+}
+function zSliceOnDrag(event) {
+  if (!zSliceActiveThumb) { return }
+  const fraction = zSliceFractionFromEvent(event)
+  const gap = 0.02
+  if (zSliceActiveThumb === "top") {
+    zSliceTopFraction = Math.max(fraction, zSliceBottomFraction + gap)
+  } else {
+    zSliceBottomFraction = Math.min(fraction, zSliceTopFraction - gap)
+  }
+  applyZSlice()
+}
+function zSliceEndDrag() {
+  zSliceActiveThumb = null; zSliceExtentCache = null
+  window.removeEventListener("pointermove", zSliceOnDrag)
+  window.removeEventListener("pointerup", zSliceEndDrag)
+}
+zSliceThumbTop.addEventListener("pointerdown", (event) => zSliceStartDrag("top", event))
+zSliceThumbBottom.addEventListener("pointerdown", (event) => zSliceStartDrag("bottom", event))
+// double-click either handle to reset that end to fully open
+zSliceThumbTop.addEventListener("dblclick", () => { zSliceTopFraction = 1; applyZSlice() })
+zSliceThumbBottom.addEventListener("dblclick", () => { zSliceBottomFraction = 0; applyZSlice() })
+applyZSlice()
+
+const frameClock = new THREE.Clock()
 const camposEl = document.getElementById("campos")
 ;(function loop() {
-    requestAnimationFrame(loop)
-    updateCamera(Math.min(clock.getDelta(), 0.1))
-    camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)} YAW ${(look.yaw * 57.3).toFixed(0)}° PITCH ${(look.pitch * 57.3).toFixed(0)}°`
-    renderer.render(scene, camera)
+  requestAnimationFrame(loop)
+  updateCamera(Math.min(frameClock.getDelta(), 0.1))
+  if (camposEl) { camposEl.textContent = ` · CAM ${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}` }
+  renderer.render(scene, camera)
 })()
 
 // ── TF tree: child -> { parent, matrix(T_parent_child) } ──
 const tf = new Map()
-const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion()
-function setTf(parent, child, t, q) {
-  const m = new THREE.Matrix4().compose(tmpV.set(t[0], t[1], t[2]), tmpQ.set(q[0], q[1], q[2], q[3]), { x: 1, y: 1, z: 1 })
-  tf.set(child, { parent, matrix: m })
+const tfParents = new Set()   // frames that appear as a tf parent (tree roots are global)
+const tmpVector = new THREE.Vector3(), tmpQuat = new THREE.Quaternion()
+function setTf(parent, child, translation, rotation) {
+  const matrix = new THREE.Matrix4().compose(
+    tmpVector.set(translation[0], translation[1], translation[2]),
+    tmpQuat.set(rotation[0], rotation[1], rotation[2], rotation[3]),
+    { x: 1, y: 1, z: 1 })
+  tf.set(child, { parent, matrix })
+  tfParents.add(parent)
 }
 function worldMatrix(frame) {
   const chain = []
-  let f = frame, guard = 0
-  while (f && tf.has(f) && guard++ < 64) { const e = tf.get(f); chain.push(e.matrix); f = e.parent }
-  const m = new THREE.Matrix4()
-  for (let i = chain.length - 1; i >= 0; i--) m.multiply(chain[i])
-  return m
+  let current = frame, guard = 0
+  while (current && tf.has(current) && guard++ < 64) { const edge = tf.get(current); chain.push(edge.matrix); current = edge.parent }
+  const matrix = new THREE.Matrix4()
+  for (let i = chain.length - 1; i >= 0; i--) { matrix.multiply(chain[i]) }
+  return matrix
+}
+// A global (fixed) frame carries data already in world coordinates, so it maps to
+// the world with identity — NOT anchored to the robot pose. This catches both the
+// named world frames and any tf root (a frame that is only ever a tf parent), so a
+// cloud stored in "world"/"odom" isn't re-shifted by the odometry pose on top of its
+// already-global coords (which would fling it off, detached from the trajectory).
+const GLOBAL_FRAME_NAMES = /^(world|map|odom|earth|global)$/i
+function isGlobalFrame(frame) {
+  return GLOBAL_FRAME_NAMES.test(frame) || (tfParents.has(frame) && !tf.has(frame))
 }
 
-function b64ToBuf(b64) {
-  const bin = atob(b64); const u = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
-  return u.buffer
+function b64ToBuffer(b64) {
+  const binary = atob(b64); const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i) }
+  return bytes.buffer
 }
 
-// ── point clouds (lidar, costmap) ──
+// ── point clouds ──
 const clouds = new Map()   // stream -> { points, geom, frame }
+// Each cloud stream is a group of one-or-more frame Points. In "latest" mode it
+// holds a single frame; accumulation keeps recent frames (time window) or a capped
+// history ("all") so the scene builds up into a map.
+const CLOUD_ACCUM_CAP = 240   // max retained frames per stream (bounds GPU memory)
+// Fallback anchor for clouds whose frame_id isn't in the tf tree (e.g. a lidar
+// frame like "mid360_link" that never gets a tf edge to the world). Such a cloud
+// is in the sensor frame, so without a pose every scan re-centers at the origin and
+// accumulation just stacks them. We instead ride the latest robot odometry pose so
+// accumulated scans spread out into a map. Updated by onOdom for anchored streams.
+let lastOdomWorld = null
 function ensureCloud(stream) {
-  let c = clouds.get(stream)
-  if (c) return c
-  const geom = new THREE.BufferGeometry()
-  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(0), 3))
-  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(0), 3))
-  const mat = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
-  const points = new THREE.Points(geom, mat)
-  points.matrixAutoUpdate = false
-  scene.add(points)
-  c = { points, geom, frame: "", stream }
-  clouds.set(stream, c)
-  return c
+  let cloud = clouds.get(stream)
+  if (cloud) { return cloud }
+  const material = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true })
+  const group = new THREE.Group()
+  scene.add(group)
+  cloud = { group, material, frames: [], frame: "", stream }
+  clouds.set(stream, cloud)
+  return cloud
 }
-function recolor(c) {
-  const pos = c.geom.getAttribute("position"); if (!pos || !pos.count) return
-  const col = c.geom.getAttribute("color")
-  const arr = pos.array, n = pos.count
-  const streamEntry = known.get(c.stream)
-  const axisIdx = streamEntry?.axis ?? 2
-  let lo = Infinity, hi = -Infinity
-  for (let i = 0; i < n; i++) { const v = arr[i * 3 + axisIdx]; if (v < lo) lo = v; if (v > hi) hi = v }
-  const span = hi > lo ? hi - lo : 1
-  const g = GRADIENTS[streamEntry?.grad] || GRADIENTS.turbo
-  const cArr = col.array
-  for (let i = 0; i < n; i++) {
-    const [r, gg, b] = g((arr[i * 3 + axisIdx] - lo) / span)
-    cArr[i * 3] = r; cArr[i * 3 + 1] = gg; cArr[i * 3 + 2] = b
+function colorGeom(geom, entry) {
+  const position = geom.getAttribute("position"); if (!position || !position.count) { return }
+  const color = geom.getAttribute("color")
+  const array = position.array, count = position.count
+  const axisIdx = entry?.axis ?? 2
+  let low = Infinity, high = -Infinity
+  for (let i = 0; i < count; i++) { const value = array[i * 3 + axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
+  const span = high > low ? high - low : 1
+  const stops = gradStops(entry)
+  const colors = color.array
+  for (let i = 0; i < count; i++) {
+    const t = clamp01((array[i * 3 + axisIdx] - low) / span)
+    const [r, g, b] = gradColorAt(stops, t)
+    colors[i * 3] = r; colors[i * 3 + 1] = g; colors[i * 3 + 2] = b
   }
-  col.needsUpdate = true
+  color.needsUpdate = true
 }
-function onCloud(p) {
-  const c = ensureCloud(p.stream)
-  c.frame = p.frame
-  const xyz = new Float32Array(b64ToBuf(p.b64))
-  c.geom.setAttribute("position", new THREE.BufferAttribute(xyz, 3))
-  c.geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(xyz.length), 3))
-  c.geom.computeBoundingSphere()
-  recolor(c)
-  c.points.matrix.copy(worldMatrix(p.frame))
-  refreshStreams()
+// A three-stop gradient (start → mid → end). The mid stop defaults to the
+// channel-average of start/end so an unset mid still reads as a smooth two-color
+// ramp, but the user can pick a mid to get a stronger/wider range of hues.
+function gradStops(entry) {
+    const startHex = entry?.gradStart || GRAD_PAIRS[0][0]
+    const endHex = entry?.gradEnd || GRAD_PAIRS[0][1]
+    const midHex = entry?.gradMid || midpointHex(startHex, endHex)
+    return [hexToRgb01(startHex), hexToRgb01(midHex), hexToRgb01(endHex)]
+}
+function gradColorAt(stops, t) {
+    const [start, mid, end] = stops
+    if (t < 0.5) {
+        const u = t * 2
+        return [start[0] + (mid[0] - start[0]) * u, start[1] + (mid[1] - start[1]) * u, start[2] + (mid[2] - start[2]) * u]
+    }
+    const u = (t - 0.5) * 2
+    return [mid[0] + (end[0] - mid[0]) * u, mid[1] + (end[1] - mid[1]) * u, mid[2] + (end[2] - mid[2]) * u]
+}
+// ── UI-side filter + downsample for the (accumulated) cloud view ──
+// Returns the kept LOCAL xyz for a frame after applying the stream's downsample
+// (keep every Nth point) and world-space filters (max range from the sensor pose,
+// Z-height clip). The displayed point/voxel geometry is rebuilt from this, so both
+// views honor the same settings. With no filtering the raw buffer is returned as-is
+// (shared reference — no copy) so the common case stays memory-cheap.
+function computeKeptLocal(raw, entry, pose) {
+  const count = raw.length / 3
+  const stride = Math.max(1, Math.round(entry?.downsample || 1))
+  const rangeMax = entry?.rangeMax || 0
+  const rangeSq = rangeMax * rangeMax
+  const zMin = Number.isFinite(entry?.zMin) ? entry.zMin : -Infinity
+  const zMax = Number.isFinite(entry?.zMax) ? entry.zMax : Infinity
+  const hasFilter = rangeMax > 0 || zMin > -Infinity || zMax < Infinity
+  if (stride === 1 && !hasFilter) { return raw }
+  const sx = pose[12], sy = pose[13], sz = pose[14]   // sensor world position
+  const kept = new Float32Array(count * 3)   // upper bound; sliced to fit below
+  let written = 0
+  for (let i = 0; i < count; i++) {
+    if (i % stride !== 0) { continue }
+    const x = raw[i * 3], y = raw[i * 3 + 1], z = raw[i * 3 + 2]
+    if (hasFilter) {
+      const wx = pose[0] * x + pose[4] * y + pose[8] * z + pose[12]
+      const wy = pose[1] * x + pose[5] * y + pose[9] * z + pose[13]
+      const wz = pose[2] * x + pose[6] * y + pose[10] * z + pose[14]
+      if (wz < zMin || wz > zMax) { continue }
+      if (rangeSq > 0) { const dx = wx - sx, dy = wy - sy, dz = wz - sz; if (dx * dx + dy * dy + dz * dz > rangeSq) { continue } }
+    }
+    kept[written++] = x; kept[written++] = y; kept[written++] = z
+  }
+  return kept.slice(0, written)   // right-sized copy so the oversized temp is freed
+}
+function rebuildFrameGeom(cloud, frame, entry) {
+  const kept = computeKeptLocal(frame.rawXyz, entry, frame.points.matrix.elements)
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(kept, 3))
+  geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(kept.length), 3))
+  geom.computeBoundingSphere()
+  colorGeom(geom, entry)
+  if (frame.geom) { frame.geom.dispose() }
+  frame.geom = geom
+  frame.points.geometry = geom
+}
+// Rebuild every frame's displayed geometry (filter/downsample changed), then refresh
+// the voxel meshes so they match.
+function applyCloudDisplay(cloud) {
+  const entry = known.get(cloud.stream)
+  for (const frame of cloud.frames) { rebuildFrameGeom(cloud, frame, entry) }
+  syncCloud(cloud, true)
+}
+// ── voxel rendering: quantize a frame's points onto a grid and draw one instanced
+// cube per occupied cell, colored by the same gradient/axis as the point view. ──
+const voxelColor = new THREE.Color(), voxelMatrix = new THREE.Matrix4()
+// Depth cue: dim each voxel fragment by its view-space distance so far cubes read as
+// darker, adding a sense of depth. Done entirely in the shader (a tiny onBeforeCompile
+// patch), so it costs nothing per frame on the CPU — the GPU already knows each
+// fragment's depth. Dimming starts at VOXEL_DEPTH_NEAR and eases to VOXEL_DEPTH_FLOOR
+// brightness by VOXEL_DEPTH_FAR; kept subtle per the "slightly" ask.
+const VOXEL_DEPTH_NEAR = 1.5, VOXEL_DEPTH_FAR = 9.0, VOXEL_DEPTH_FLOOR = 0.25
+// Lambert shading multiplies each voxel's hue by the incoming light, which darkens and
+// desaturates it (looks dull). Blend the lit result back toward the pure per-instance
+// hue by this much so colors stay vibrant while the lighting still gives shape/shading.
+const VOXEL_VIBRANCY = 0.55
+function applyVoxelShading(material) {
+    material.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nvarying float vVoxelViewDepth;\nvarying vec3 vVoxelPureColor;")
+            .replace("#include <color_vertex>", "#include <color_vertex>\nvVoxelPureColor = vColor;")
+            .replace("#include <project_vertex>", "#include <project_vertex>\nvVoxelViewDepth = -mvPosition.z;")
+        shader.fragmentShader = shader.fragmentShader
+            .replace("#include <common>", "#include <common>\nvarying float vVoxelViewDepth;\nvarying vec3 vVoxelPureColor;")
+            .replace(
+                "#include <dithering_fragment>",
+                "gl_FragColor.rgb = mix(gl_FragColor.rgb, vVoxelPureColor, " + VOXEL_VIBRANCY.toFixed(3) + ");\n" +
+                "float voxelDepthDim = mix(1.0, " + VOXEL_DEPTH_FLOOR.toFixed(3) +
+                ", clamp((vVoxelViewDepth - " + VOXEL_DEPTH_NEAR.toFixed(3) + ") / " +
+                (VOXEL_DEPTH_FAR - VOXEL_DEPTH_NEAR).toFixed(3) + ", 0.0, 1.0));\n" +
+                "gl_FragColor.rgb *= voxelDepthDim;\n#include <dithering_fragment>",
+            )
+    }
+}
+function buildFrameVoxels(cloud, frame, entry) {
+  const position = frame.geom.getAttribute("position"); if (!position || !position.count) { return null }
+  const array = position.array, count = position.count
+  const size = entry.voxelSize || 0.1, inv = 1 / size
+  // Quantize in WORLD space (bake the frame's pose into each point first) so voxels
+  // from every accumulated frame snap to one shared, world-aligned lattice instead of
+  // a per-frame sensor grid. The mesh then stays at identity (instances are world).
+  const pose = frame.points.matrix.elements
+  const cells = new Map()   // "ix,iy,iz" -> [centerX, centerY, centerZ] (world)
+  for (let i = 0; i < count; i++) {
+    const x = array[i * 3], y = array[i * 3 + 1], z = array[i * 3 + 2]
+    const wx = pose[0] * x + pose[4] * y + pose[8] * z + pose[12]
+    const wy = pose[1] * x + pose[5] * y + pose[9] * z + pose[13]
+    const wz = pose[2] * x + pose[6] * y + pose[10] * z + pose[14]
+    const ix = Math.floor(wx * inv), iy = Math.floor(wy * inv), iz = Math.floor(wz * inv)
+    const key = ix + "," + iy + "," + iz
+    if (!cells.has(key)) { cells.set(key, [(ix + 0.5) * size, (iy + 0.5) * size, (iz + 0.5) * size]) }
+  }
+  const centers = [...cells.values()]; if (!centers.length) { return null }
+  const axisIdx = entry.axis ?? 2
+  let low = Infinity, high = -Infinity
+  for (const center of centers) { const value = center[axisIdx]; if (value < low) { low = value }; if (value > high) { high = value } }
+  const span = high > low ? high - low : 1
+  const stops = gradStops(entry)
+  const geometry = new THREE.BoxGeometry(size, size, size)
+  const material = new THREE.MeshLambertMaterial()
+  applyVoxelShading(material)
+  const mesh = new THREE.InstancedMesh(geometry, material, centers.length)
+  for (let i = 0; i < centers.length; i++) {
+    const center = centers[i]
+    voxelMatrix.makeTranslation(center[0], center[1], center[2]); mesh.setMatrixAt(i, voxelMatrix)
+    const t = clamp01((center[axisIdx] - low) / span)
+    const [r, g, b] = gradColorAt(stops, t)
+    voxelColor.setRGB(r, g, b); mesh.setColorAt(i, voxelColor)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  if (mesh.instanceColor) { mesh.instanceColor.needsUpdate = true }
+  mesh.frustumCulled = false
+  mesh.matrixAutoUpdate = false; mesh.matrix.identity()
+  cloud.group.add(mesh)
+  frame.voxelMesh = mesh
+  return mesh
+}
+function disposeFrameVoxels(cloud, frame) {
+  if (!frame.voxelMesh) { return }
+  cloud.group.remove(frame.voxelMesh)
+  frame.voxelMesh.geometry.dispose(); frame.voxelMesh.material.dispose(); frame.voxelMesh.dispose()
+  frame.voxelMesh = null
+}
+// Ensure each frame shows the representation the stream's entry asks for. When
+// `rebuild` is set (gradient/axis/size changed), stale voxel meshes are rebuilt.
+function syncCloud(cloud, rebuild = false) {
+  const entry = known.get(cloud.stream)
+  const voxel = !!(entry && entry.voxel)
+  for (const frame of cloud.frames) {
+    if (voxel) {
+      if (rebuild) { disposeFrameVoxels(cloud, frame) }
+      if (!frame.voxelMesh) { buildFrameVoxels(cloud, frame, entry) }
+      if (frame.voxelMesh) { frame.voxelMesh.visible = true }
+      frame.points.visible = false
+    } else {
+      disposeFrameVoxels(cloud, frame)
+      frame.points.visible = true
+    }
+  }
+}
+function recolor(cloud) {
+  const entry = known.get(cloud.stream)
+  for (const frame of cloud.frames) { colorGeom(frame.geom, entry) }
+  syncCloud(cloud, true)
+}
+function disposeCloudFrame(cloud, frame) {
+  cloud.group.remove(frame.points)
+  frame.geom.dispose()
+  disposeFrameVoxels(cloud, frame)
+}
+function pruneCloudFrames(cloud, latestTs) {
+  const mode = known.get(cloud.stream)?.accum || "latest"
+  if (mode === "latest") {
+    while (cloud.frames.length > 1) { disposeCloudFrame(cloud, cloud.frames.shift()) }
+  } else if (mode !== "all") {
+    const windowSeconds = Number(mode)
+    if (isFinite(windowSeconds) && windowSeconds > 0) {
+      while (cloud.frames.length > 1 && (latestTs - cloud.frames[0].ts) > windowSeconds) { disposeCloudFrame(cloud, cloud.frames.shift()) }
+    }
+  }
+  while (cloud.frames.length > CLOUD_ACCUM_CAP) { disposeCloudFrame(cloud, cloud.frames.shift()) }
+}
+function onCloud(payload) {
+  const cloud = ensureCloud(payload.stream)
+  cloud.frame = payload.frame
+  const rawXyz = new Float32Array(b64ToBuffer(payload.b64))
+  const points = new THREE.Points(new THREE.BufferGeometry(), cloud.material)
+  points.matrixAutoUpdate = false
+  // Placement, in priority order:
+  //  1. tf resolves the frame  -> use the tf chain (sensor-frame scan → world).
+  //  2. global/world frame      -> identity; the points are ALREADY in world coords,
+  //     so anchoring them to the robot pose would double-transform them off the map.
+  //  3. unresolved sensor frame -> ride the robot's latest odom pose so accumulated
+  //     sensor-frame scans lay down a map instead of stacking at the origin.
+  if (tf.has(payload.frame)) { points.matrix.copy(worldMatrix(payload.frame)) }
+  else if (isGlobalFrame(payload.frame)) { points.matrix.identity() }
+  else if (lastOdomWorld) { points.matrix.copy(lastOdomWorld) }
+  else { points.matrix.identity() }
+  cloud.group.add(points)
+  const frame = { ts: payload.ts ?? performance.now() / 1000, points, geom: null, rawXyz, voxelMesh: null }
+  // Build the displayed geometry from the raw scan through the filter/downsample
+  // pipeline (uses points.matrix as the sensor pose for world-space filters).
+  rebuildFrameGeom(cloud, frame, known.get(cloud.stream))
+  cloud.frames.push(frame)
+  pruneCloudFrames(cloud, frame.ts)
+  syncCloud(cloud)
+  addStream(payload.stream, "cloud")
 }
 
-// ── odometry: robot body + pose gizmo + trail per stream ──
-const odoms = new Map()  // stream -> { group, trail, positions[], geom }
+// ── odometry / pose: body + gizmo + trail per stream ──
+// Only streams anchored to a resolvable world frame get a connecting trail. Tag /
+// detection poses (empty frame_id, discontinuous) show a marker but are never wired
+// into the trajectory line and never steer the camera. Trails are LineSegments so a
+// jump between two poses simply leaves a gap instead of a line shooting across.
+const TRAIL_COLORS = [0x45e0ff, 0xffb454, 0x7cff6b, 0xff6b9d, 0xb07cff, 0xffd93d]
+const TRAIL_CAP = 120000   // trail vertices (2 per segment)
+const TRAIL_JUMP = 2.5     // meters; a larger step is a discontinuity, not motion
+const odoms = new Map()   // stream -> { group, trail, geom, count, last }
 function ensureOdom(stream) {
-  let o = odoms.get(stream)
-  if (o) return o
+  let odom = odoms.get(stream)
+  if (odom) { return odom }
+  const color = TRAIL_COLORS[odoms.size % TRAIL_COLORS.length]
   const group = new THREE.Group(); group.matrixAutoUpdate = false
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.28, 0.22),
-    new THREE.MeshStandardMaterial({ color: 0xffb454, metalness: 0.1, roughness: 0.6 }))
+    new THREE.MeshStandardMaterial({ color, metalness: 0.1, roughness: 0.6 }))
   body.position.z = 0.11
   group.add(body); group.add(makeAxes(0.6, 0.012))
-  const trailGeom = new THREE.BufferGeometry()
-  trailGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 4000), 3))
-  trailGeom.setDrawRange(0, 0)
-  const trail = new THREE.Line(trailGeom, new THREE.LineBasicMaterial({ color: 0x45e0ff }))
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * TRAIL_CAP), 3))
+  geom.setDrawRange(0, 0)
+  const trail = new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ color }))
   scene.add(group); scene.add(trail)
-  o = { group, trail, positions: [], geom: trailGeom }
-  odoms.set(stream, o)
-  return o
+  // ts (one per vertex) lets the window mode drop old segments; start is the first
+  // still-shown vertex (kept even so whole segments are dropped together).
+  odom = { group, trail, geom, tsArray: new Float64Array(TRAIL_CAP), count: 0, start: 0, last: null }
+  odoms.set(stream, odom)
+  return odom
 }
-let framed = false
-function onOdom(p) {
-  const o = ensureOdom(p.stream)
+// Latest = no trail (just the pose marker); accumulate = full path; a number = the
+// last N seconds of path (older segments pruned via the draw-range offset).
+function updateOdomTrailDisplay(odom, stream, latestTs) {
+  const entry = known.get(stream)
+  const on = entry?.on !== false
+  const mode = entry?.accum || "all"
+  if (mode === "latest") { odom.trail.visible = false; return }
+  odom.trail.visible = on
+  const windowSeconds = Number(mode)
+  if (mode === "all" || !isFinite(windowSeconds) || windowSeconds <= 0) {
+    odom.start = 0; odom.geom.setDrawRange(0, odom.count); return
+  }
+  const cutoff = latestTs - windowSeconds
+  while (odom.start + 2 < odom.count && odom.tsArray[odom.start] < cutoff) { odom.start += 2 }
+  odom.geom.setDrawRange(odom.start, Math.max(0, odom.count - odom.start))
+}
+function onOdom(payload) {
+  const odom = ensureOdom(payload.stream)
   const pose = new THREE.Matrix4().compose(
-    tmpV.set(p.pos[0], p.pos[1], p.pos[2]), tmpQ.set(p.quat[0], p.quat[1], p.quat[2], p.quat[3]), { x: 1, y: 1, z: 1 })
-  const world = worldMatrix(p.frame).multiply(pose)
-  o.group.matrix.copy(world)
-  const wp = new THREE.Vector3().setFromMatrixPosition(world)
-  homeTarget.copy(wp)
-  // Frame the robot once when it first appears; after that the camera is free-fly.
-  if (!framed) {
-    setLookFrom(new THREE.Vector3(wp.x + 7, wp.y - 7, wp.z + 5), wp)
+    tmpVector.set(payload.pos[0], payload.pos[1], payload.pos[2]),
+    tmpQuat.set(payload.quat[0], payload.quat[1], payload.quat[2], payload.quat[3]), { x: 1, y: 1, z: 1 })
+  const world = worldMatrix(payload.frame).multiply(pose)
+  odom.group.matrix.copy(world)
+  const worldPosition = new THREE.Vector3().setFromMatrixPosition(world)
+  const anchored = payload.frame !== ""
+  if (anchored) { lastOdomWorld = world.clone() }
+  // Frame the scene once, the first time we get an anchored pose, so a live robot
+  // starts centered without the camera continuously chasing new frames afterward.
+  if (!framed && anchored && !userMovedCamera) {
+    setLookFrom(new THREE.Vector3(worldPosition.x + 7, worldPosition.y - 7, worldPosition.z + 5), worldPosition)
     framed = true
   }
-  o.positions.push(wp.x, wp.y, wp.z)
-  if (o.positions.length > 3 * 4000) o.positions.splice(0, 3)
-  const arr = o.geom.getAttribute("position").array
-  arr.set(o.positions)
-  o.geom.getAttribute("position").needsUpdate = true
-  o.geom.setDrawRange(0, o.positions.length / 3)
-  refreshStreams()
+  const step = odom.last ? odom.last.distanceTo(worldPosition) : Infinity
+  const ts = payload.ts ?? performance.now() / 1000
+  if (anchored && odom.last && step <= TRAIL_JUMP) {
+    // Full buffer: compact away already-pruned segments if any, else stop growing.
+    if (odom.count + 2 > TRAIL_CAP) {
+      if (odom.start > 0) {
+        const positions = odom.geom.getAttribute("position").array
+        positions.copyWithin(0, odom.start * 3, odom.count * 3)
+        odom.tsArray.copyWithin(0, odom.start, odom.count)
+        odom.count -= odom.start; odom.start = 0
+      }
+    }
+    if (odom.count + 2 <= TRAIL_CAP) {
+      const array = odom.geom.getAttribute("position").array
+      const base = odom.count * 3
+      array[base] = odom.last.x; array[base + 1] = odom.last.y; array[base + 2] = odom.last.z
+      array[base + 3] = worldPosition.x; array[base + 4] = worldPosition.y; array[base + 5] = worldPosition.z
+      odom.tsArray[odom.count] = ts; odom.tsArray[odom.count + 1] = ts
+      odom.count += 2
+      odom.geom.getAttribute("position").needsUpdate = true
+    }
+  }
+  odom.last = worldPosition
+  addStream(payload.stream, "odom", anchored)
+  updateOdomTrailDisplay(odom, payload.stream, ts)
 }
 
 // ── planned path per stream ──
 const paths = new Map()   // stream -> { line, geom }
 function ensurePath(stream) {
-  let pa = paths.get(stream)
-  if (pa) return pa
+  let path = paths.get(stream)
+  if (path) { return path }
   const geom = new THREE.BufferGeometry()
-  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 4000), 3))
+  geom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3 * 8000), 3))
   geom.setDrawRange(0, 0)
-  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x7CFF6B, linewidth: 2 }))
+  const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: 0x7CFF6B }))
   line.matrixAutoUpdate = false
   scene.add(line)
-  pa = { line, geom }
-  paths.set(stream, pa)
-  return pa
+  path = { line, geom }
+  paths.set(stream, path)
+  return path
 }
-function onPath(p) {
-  const pa = ensurePath(p.stream)
-  const xyz = new Float32Array(b64ToBuf(p.b64))
-  const cap = pa.geom.getAttribute("position")
-  if (xyz.length > cap.array.length) {
-    pa.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
+function onPath(payload) {
+  const path = ensurePath(payload.stream)
+  const xyz = new Float32Array(b64ToBuffer(payload.b64))
+  const capacity = path.geom.getAttribute("position")
+  if (xyz.length > capacity.array.length) {
+    path.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
   } else {
-    cap.array.set(xyz); cap.needsUpdate = true
+    capacity.array.set(xyz); capacity.needsUpdate = true
   }
-  pa.geom.setDrawRange(0, xyz.length / 3)
-  pa.line.matrix.copy(worldMatrix(p.frame))
-  refreshStreams()
+  path.geom.setDrawRange(0, xyz.length / 3)
+  path.line.matrix.copy(worldMatrix(payload.frame))
+  addStream(payload.stream, "path")
 }
 
-// ── camera stream overlays ──
-// One draggable/foldable/resizable window per image stream. Position, width,
-// and folded state persist in localStorage keyed by stream name.
-const camViews = new Map()   // stream -> { box, canvas, ctx, raw }
-let camTopZ = 30
-const camStateKey = (stream) => "lv-cam:" + stream
-function ensureCamView(stream) {
-    let view = camViews.get(stream)
-    if (view) return view
-    const box = document.createElement("div")
-    box.className = "cam"
-    const head = document.createElement("div")
-    head.className = "cam-head"
-    head.innerHTML = `<span class="cam-title"></span><span class="fold-chev">▼</span>`
-    head.querySelector(".cam-title").textContent = stream.split("#")[0]
-    const canvas = document.createElement("canvas")
-    canvas.width = 320; canvas.height = 180
-    const grip = document.createElement("div")
-    grip.className = "cam-resize"
-    box.append(head, canvas, grip)
-    document.body.appendChild(box)
-    let saved = null
-    try { saved = JSON.parse(localStorage.getItem(camStateKey(stream))) } catch { /* corrupt entry */ }
-    const width = saved?.w || 300
-    // New views cascade up-left from the bottom-right corner so every header stays visible.
-    const defaultY = innerHeight - 260 - camViews.size * 34
-    box.style.width = width + "px"
-    box.style.left = THREE.MathUtils.clamp(saved?.x ?? (innerWidth - width - 14 - camViews.size * 34), 0, Math.max(0, innerWidth - 80)) + "px"
-    box.style.top = THREE.MathUtils.clamp(saved?.y ?? defaultY, 0, Math.max(0, innerHeight - 40)) + "px"
-    if (saved?.folded) box.classList.add("folded")
-    // New windows spawn beneath existing ones (so the cascade keeps every header
-    // peeking out); any interaction brings a window to the front.
-    box.style.zIndex = String(30 - camViews.size)
-    box.addEventListener("pointerdown", () => { box.style.zIndex = String(++camTopZ) })
-    const save = () => localStorage.setItem(camStateKey(stream), JSON.stringify({
-        x: parseFloat(box.style.left), y: parseFloat(box.style.top),
-        w: parseFloat(box.style.width), folded: box.classList.contains("folded"),
-    }))
-    // Drag the header to move; a click with (almost) no movement toggles fold.
-    head.addEventListener("pointerdown", (e) => {
-        e.preventDefault()
-        const startLeft = parseFloat(box.style.left), startTop = parseFloat(box.style.top)
-        const startX = e.clientX, startY = e.clientY
-        let moved = 0
-        const onMove = (ev) => {
-            moved += Math.abs(ev.movementX) + Math.abs(ev.movementY)
-            box.style.left = (startLeft + ev.clientX - startX) + "px"
-            box.style.top = (startTop + ev.clientY - startY) + "px"
-        }
-        const onUp = () => {
-            removeEventListener("pointermove", onMove); removeEventListener("pointerup", onUp)
-            if (moved < 5) box.classList.toggle("folded")
-            save()
-        }
-        addEventListener("pointermove", onMove); addEventListener("pointerup", onUp)
-    })
-    // Drag the corner grip to resize (width only; height follows the frame aspect).
-    grip.addEventListener("pointerdown", (e) => {
-        e.preventDefault(); e.stopPropagation()
-        const startWidth = parseFloat(box.style.width), startX = e.clientX
-        const onMove = (ev) => { box.style.width = Math.max(120, startWidth + ev.clientX - startX) + "px" }
-        const onUp = () => { removeEventListener("pointermove", onMove); removeEventListener("pointerup", onUp); save() }
-        addEventListener("pointermove", onMove); addEventListener("pointerup", onUp)
-    })
-    view = { box, canvas, ctx: canvas.getContext("2d"), raw: null }
-    camViews.set(stream, view)
-    return view
+// ── floating image windows (color_image / depth_image streams) ──
+// Each image stream pops up as its own draggable, resizable window over the 3D view.
+const camLayer = document.getElementById("cam-layer")
+const imageWindows = new Map()   // name -> { el, canvas, ctx, titleEl, badgeEl, raw }
+let camCascade = 0
+// Depth images carry per-pixel distance (uint16 mm or float32 m) rather than color, so
+// they're colorized with a jet ramp instead of shown as raw (near-black) grayscale.
+const DEPTH_ENCODINGS = new Set(["16uc1", "mono16", "16sc1", "32fc1"])
+function isDepthPayload(payload) {
+  const encoding = String(payload.encoding || "").toLowerCase()
+  return DEPTH_ENCODINGS.has(encoding) || /depth/i.test(payload.stream)
 }
-function onFrame(p) {
-  const view = ensureCamView(p.stream)
-  const { canvas, ctx } = view
-  if (p.kind === "compressed") {
-    const img = new Image()
-    img.onload = () => {
-      if (canvas.width !== img.width || canvas.height !== img.height) { canvas.width = img.width; canvas.height = img.height }
-      ctx.drawImage(img, 0, 0)
+// Classic "jet" colormap: near (t≈0) → red, far (t≈1) → blue, so closer surfaces read hot.
+function jetColor(t) {
+  const value = 4 * clamp01(1 - t)
+  return [
+    Math.round(clamp01(Math.min(value - 1.5, -value + 4.5)) * 255),
+    Math.round(clamp01(Math.min(value - 0.5, -value + 3.5)) * 255),
+    Math.round(clamp01(Math.min(value + 0.5, -value + 2.5)) * 255),
+  ]
+}
+function saveWindowGeom(name, win) {
+  const entry = known.get(name); if (!entry) { return }
+  entry.winX = win.el.offsetLeft; entry.winY = win.el.offsetTop
+  entry.winW = win.el.offsetWidth; entry.winH = win.el.offsetHeight
+  saveStreamStyle(name, entry)
+}
+function toggleCamCollapse(name, win) {
+  const collapsed = !win.el.classList.contains("collapsed")
+  if (collapsed) {
+    win.expandedHeight = win.el.style.height || (win.el.offsetHeight + "px")
+    win.el.classList.add("collapsed"); win.el.style.height = ""
+  } else {
+    win.el.classList.remove("collapsed")
+    if (win.expandedHeight) { win.el.style.height = win.expandedHeight }
+  }
+  const entry = known.get(name)
+  if (entry) { entry.winCollapsed = collapsed; saveStreamStyle(name, entry) }
+}
+function ensureImageWindow(name) {
+  let win = imageWindows.get(name)
+  if (win) { return win }
+  const entry = known.get(name)
+  const el = document.createElement("div")
+  el.className = "cam-win"
+  el.innerHTML = '<div class="cam-head"><span class="cam-title"></span><span class="cam-badge"></span>' +
+    '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas></div>'
+  el.querySelector(".cam-title").textContent = name.split("#")[0]
+  const canvas = el.querySelector("canvas")
+  if (Number.isFinite(entry?.winW)) { el.style.width = entry.winW + "px"; el.style.height = entry.winH + "px" }
+  if (Number.isFinite(entry?.winX)) { el.style.left = entry.winX + "px"; el.style.top = entry.winY + "px" }
+  else {
+    const offset = 18 * (camCascade++ % 6)
+    el.style.right = (14 + offset) + "px"; el.style.top = (60 + offset) + "px"
+  }
+  camLayer.appendChild(el)
+  win = { el, canvas, ctx: canvas.getContext("2d"), badgeEl: el.querySelector(".cam-badge"), raw: null }
+  imageWindows.set(name, win)
+  el.querySelector(".cam-close").addEventListener("click", (event) => {
+    event.stopPropagation()
+    const hidden = known.get(name); if (hidden) { hidden.on = false; saveStreamStyle(name, hidden) }
+    el.style.display = "none"; refreshStreams()
+  })
+  const head = el.querySelector(".cam-head")
+  head.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".cam-close")) { return }
+    event.preventDefault()
+    const rect = el.getBoundingClientRect(), parent = camLayer.getBoundingClientRect()
+    el.style.left = (rect.left - parent.left) + "px"; el.style.top = (rect.top - parent.top) + "px"; el.style.right = "auto"
+    const startX = event.clientX, startY = event.clientY, baseLeft = el.offsetLeft, baseTop = el.offsetTop
+    let dragged = false
+    head.setPointerCapture(event.pointerId)
+    const move = (moveEvent) => {
+      if (!dragged && Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) < 4) { return }
+      dragged = true   // a real move; anything under the threshold stays a click
+      const maxLeft = camLayer.clientWidth - 40, maxTop = camLayer.clientHeight - 24
+      el.style.left = Math.max(0, Math.min(maxLeft, baseLeft + moveEvent.clientX - startX)) + "px"
+      el.style.top = Math.max(0, Math.min(maxTop, baseTop + moveEvent.clientY - startY)) + "px"
     }
-    img.src = `data:image/${(p.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${p.b64}`
+    const up = () => {
+      head.releasePointerCapture(event.pointerId); head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up)
+      if (dragged) { saveWindowGeom(name, win) } else { toggleCamCollapse(name, win) }
+    }
+    head.addEventListener("pointermove", move); head.addEventListener("pointerup", up)
+  })
+  if (entry?.winCollapsed) { win.el.classList.add("collapsed"); win.el.style.height = "" }
+  let resizeTimer = null
+  new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => saveWindowGeom(name, win), 250) }).observe(el)
+  return win
+}
+// JPEG/PNG-encoded depth streams arrive as 8-bit grayscale (the true 16-bit depth was
+// already flattened at record time). Decode the picture, then re-color the grayscale
+// through the same jet ramp as raw depth so it reads as depth, not a washed-out photo.
+function drawCompressedDepth(win, payload) {
+  const image = new Image()
+  image.onload = () => {
+    const width = image.width, height = image.height
+    if (!win.decodeCanvas) { win.decodeCanvas = document.createElement("canvas") }
+    const decodeCanvas = win.decodeCanvas
+    decodeCanvas.width = width; decodeCanvas.height = height
+    const decodeCtx = decodeCanvas.getContext("2d", { willReadFrequently: true })
+    decodeCtx.drawImage(image, 0, 0)
+    const source = decodeCtx.getImageData(0, 0, width, height).data
+    // brightness range across valid (non-zero) pixels, for normalization
+    let low = Infinity, high = -Infinity
+    for (let i = 0; i < source.length; i += 4) {
+      const gray = source[i]
+      if (gray > 0) { if (gray < low) { low = gray }; if (gray > high) { high = gray } }
+    }
+    const span = high > low ? high - low : 1
+    if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+    if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+    const destination = win.raw.data
+    for (let i = 0; i < source.length; i += 4) {
+      const gray = source[i]
+      if (!(gray > 0)) { destination[i] = 0; destination[i + 1] = 0; destination[i + 2] = 0; destination[i + 3] = 255; continue }
+      // brighter grayscale = nearer surface, so invert to keep near = hot (red)
+      const [r, g, b] = jetColor(1 - (gray - low) / span)
+      destination[i] = r; destination[i + 1] = g; destination[i + 2] = b; destination[i + 3] = 255
+    }
+    win.ctx.putImageData(win.raw, 0, 0)
+  }
+  image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+}
+function drawColorImage(win, payload) {
+  if (payload.kind === "compressed") {
+    const image = new Image()
+    image.onload = () => {
+      if (win.canvas.width !== image.width || win.canvas.height !== image.height) { win.canvas.width = image.width; win.canvas.height = image.height; win.raw = null }
+      win.ctx.drawImage(image, 0, 0)
+    }
+    image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
     return
   }
-  // raw Image: rgb8 / bgr8 / rgba8 / mono8
-  const w = p.width, h = p.height; if (!w || !h) return
-  const src = new Uint8Array(b64ToBuf(p.b64))
-  const enc = (p.encoding || "rgb8").toLowerCase()
-  const ch = enc === "rgba8" ? 4 : enc === "mono8" ? 1 : 3
-  const step = p.step || w * ch
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; view.raw = null }
-  if (!view.raw) view.raw = ctx.createImageData(w, h)
-  const dst = view.raw.data
-  const bgr = enc === "bgr8" || enc === "bgra8"
-  for (let y = 0; y < h; y++) {
-    let si = y * step, di = y * w * 4
-    for (let x = 0; x < w; x++) {
-      if (ch === 1) { const v = src[si]; dst[di] = v; dst[di + 1] = v; dst[di + 2] = v; dst[di + 3] = 255; si += 1 }
+  const width = payload.width, height = payload.height; if (!width || !height) { return }
+  const source = new Uint8Array(b64ToBuffer(payload.b64))
+  const encoding = (payload.encoding || "rgb8").toLowerCase()
+  const channels = encoding === "rgba8" || encoding === "bgra8" ? 4 : encoding === "mono8" ? 1 : 3
+  const step = payload.step || width * channels
+  if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+  if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+  const destination = win.raw.data
+  const isBgr = encoding === "bgr8" || encoding === "bgra8"
+  for (let y = 0; y < height; y++) {
+    let sourceIndex = y * step, destIndex = y * width * 4
+    for (let x = 0; x < width; x++) {
+      if (channels === 1) { const value = source[sourceIndex]; destination[destIndex] = value; destination[destIndex + 1] = value; destination[destIndex + 2] = value; destination[destIndex + 3] = 255; sourceIndex += 1 }
       else {
-        const r = src[si + (bgr ? 2 : 0)], g = src[si + 1], b = src[si + (bgr ? 0 : 2)]
-        dst[di] = r; dst[di + 1] = g; dst[di + 2] = b; dst[di + 3] = 255; si += ch
+        const r = source[sourceIndex + (isBgr ? 2 : 0)], g = source[sourceIndex + 1], b = source[sourceIndex + (isBgr ? 0 : 2)]
+        destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255; sourceIndex += channels
       }
-      di += 4
+      destIndex += 4
     }
   }
-  ctx.putImageData(view.raw, 0, 0)
+  win.ctx.putImageData(win.raw, 0, 0)
+}
+function drawDepthImage(win, payload) {
+  const width = payload.width, height = payload.height; if (!width || !height) { return }
+  const buffer = b64ToBuffer(payload.b64)
+  const isFloat = String(payload.encoding || "").toLowerCase() === "32fc1"
+  const littleEndian = !payload.bigendian
+  const view = new DataView(buffer)
+  const bytesPerPixel = isFloat ? 4 : 2
+  const step = payload.step || width * bytesPerPixel
+  const readAt = (offset) => isFloat ? view.getFloat32(offset, littleEndian) : view.getUint16(offset, littleEndian)
+  // find the valid depth range (ignore zero / NaN = no return) for normalization
+  let low = Infinity, high = -Infinity
+  for (let y = 0; y < height; y++) {
+    let offset = y * step
+    for (let x = 0; x < width; x++, offset += bytesPerPixel) {
+      const value = readAt(offset)
+      if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
+    }
+  }
+  const span = high > low ? high - low : 1
+  if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
+  if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
+  const destination = win.raw.data
+  for (let y = 0; y < height; y++) {
+    let offset = y * step, destIndex = y * width * 4
+    for (let x = 0; x < width; x++, offset += bytesPerPixel, destIndex += 4) {
+      const value = readAt(offset)
+      if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; destination[destIndex + 3] = 255; continue }
+      const [r, g, b] = jetColor((value - low) / span)
+      destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b; destination[destIndex + 3] = 255
+    }
+  }
+  win.ctx.putImageData(win.raw, 0, 0)
+}
+function onFrame(payload) {
+  addStream(payload.stream, "image")
+  const entry = known.get(payload.stream)
+  const win = ensureImageWindow(payload.stream)
+  const depth = isDepthPayload(payload)
+  win.badgeEl.textContent = depth ? "depth" : "color"
+  const visible = !(entry && entry.on === false)
+  win.el.style.display = visible ? "flex" : "none"
+  if (!visible) { return }   // skip the decode work while hidden
+  if (depth && payload.kind === "compressed") { drawCompressedDepth(win, payload) }
+  else if (depth) { drawDepthImage(win, payload) }
+  else { drawColorImage(win, payload) }
+}
+
+// ── clear scene state (on load / seek reset) ──
+function clearScene() {
+  for (const cloud of clouds.values()) {
+    scene.remove(cloud.group)
+    for (const frame of cloud.frames) { frame.geom.dispose(); disposeFrameVoxels(cloud, frame) }
+    cloud.material.dispose()
+  }
+  clouds.clear()
+  for (const odom of odoms.values()) { scene.remove(odom.group); scene.remove(odom.trail); odom.geom.dispose() }
+  odoms.clear()
+  for (const path of paths.values()) { scene.remove(path.line); path.geom.dispose() }
+  paths.clear()
+  tf.clear()
+  tfParents.clear()
+  lastOdomWorld = null
 }
 
 // ── stream checklist ──
 const known = new Map()   // name -> { kind, on }
+// ── per-stream style persistence ──
+// Save each stream's look (gradient, axis, voxels, filters, accumulation, visibility)
+// to localStorage so a reload restores it. Keyed by the base topic name (before any
+// "#" disambiguator) so the same sensor keeps its style across recordings too.
+const STYLE_STORAGE_KEY = "lv-stream-style:v1"
+const STYLE_KEYS = ["gradStart", "gradMid", "gradEnd", "axis", "voxel", "voxelSize", "downsample", "rangeMax", "zMin", "zMax", "accum", "on", "winX", "winY", "winW", "winH", "winCollapsed"]
+const styleKeyFor = (name) => String(name).split("#")[0]
+function loadSavedStyles() {
+    try { return JSON.parse(localStorage.getItem(STYLE_STORAGE_KEY) || "{}") || {} }
+    catch { return {} }
+}
+const savedStyles = loadSavedStyles()
+function saveStreamStyle(name, entry) {
+    if (!entry) { return }
+    const style = {}
+    for (const key of STYLE_KEYS) { if (entry[key] !== undefined) { style[key] = entry[key] } }
+    savedStyles[styleKeyFor(name)] = style
+    try { localStorage.setItem(STYLE_STORAGE_KEY, JSON.stringify(savedStyles)) } catch { /* storage full/blocked: keep running */ }
+}
+function applySavedStyle(name, entry) {
+    const style = savedStyles[styleKeyFor(name)]
+    if (!style) { return }
+    for (const key of STYLE_KEYS) { if (style[key] !== undefined) { entry[key] = style[key] } }
+}
 function setVisible(name, on) {
-  const c = clouds.get(name); if (c) c.points.visible = on
-  const o = odoms.get(name); if (o) { o.group.visible = on; o.trail.visible = on }
-  const pa = paths.get(name); if (pa) pa.line.visible = on
-  const v = camViews.get(name); if (v) v.box.style.display = on ? "" : "none"
+  const cloud = clouds.get(name); if (cloud) { cloud.group.visible = on }
+  const odom = odoms.get(name); if (odom) { odom.group.visible = on; odom.trail.visible = on && (known.get(name)?.accum || "all") !== "latest" }
+  const path = paths.get(name); if (path) { path.line.visible = on }
+  const win = imageWindows.get(name); if (win) { win.el.style.display = on ? "flex" : "none" }
 }
 function refreshStreams() {
   const list = document.getElementById("stream-list")
+  updateToggleAllLabel()
   if (!known.size) { list.innerHTML = '<div class="empty">none yet</div>'; return }
-  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, s]) => {
-    const axis = s.axis ?? 2
-    const control = s.kind === "cloud"
-      ? `<select class="grad-pick" data-g="${encodeURIComponent(name)}">` +
-        GRAD_NAMES.map((g) => `<option value="${g}" ${g === s.grad ? "selected" : ""}>${g}</option>`).join("") + `</select>` +
-        `<select class="grad-pick axis-pick" data-a="${encodeURIComponent(name)}">` +
-        [["2", "z"], ["0", "x"], ["1", "y"]].map(([v, l]) => `<option value="${v}" ${+v === axis ? "selected" : ""}>${l}</option>`).join("") + `</select>`
-      : `<span class="tag kc-${s.kind}">${s.kind}</span>`
-    return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${s.on ? "checked" : ""}>` +
+  const rows = [...known.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, entry]) => {
+    // Cloud rows get gradient + gradient-axis pickers; cloud & odom rows also get an
+    // accumulation picker (latest / accumulate / time window). Others show a kind tag.
+    const accum = entry.accum || (entry.kind === "odom" ? "all" : "latest")
+    const accumSelect = (entry.kind === "cloud" || entry.kind === "odom")
+      ? `<select class="grad-pick accum-pick" data-acc="${encodeURIComponent(name)}">` +
+        ACCUM_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === accum ? "selected" : ""}>${label}</option>`).join("") + `</select>`
+      : ""
+    let control
+    if (entry.kind === "cloud") {
+      control = `<button class="cust-btn" data-cust="${encodeURIComponent(name)}">` +
+        `<span class="cb-idle">${entry.voxel ? "voxels" : "lidar"}</span><span class="cb-hover">customize</span></button>` +
+        accumSelect
+    } else if (entry.kind === "odom") {
+      control = `<span class="tag kc-odom">odom</span>` + accumSelect
+    } else {
+      control = `<span class="tag kc-${entry.kind}">${entry.kind}</span>`
+    }
+    return `<div class="row"><label><input type="checkbox" data-s="${encodeURIComponent(name)}" ${entry.on ? "checked" : ""}>` +
       `<span class="nm">${name.split("#")[0].replace(/[&<>]/g, "")}</span></label>${control}</div>`
   }).join("")
   if (list.dataset.sig !== rows) { list.dataset.sig = rows; list.innerHTML = rows }
 }
-document.getElementById("stream-list").addEventListener("change", (e) => {
-  const gradPick = e.target.closest("select[data-g]")
-  const axisPick = e.target.closest("select[data-a]")
-  if (gradPick || axisPick) {
-    const name = decodeURIComponent(gradPick ? gradPick.dataset.g : axisPick.dataset.a)
-    const s = known.get(name)
-    if (s) {
-      if (gradPick) s.grad = gradPick.value
-      else s.axis = +axisPick.value
-      const c = clouds.get(name); if (c) recolor(c)
-      refreshStreams()
+document.getElementById("stream-list").addEventListener("change", (event) => {
+  const accumPick = event.target.closest("select[data-acc]")
+  if (accumPick) {
+    const name = decodeURIComponent(accumPick.dataset.acc)
+    const entry = known.get(name)
+    if (entry) {
+      entry.accum = accumPick.value
+      applyAccumPolicy(name, entry)
+      saveStreamStyle(name, entry)
     }
     return
   }
-  const cb = e.target.closest("input[data-s]"); if (!cb) return
-  const name = decodeURIComponent(cb.dataset.s)
-  const s = known.get(name); if (s) { s.on = cb.checked; setVisible(name, cb.checked) }
+  const checkbox = event.target.closest("input[data-s]"); if (!checkbox) { return }
+  const name = decodeURIComponent(checkbox.dataset.s)
+  const entry = known.get(name); if (entry) { entry.on = checkbox.checked; setVisible(name, checkbox.checked); saveStreamStyle(name, entry) }
 })
-function addStream(name, kind) {
-  const cur = known.get(name)
-  if (!cur) {
-    const entry = { kind: kind || "…", on: true }
-    if (kind === "cloud") entry.grad = nextDefaultGradient()
-    known.set(name, entry); refreshStreams()
-  } else if (kind && cur.kind !== kind) {
-    cur.kind = kind
-    if (kind === "cloud" && !cur.grad) cur.grad = nextDefaultGradient()
-    refreshStreams()
+// Accumulation is applied entirely client-side for the live feed: prune the frames
+// already buffered to match the new policy (a tighter window drops older frames; a
+// looser one just lets future frames accumulate).
+function applyAccumPolicy(name, entry) {
+  if (entry.kind === "cloud") {
+    const cloud = clouds.get(name)
+    if (cloud) {
+      const latestTs = cloud.frames.length ? cloud.frames[cloud.frames.length - 1].ts : performance.now() / 1000
+      pruneCloudFrames(cloud, latestTs)
+      syncCloud(cloud)
+    }
+  } else if (entry.kind === "odom") {
+    const odom = odoms.get(name)
+    if (odom) { updateOdomTrailDisplay(odom, name, performance.now() / 1000) }
   }
 }
-
-// ── controls ──
-document.getElementById("topbar").addEventListener("click", () => document.body.classList.toggle("panel-hidden"))
-
-// ── app bus ──
-let bridgeUp = false
-const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
-function setStatus() { pill.classList.toggle("on", bridgeUp); statEl.textContent = bridgeUp ? `live · ${known.size} streams` : "waiting for bridge…" }
-const dimApp = new DimAppFrontend()
-const handleAppMessage = (kind, p) => {
-  if (kind === "status") { bridgeUp = !!p.bridge; setStatus() }
-  else if (kind === "streams") { for (const s of p.streams || []) addStream(s.name, s.kind); setStatus() }
-  else if (kind === "tf") { for (const t of p.transforms || []) setTf(t.parent, t.child, t.t, t.q) }
-  else if (kind === "cloud") { addStream(p.stream, "cloud"); if (known.get(p.stream)?.on !== false) onCloud(p); setStatus() }
-  else if (kind === "odom") { addStream(p.stream, "odom"); if (known.get(p.stream)?.on !== false) onOdom(p); setStatus() }
-  else if (kind === "path") { addStream(p.stream, "path"); if (known.get(p.stream)?.on !== false) onPath(p); setStatus() }
-  else if (kind === "frame") { addStream(p.stream, "image"); onFrame(p); setStatus() }
+function addStream(name, kind, defaultOn = true) {
+  const current = known.get(name)
+  if (!current) {
+    const entry = { kind: kind || "…", on: defaultOn }
+    if (kind === "cloud") { const pair = nextDefaultGradient(); entry.gradStart = pair[0]; entry.gradEnd = pair[1]; entry.axis = 2; entry.accum = "latest"; entry.downsample = 1; entry.rangeMax = 0; entry.zMin = null; entry.zMax = null }
+    if (kind === "odom") { entry.accum = "all" }
+    applySavedStyle(name, entry)
+    known.set(name, entry); refreshStreams()
+  } else if (kind && current.kind !== kind) {
+    current.kind = kind
+    if (kind === "cloud" && !current.gradStart) { const pair = nextDefaultGradient(); current.gradStart = pair[0]; current.gradEnd = pair[1]; current.axis = current.axis ?? 2 }
+    if (kind === "cloud" && !current.accum) { current.accum = "latest" }
+    if (kind === "odom" && !current.accum) { current.accum = "all" }
+    applySavedStyle(name, current)
+    refreshStreams()
+  }
+  if (known.get(name)?.on === false) { setVisible(name, false) }
 }
-dimApp.receiveRequest(handleAppMessage)
-window.__lv_inject = handleAppMessage   // manual/automated testing without a robot
-dimApp.send("hello"); setStatus()
+
+
+// ── streams panel ──
+const panel = document.getElementById("panel")
+document.getElementById("streams-toggle").addEventListener("click", () => panel.classList.toggle("collapsed"))
+const toggleAllBtn = document.getElementById("toggle-all")
+function updateToggleAllLabel() {
+  const entries = [...known.values()]
+  toggleAllBtn.style.visibility = entries.length ? "visible" : "hidden"
+  toggleAllBtn.textContent = entries.some((entry) => entry.on) ? "Hide all" : "Show all"
+}
+toggleAllBtn.addEventListener("click", (event) => {
+  event.stopPropagation()
+  const target = ![...known.values()].some((entry) => entry.on)   // any on → hide all; none on → show all
+  for (const [name, entry] of known.entries()) { entry.on = target; setVisible(name, target); saveStreamStyle(name, entry) }
+  refreshStreams()
+})
+const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
+
+// ── status pill ──
+let bridgeUp = false
+function setStatus() {
+  pill.classList.toggle("on", bridgeUp)
+  statEl.textContent = bridgeUp ? `live · ${known.size} streams` : "waiting for bridge…"
+}
+
+// ── app bus (live: frames stream straight from the bridge, no transport) ──
+const app = new DimAppFrontend()
+function handleAppMessage(kind, payload) {
+  if (kind === "status") { bridgeUp = !!payload.bridge; setStatus() }
+  else if (kind === "cloud") { onCloud(payload); setStatus() }
+  else if (kind === "odom") { onOdom(payload); setStatus() }
+  else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
+  else if (kind === "path") { onPath(payload); setStatus() }
+  else if (kind === "frame") { onFrame(payload) }
+}
+app.receiveRequest(handleAppMessage)
+window.__lv_inject = handleAppMessage   // test hook: feed synthetic bus messages
+app.send("hello")
+setStatus()
 </script>
 </body>
 </html>
