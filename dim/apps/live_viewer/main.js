@@ -6,6 +6,7 @@
 
 import { DimAppBackend, dimContext } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/backend.js"
 import { decode } from "jsr:@dimos/msgs@0.1.4"
+import lz4 from "https://esm.sh/lz4js@0.2.0"
 
 const dimApp = new DimAppBackend()
 const ctx = dimContext()
@@ -52,6 +53,37 @@ function asBytes(d) {
     return new Uint8Array(0)
 }
 function frameId(msg) { return msg?.header?.frame_id || "" }
+
+// A stream can be published through a codec chain ("lz4+lcm"), and the chain is named
+// nowhere on the wire — but an LCM payload never starts with the LZ4 frame magic, so the
+// wrapper is stripped by sniffing the bytes. Without this, cloud_map / depth_image throw
+// "unknown message hash" inside the socket handler and vanish with no trace.
+const LZ4_MAGIC = [0x04, 0x22, 0x4d, 0x18]
+let undecodableCount = 0
+function decodeMessage(payload) {
+    try {
+        let bytes = asBytes(payload)
+        if (LZ4_MAGIC.every((byte, index) => bytes[index] === byte)) { bytes = new Uint8Array(lz4.decompress(bytes)) }
+        return decode(bytes)
+    } catch {
+        undecodableCount++
+        return null
+    }
+}
+
+// Picture bytes reach the viewer two ways: a CompressedImage (a `format` field, no
+// dimensions) or an ordinary Image envelope whose `encoding` names a picture format
+// instead of a pixel layout (step is 0 there). Either way the browser decodes it, so it
+// must not go down the raw-pixel path. Format strings are loose in the wild — "png",
+// "image/png", "rgb8; jpeg compressed bgr8" — so any recognized word wins.
+const PICTURE_FORMATS = new Set(["jpeg", "png", "webp", "jxl", "avif", "gif", "bmp"])
+function pictureFormat(name) {
+    for (const word of String(name || "").toLowerCase().match(/[a-z0-9]+/g) || []) {
+        const format = word === "jpg" ? "jpeg" : word
+        if (PICTURE_FORMATS.has(format)) { return format }
+    }
+    return null
+}
 
 function parseCloud(msg) {
     const fields = msg.fields || []
@@ -118,8 +150,10 @@ function send(stream, kind, msg) {
         dimApp.send("path", { stream, frame: frameId(msg), n: pl.n, b64: pl.b64 })
     } else if (kind === "image") {
         try {
-            if (msg.format !== undefined && msg.width === undefined) {
-                dimApp.send("frame", { stream, kind: "compressed", format: String(msg.format || "jpeg"), b64: toB64(asBytes(msg.data)) })
+            const isCompressedImage = msg.width === undefined
+            const format = pictureFormat(isCompressedImage ? msg.format : msg.encoding)
+            if (format || isCompressedImage) {
+                dimApp.send("frame", { stream, kind: "compressed", format: format || "jpeg", b64: toB64(asBytes(msg.data)) })
             } else {
                 dimApp.send("frame", {
                     stream, kind: "raw", encoding: String(msg.encoding || ""),
@@ -144,12 +178,12 @@ setInterval(() => {
 }, DRAIN_MS)
 
 // Report how much is being dropped, so a saturated link is visible instead of just
-// looking like a slow robot.
+// looking like a slow robot, and how much can't be decoded at all.
 let reportedDrops = 0
 setInterval(() => {
     const rate = droppedCount - reportedDrops
     reportedDrops = droppedCount
-    dimApp.send("status", { bridge: !!dataConn || watched.size > 0, dropped: rate })
+    dimApp.send("status", { bridge: !!dataConn || watched.size > 0, dropped: rate, undecodable: undecodableCount })
 }, 1000)
 
 function connectData(streams) {
@@ -161,7 +195,7 @@ function connectData(streams) {
             host: ctx.bridge.host, port: ctx.bridge.port, whitelist: streams,
             rateLimit: Object.fromEntries(streams.map((s) => [s, 20])),
         },
-        decode,
+        decode: decodeMessage,
     }).then((conn) => {
         dataConn = conn
         conn.subscribeAll((m) => { if (m?.data) forward(m.stream, m.data) })

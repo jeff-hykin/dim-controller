@@ -1322,12 +1322,21 @@ function ensureImageWindow(name) {
   new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => saveWindowGeom(name, win), 250) }).observe(el)
   return win
 }
+// jpeg/png/webp decode natively; jxl (what dimos uses for lossless 16-bit depth) does not
+// in any current browser, so a failed decode names the format in the badge rather than
+// leaving the window mysteriously blank.
+function decodeCompressedFrame(win, payload, onReady) {
+  const format = String(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"
+  const image = new Image()
+  image.onload = () => onReady(image)
+  image.onerror = () => { win.badgeEl.textContent = `${format} unsupported` }
+  image.src = `data:image/${format};base64,${payload.b64}`
+}
 // JPEG/PNG-encoded depth streams arrive as 8-bit grayscale (the true 16-bit depth was
 // already flattened at record time). Decode the picture, then re-color the grayscale
 // through the same jet ramp as raw depth so it reads as depth, not a washed-out photo.
 function drawCompressedDepth(win, payload) {
-  const image = new Image()
-  image.onload = () => {
+  decodeCompressedFrame(win, payload, (image) => {
     const width = image.width, height = image.height
     if (!win.decodeCanvas) { win.decodeCanvas = document.createElement("canvas") }
     const decodeCanvas = win.decodeCanvas
@@ -1353,17 +1362,14 @@ function drawCompressedDepth(win, payload) {
       destination[i] = r; destination[i + 1] = g; destination[i + 2] = b; destination[i + 3] = 255
     }
     win.ctx.putImageData(win.raw, 0, 0)
-  }
-  image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+  })
 }
 function drawColorImage(win, payload) {
   if (payload.kind === "compressed") {
-    const image = new Image()
-    image.onload = () => {
+    decodeCompressedFrame(win, payload, (image) => {
       if (win.canvas.width !== image.width || win.canvas.height !== image.height) { win.canvas.width = image.width; win.canvas.height = image.height; win.raw = null }
       win.ctx.drawImage(image, 0, 0)
-    }
-    image.src = `data:image/${(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"};base64,${payload.b64}`
+    })
     return
   }
   const width = payload.width, height = payload.height; if (!width || !height) { return }
@@ -1416,7 +1422,30 @@ function drawScalarImage(win, payload, layout, colorize) {
       if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
     }
   }
-  const span = high > low ? high - low : 1
+  // A depth frame's true max is a handful of far outliers (and the 65535 "no return"
+  // sentinel), which on a plain min/max ramp squeezes the whole room into the bottom few
+  // percent and reads as flat red. Clipping to the 2nd–98th percentile of a coarse
+  // histogram spends the ramp on the pixels that are actually there.
+  const BINS = 512
+  const range = high > low ? high - low : 1
+  const histogram = new Int32Array(BINS)
+  let counted = 0
+  for (let y = 0; y < height; y++) {
+    let offset = y * step
+    for (let x = 0; x < width; x++, offset += layout.bytes) {
+      const value = readAt(view, offset, littleEndian)
+      if (!(value > 0) || !Number.isFinite(value)) { continue }
+      histogram[Math.min(BINS - 1, Math.floor(((value - low) / range) * BINS))]++
+      counted++
+    }
+  }
+  let lowBin = 0, highBin = BINS - 1, seen = 0
+  for (let bin = 0; bin < BINS; bin++) { seen += histogram[bin]; if (seen >= counted * 0.02) { lowBin = bin; break } }
+  seen = 0
+  for (let bin = BINS - 1; bin >= 0; bin--) { seen += histogram[bin]; if (seen >= counted * 0.02) { highBin = bin; break } }
+  const near = low + (lowBin / BINS) * range
+  const far = low + ((highBin + 1) / BINS) * range
+  const span = far > near ? far - near : 1
   if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
   if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
   const destination = win.raw.data
@@ -1426,14 +1455,14 @@ function drawScalarImage(win, payload, layout, colorize) {
       const value = readAt(view, offset, littleEndian)
       destination[destIndex + 3] = 255
       if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; continue }
-      const t = (value - low) / span
+      const t = clamp01((value - near) / span)
       const [r, g, b] = colorize ? jetColor(t) : [Math.round(t * 255), Math.round(t * 255), Math.round(t * 255)]
       destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b
     }
   }
   win.ctx.putImageData(win.raw, 0, 0)
-  if (colorize && layout.scale && high >= low) {
-    win.badgeEl.textContent = `${(low * layout.scale).toFixed(1)}–${(high * layout.scale).toFixed(1)}m`
+  if (colorize && layout.scale && counted) {
+    win.badgeEl.textContent = `${(near * layout.scale).toFixed(1)}–${(far * layout.scale).toFixed(1)}m`
   }
 }
 function onFrame(payload) {
@@ -1596,17 +1625,18 @@ toggleAllBtn.addEventListener("click", (event) => {
 const pill = document.getElementById("pill"), statEl = document.getElementById("stat")
 
 // ── status pill ──
-let bridgeUp = false, droppedPerSecond = 0
+let bridgeUp = false, droppedPerSecond = 0, undecodableCount = 0
 function setStatus() {
   pill.classList.toggle("on", bridgeUp)
   const drops = droppedPerSecond ? ` · ${droppedPerSecond} dropped/s` : ""
-  statEl.textContent = bridgeUp ? `live · ${known.size} streams${drops}` : "waiting for bridge…"
+  const undecodable = undecodableCount ? ` · ${undecodableCount} undecodable` : ""
+  statEl.textContent = bridgeUp ? `live · ${known.size} streams${drops}${undecodable}` : "waiting for bridge…"
 }
 
 // ── app bus (live: frames stream straight from the bridge, no transport) ──
 const app = new DimAppFrontend()
 function handleAppMessage(kind, payload) {
-  if (kind === "status") { bridgeUp = !!payload.bridge; droppedPerSecond = payload.dropped || 0; setStatus() }
+  if (kind === "status") { bridgeUp = !!payload.bridge; droppedPerSecond = payload.dropped || 0; undecodableCount = payload.undecodable || 0; setStatus() }
   else if (kind === "cloud") { onCloud(payload); setStatus() }
   else if (kind === "odom") { onOdom(payload); setStatus() }
   else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
