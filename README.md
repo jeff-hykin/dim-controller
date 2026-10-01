@@ -24,30 +24,26 @@ Running as an app in the DimOS desktop:
 
 ![Live Viewer in the DimOS desktop](docs/desktop.png)
 
-## dimOS Desktop
+## Install
 
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-live-viewer --ref dimos-desktop2
+dim install https://github.com/jeff-hykin/dim-live-viewer
 ```
 
-Then open **Live Viewer** from the rail while a dimos blueprint (sim, replay or robot) runs on zenoh —
-its topics appear as they start flowing.
+Then open **Live Viewer** from the desktop rail while a DimOS stack (sim or
+robot) is running — its streams appear as they start flowing.
 
 ## How it works
 
-`dim/apps/live_viewer/frontend/index.html` is the whole app: a [three.js](https://threejs.org) scene
-(ROS Z-up) fed straight from Desktop's [zenoh-web](https://github.com/jeff-hykin/zenoh-web) bridge at
-`/zenoh-web`. It lists the `dimos/**` topics every few seconds and picks how to draw each from the
-message type in its key (`dimos/<topic>/<msg_name>`):
-
-- `sensor_msgs.Image` / `CompressedImage` — the bridge's `dimos-image` / `dimos-compressed-image`
-  codecs (an H.264 video track); topics named `*depth*` use the lossless `dimos-depth` codecs instead.
-- `sensor_msgs.PointCloud2` — the `dimos-pointcloud2` codec (quantized points), placed by its
-  `frame_id` through the live tf tree.
-- `PoseStamped`, `Odometry`, `TFMessage`, `Path` — raw, decoded in the page with
-  [`@dimos/msgs`](https://jsr.io/@dimos/msgs).
-
-No build step, no backend.
+- `dim/apps/live_viewer/main.js` — the backend half (runs in the Deno desktop).
+  It watches the bridge's `__meta/streams` meter, subscribes to every non-meta
+  stream, decodes each with [`@dimos/msgs`](https://jsr.io/@dimos/msgs),
+  duck-types it into a render kind (cloud / odom / tf / path / image),
+  downsamples clouds and rate-limits, and forwards compact frames to the UI.
+- `dim/apps/live_viewer/frontend/index.html` — the UI: a
+  [three.js](https://threejs.org) scene (ROS Z-up) built from the forwarded
+  frames, imported straight from esm.sh (no build step). Robot access is only
+  ever through the bridge (`ctx.Dimos`).
 
 ## License
 
