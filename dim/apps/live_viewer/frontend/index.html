@@ -1532,14 +1532,10 @@ function streamName(key) {
 function decodeRaw(bytes) {
   try { return decode(bytes) } catch { undecodableCount++; return null }
 }
-// The point codec carries no header, so a cloud's frame_id comes from a raw copy every
-// few seconds; only the header at the front of it is read (hash, seq, stamp, frame_id).
+// The point codec carries no header, so a cloud's frame_id comes from a raw copy decoded
+// every few seconds (cheap: the point bytes stay an undecoded view).
 function headerFrameId(bytes) {
-  if (bytes.length < 24) { return null }
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const length = view.getUint32(20, false)
-  if (length < 1 || 24 + length > bytes.length) { return null }
-  return new TextDecoder().decode(bytes.subarray(24, 24 + length - 1))
+  return decodeRaw(bytes)?.header?.frame_id ?? null
 }
 function poseFrom(stream, frame, pose) {
   const p = pose?.position, q = pose?.orientation
@@ -1559,10 +1555,10 @@ function subscribeTopic(key, kind) {
       subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 20, codec: prefix + "image" }, (msg) => onVideo(stream, msg.mediaStream, msg.video)))
     }
   } else if (kind === "cloud") {
-    let frame = ""
-    subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 0.2, bandwidthPriority: 0 }, (msg) => { frame = headerFrameId(msg.bytes) ?? frame }))
+    let frame = null   // clouds wait for it: placed without a frame they'd ride the robot pose
+    subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 0.2, bandwidthPriority: 0 }, (msg) => { frame = headerFrameId(msg.bytes) ?? "" }))
     subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 10, codec: "dimos-pointcloud2" }, (msg) => {
-      if (msg.points) { onCloud({ stream, frame, xyz: msg.points.positions }); setStatus() }
+      if (msg.points && frame !== null) { onCloud({ stream, frame, xyz: msg.points.positions }); setStatus() }
     }))
   } else {
     subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: kind === "tf" ? 50 : 20 }, (msg) => {
