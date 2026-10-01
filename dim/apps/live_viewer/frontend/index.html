@@ -106,7 +106,8 @@
     font: inherit; font-size: 13px; line-height: 1; padding: 0 2px; }
   .cam-win .cam-close:hover { color: var(--fg); }
   .cam-win .cam-body { flex: 1 1 auto; min-height: 0; background: oklch(0.14 0.015 258); }
-  .cam-win canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .cam-win canvas, .cam-win video { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .cam-win video { display: none; }
   .cam-win.collapsed { height: auto !important; min-height: 0; resize: none; }
   .cam-win.collapsed .cam-body { display: none; }
 
@@ -242,7 +243,8 @@
 
 <script type="module">
 import * as THREE from "three"
-import { DimAppFrontend } from "https://esm.sh/gh/jeff-hykin/dim-app@v0.3.0/frontend.js"
+import { connect } from "https://esm.sh/gh/jeff-hykin/zenoh-web@v0.1.0/client/zenoh_web.ts"
+import { decode } from "https://esm.sh/jsr/@dimos/msgs@0.1.4"
 
 // ── cloud coloring: a start→end color gradient mapped along one axis ──
 const clamp01 = (value) => Math.min(1, Math.max(0, value))
@@ -832,12 +834,6 @@ function isGlobalFrame(frame) {
   return GLOBAL_FRAME_NAMES.test(frame) || (tfParents.has(frame) && !tf.has(frame))
 }
 
-function b64ToBuffer(b64) {
-  const binary = atob(b64); const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i) }
-  return bytes.buffer
-}
-
 // ── point clouds ──
 const clouds = new Map()   // stream -> { points, geom, frame }
 // Each cloud stream is a group of one-or-more frame Points. In "latest" mode it
@@ -1067,7 +1063,7 @@ function pruneCloudFrames(cloud, latestTs) {
 function onCloud(payload) {
   const cloud = ensureCloud(payload.stream)
   cloud.frame = payload.frame
-  const rawXyz = new Float32Array(b64ToBuffer(payload.b64))
+  const rawXyz = payload.xyz
   const points = new THREE.Points(new THREE.BufferGeometry(), cloud.material)
   points.matrixAutoUpdate = false
   // Placement, in priority order:
@@ -1197,7 +1193,7 @@ function ensurePath(stream) {
 }
 function onPath(payload) {
   const path = ensurePath(payload.stream)
-  const xyz = new Float32Array(b64ToBuffer(payload.b64))
+  const xyz = payload.xyz
   const capacity = path.geom.getAttribute("position")
   if (xyz.length > capacity.array.length) {
     path.geom.setAttribute("position", new THREE.BufferAttribute(xyz.slice(), 3))
@@ -1214,36 +1210,6 @@ function onPath(payload) {
 const camLayer = document.getElementById("cam-layer")
 const imageWindows = new Map()   // name -> { el, canvas, ctx, titleEl, badgeEl, raw }
 let camCascade = 0
-// How each sensor_msgs/Image encoding is laid out in the byte buffer. Getting this
-// wrong reads a 2-byte depth pixel as an rgb8 triple, which smears the image into
-// diagonal bands — so the encoding decides the layout, never the stream name.
-const IMAGE_ENCODINGS = {
-  mono8: { bytes: 1, channels: 1 },
-  rgb8: { bytes: 3, channels: 3 },
-  bgr8: { bytes: 3, channels: 3, bgr: true },
-  rgba8: { bytes: 4, channels: 4 },
-  bgra8: { bytes: 4, channels: 4, bgr: true },
-  mono16: { bytes: 2, read: "uint16" },
-  "16uc1": { bytes: 2, read: "uint16", depth: true, scale: 0.001 },   // millimeters
-  "16sc1": { bytes: 2, read: "int16", depth: true, scale: 0.001 },
-  "32fc1": { bytes: 4, read: "float32", depth: true, scale: 1 },      // meters
-  "64fc1": { bytes: 8, read: "float64", depth: true, scale: 1 },
-  "32fc3": { bytes: 12, channels: 3, read: "float32" },
-}
-// Only fall back to the stream name when the publisher left the encoding blank.
-function imageLayout(payload) {
-  const encoding = String(payload.encoding || "").toLowerCase()
-  const layout = IMAGE_ENCODINGS[encoding]
-  if (layout) { return layout }
-  if (/depth/i.test(payload.stream)) { return IMAGE_ENCODINGS["16uc1"] }
-  return IMAGE_ENCODINGS.rgb8
-}
-// A 16-bit single-channel frame is distance for a depth stream and brightness for a
-// grayscale one; both need normalizing, only depth gets the jet ramp.
-function isDepthPayload(payload) {
-  const layout = imageLayout(payload)
-  return !!layout.depth || (!layout.channels && /depth/i.test(payload.stream))
-}
 // Classic "jet" colormap: near (t≈0) → red, far (t≈1) → blue, so closer surfaces read hot.
 function jetColor(t) {
   const value = 4 * clamp01(1 - t)
@@ -1278,7 +1244,7 @@ function ensureImageWindow(name) {
   const el = document.createElement("div")
   el.className = "cam-win"
   el.innerHTML = '<div class="cam-head"><span class="cam-title"></span><span class="cam-badge"></span>' +
-    '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas></div>'
+    '<button class="cam-close" title="Hide">&times;</button></div><div class="cam-body"><canvas></canvas><video muted playsinline autoplay></video></div>'
   el.querySelector(".cam-title").textContent = name.split("#")[0]
   const canvas = el.querySelector("canvas")
   if (Number.isFinite(entry?.winW)) { el.style.width = entry.winW + "px"; el.style.height = entry.winH + "px" }
@@ -1288,7 +1254,7 @@ function ensureImageWindow(name) {
     el.style.right = (14 + offset) + "px"; el.style.top = (60 + offset) + "px"
   }
   camLayer.appendChild(el)
-  win = { el, canvas, ctx: canvas.getContext("2d"), badgeEl: el.querySelector(".cam-badge"), raw: null }
+  win = { el, canvas, video: el.querySelector("video"), ctx: canvas.getContext("2d"), badgeEl: el.querySelector(".cam-badge"), raw: null }
   imageWindows.set(name, win)
   el.querySelector(".cam-close").addEventListener("click", (event) => {
     event.stopPropagation()
@@ -1322,105 +1288,39 @@ function ensureImageWindow(name) {
   new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => saveWindowGeom(name, win), 250) }).observe(el)
   return win
 }
-// jpeg/png/webp decode natively; jxl (what dimos uses for lossless 16-bit depth) does not
-// in any current browser, so a failed decode names the format in the badge rather than
-// leaving the window mysteriously blank.
-function decodeCompressedFrame(win, payload, onReady) {
-  const format = String(payload.format || "jpeg").replace(/[^a-z0-9]/gi, "") || "jpeg"
-  const image = new Image()
-  image.onload = () => onReady(image)
-  image.onerror = () => { win.badgeEl.textContent = `${format} unsupported` }
-  image.src = `data:image/${format};base64,${payload.b64}`
+// Color streams arrive as an H.264 track from the bridge's image codecs, so the window
+// just plays it; depth arrives lossless (16UC1 mm, 32FC1 m, mono16 gray) and is ramped here.
+function onVideo(stream, mediaStream, info) {
+  addStream(stream, "image")
+  const entry = known.get(stream)
+  const win = ensureImageWindow(stream)
+  const visible = !(entry && entry.on === false)
+  win.el.style.display = visible ? "flex" : "none"
+  if (win.video.srcObject !== mediaStream) { win.video.srcObject = mediaStream; win.video.play().catch(() => {}) }
+  win.canvas.style.display = "none"; win.video.style.display = "block"
+  win.badgeEl.textContent = info ? `${info.width}×${info.height}` : "color"
 }
-// JPEG/PNG-encoded depth streams arrive as 8-bit grayscale (the true 16-bit depth was
-// already flattened at record time). Decode the picture, then re-color the grayscale
-// through the same jet ramp as raw depth so it reads as depth, not a washed-out photo.
-function drawCompressedDepth(win, payload) {
-  decodeCompressedFrame(win, payload, (image) => {
-    const width = image.width, height = image.height
-    if (!win.decodeCanvas) { win.decodeCanvas = document.createElement("canvas") }
-    const decodeCanvas = win.decodeCanvas
-    decodeCanvas.width = width; decodeCanvas.height = height
-    const decodeCtx = decodeCanvas.getContext("2d", { willReadFrequently: true })
-    decodeCtx.drawImage(image, 0, 0)
-    const source = decodeCtx.getImageData(0, 0, width, height).data
-    // brightness range across valid (non-zero) pixels, for normalization
-    let low = Infinity, high = -Infinity
-    for (let i = 0; i < source.length; i += 4) {
-      const gray = source[i]
-      if (gray > 0) { if (gray < low) { low = gray }; if (gray > high) { high = gray } }
-    }
-    const span = high > low ? high - low : 1
-    if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
-    if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
-    const destination = win.raw.data
-    for (let i = 0; i < source.length; i += 4) {
-      const gray = source[i]
-      if (!(gray > 0)) { destination[i] = 0; destination[i + 1] = 0; destination[i + 2] = 0; destination[i + 3] = 255; continue }
-      // brighter grayscale = nearer surface, so invert to keep near = hot (red)
-      const [r, g, b] = jetColor(1 - (gray - low) / span)
-      destination[i] = r; destination[i + 1] = g; destination[i + 2] = b; destination[i + 3] = 255
-    }
-    win.ctx.putImageData(win.raw, 0, 0)
-  })
+const DEPTH_SCALE = { "16UC1": 0.001, "32FC1": 1 }   // to meters; mono16 is brightness, not distance
+function onDepth(stream, depth) {
+  addStream(stream, "image")
+  const entry = known.get(stream)
+  const win = ensureImageWindow(stream)
+  const visible = !(entry && entry.on === false)
+  win.el.style.display = visible ? "flex" : "none"
+  if (!visible) { return }   // skip the ramp work while hidden
+  win.video.style.display = "none"; win.canvas.style.display = "block"
+  const scale = DEPTH_SCALE[depth.encoding]
+  drawScalarImage(win, depth, scale, scale !== undefined)
+  if (scale === undefined) { win.badgeEl.textContent = "mono16" }
 }
-function drawColorImage(win, payload) {
-  if (payload.kind === "compressed") {
-    decodeCompressedFrame(win, payload, (image) => {
-      if (win.canvas.width !== image.width || win.canvas.height !== image.height) { win.canvas.width = image.width; win.canvas.height = image.height; win.raw = null }
-      win.ctx.drawImage(image, 0, 0)
-    })
-    return
-  }
-  const width = payload.width, height = payload.height; if (!width || !height) { return }
-  const layout = imageLayout(payload)
-  if (!layout.channels) { drawScalarImage(win, payload, layout, false); return }
-  const source = new Uint8Array(b64ToBuffer(payload.b64))
-  const step = payload.step || width * layout.bytes
-  if (source.length < height * step) { return }   // truncated frame: better nothing than smear
-  if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
-  if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
-  const destination = win.raw.data
-  const isBgr = !!layout.bgr
-  for (let y = 0; y < height; y++) {
-    let sourceIndex = y * step, destIndex = y * width * 4
-    for (let x = 0; x < width; x++) {
-      if (layout.channels === 1) { const value = source[sourceIndex]; destination[destIndex] = value; destination[destIndex + 1] = value; destination[destIndex + 2] = value; destination[destIndex + 3] = 255 }
-      else {
-        destination[destIndex] = source[sourceIndex + (isBgr ? 2 : 0)]
-        destination[destIndex + 1] = source[sourceIndex + 1]
-        destination[destIndex + 2] = source[sourceIndex + (isBgr ? 0 : 2)]
-        destination[destIndex + 3] = 255
-      }
-      sourceIndex += layout.bytes; destIndex += 4
-    }
-  }
-  win.ctx.putImageData(win.raw, 0, 0)
-}
-// Single-channel non-8-bit frames: depth (distance per pixel) or 16-bit grayscale.
 // Zero and non-finite mean "no return" and stay black; the rest is normalized over the
 // valid range, then jet-ramped for depth or shown as gray for mono16.
-const SCALAR_READERS = {
-  uint16: (view, offset, littleEndian) => view.getUint16(offset, littleEndian),
-  int16: (view, offset, littleEndian) => view.getInt16(offset, littleEndian),
-  float32: (view, offset, littleEndian) => view.getFloat32(offset, littleEndian),
-  float64: (view, offset, littleEndian) => view.getFloat64(offset, littleEndian),
-}
-function drawScalarImage(win, payload, layout, colorize) {
-  const width = payload.width, height = payload.height
-  const buffer = b64ToBuffer(payload.b64)
-  const littleEndian = !payload.bigendian
-  const view = new DataView(buffer)
-  const readAt = SCALAR_READERS[layout.read]
-  const step = payload.step || width * layout.bytes
-  if (buffer.byteLength < height * step) { return }
+function drawScalarImage(win, depth, scale, colorize) {
+  const { width, height, data: values } = depth
+  if (!width || !height || values.length < width * height) { return }
   let low = Infinity, high = -Infinity
-  for (let y = 0; y < height; y++) {
-    let offset = y * step
-    for (let x = 0; x < width; x++, offset += layout.bytes) {
-      const value = readAt(view, offset, littleEndian)
-      if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
-    }
+  for (const value of values) {
+    if (value > 0 && Number.isFinite(value)) { if (value < low) { low = value }; if (value > high) { high = value } }
   }
   // A depth frame's true max is a handful of far outliers (and the 65535 "no return"
   // sentinel), which on a plain min/max ramp squeezes the whole room into the bottom few
@@ -1430,14 +1330,10 @@ function drawScalarImage(win, payload, layout, colorize) {
   const range = high > low ? high - low : 1
   const histogram = new Int32Array(BINS)
   let counted = 0
-  for (let y = 0; y < height; y++) {
-    let offset = y * step
-    for (let x = 0; x < width; x++, offset += layout.bytes) {
-      const value = readAt(view, offset, littleEndian)
-      if (!(value > 0) || !Number.isFinite(value)) { continue }
-      histogram[Math.min(BINS - 1, Math.floor(((value - low) / range) * BINS))]++
-      counted++
-    }
+  for (const value of values) {
+    if (!(value > 0) || !Number.isFinite(value)) { continue }
+    histogram[Math.min(BINS - 1, Math.floor(((value - low) / range) * BINS))]++
+    counted++
   }
   let lowBin = 0, highBin = BINS - 1, seen = 0
   for (let bin = 0; bin < BINS; bin++) { seen += histogram[bin]; if (seen >= counted * 0.02) { lowBin = bin; break } }
@@ -1449,34 +1345,18 @@ function drawScalarImage(win, payload, layout, colorize) {
   if (win.canvas.width !== width || win.canvas.height !== height) { win.canvas.width = width; win.canvas.height = height; win.raw = null }
   if (!win.raw) { win.raw = win.ctx.createImageData(width, height) }
   const destination = win.raw.data
-  for (let y = 0; y < height; y++) {
-    let offset = y * step, destIndex = y * width * 4
-    for (let x = 0; x < width; x++, offset += layout.bytes, destIndex += 4) {
-      const value = readAt(view, offset, littleEndian)
-      destination[destIndex + 3] = 255
-      if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; continue }
-      const t = clamp01((value - near) / span)
-      const [r, g, b] = colorize ? jetColor(t) : [Math.round(t * 255), Math.round(t * 255), Math.round(t * 255)]
-      destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b
-    }
+  for (let i = 0; i < width * height; i++) {
+    const value = values[i], destIndex = i * 4
+    destination[destIndex + 3] = 255
+    if (!(value > 0) || !Number.isFinite(value)) { destination[destIndex] = 0; destination[destIndex + 1] = 0; destination[destIndex + 2] = 0; continue }
+    const t = clamp01((value - near) / span)
+    const [r, g, b] = colorize ? jetColor(t) : [Math.round(t * 255), Math.round(t * 255), Math.round(t * 255)]
+    destination[destIndex] = r; destination[destIndex + 1] = g; destination[destIndex + 2] = b
   }
   win.ctx.putImageData(win.raw, 0, 0)
-  if (colorize && layout.scale && counted) {
-    win.badgeEl.textContent = `${(near * layout.scale).toFixed(1)}–${(far * layout.scale).toFixed(1)}m`
+  if (colorize && counted) {
+    win.badgeEl.textContent = `${(near * scale).toFixed(1)}–${(far * scale).toFixed(1)}m`
   }
-}
-function onFrame(payload) {
-  addStream(payload.stream, "image")
-  const entry = known.get(payload.stream)
-  const win = ensureImageWindow(payload.stream)
-  const depth = isDepthPayload(payload)
-  win.badgeEl.textContent = depth ? "depth" : "color"
-  const visible = !(entry && entry.on === false)
-  win.el.style.display = visible ? "flex" : "none"
-  if (!visible) { return }   // skip the decode work while hidden
-  if (depth && payload.kind === "compressed") { drawCompressedDepth(win, payload) }
-  else if (depth) { drawScalarImage(win, payload, imageLayout(payload), true) }
-  else { drawColorImage(win, payload) }
 }
 
 // ── clear scene state (on load / seek reset) ──
@@ -1633,21 +1513,112 @@ function setStatus() {
   statEl.textContent = bridgeUp ? `live · ${known.size} streams${drops}${undecodable}` : "waiting for bridge…"
 }
 
-// ── app bus (live: frames stream straight from the bridge, no transport) ──
-const app = new DimAppFrontend()
-function handleAppMessage(kind, payload) {
-  if (kind === "status") { bridgeUp = !!payload.bridge; droppedPerSecond = payload.dropped || 0; undecodableCount = payload.undecodable || 0; setStatus() }
-  else if (kind === "cloud") { onCloud(payload); setStatus() }
-  else if (kind === "odom") { onOdom(payload); setStatus() }
-  else if (kind === "tf") { for (const transform of payload.transforms || []) { setTf(transform.parent, transform.child, transform.t, transform.q) } }
-  else if (kind === "path") { onPath(payload); setStatus() }
-  else if (kind === "frame") { onFrame(payload) }
+// ── data: every dimos topic straight off Desktop's zenoh-web bridge ──
+// dimos puts a typed channel on `dimos/<topic>/<msg_name>`, so the key itself says how to
+// draw it: images and clouds use the bridge's codecs (H.264 video, lossless depth,
+// quantized points); small messages come raw and decode here with @dimos/msgs.
+const KINDS = {
+  "sensor_msgs.Image": "image", "sensor_msgs.CompressedImage": "compressed-image",
+  "sensor_msgs.PointCloud2": "cloud",
+  "geometry_msgs.PoseStamped": "pose", "nav_msgs.Odometry": "odometry",
+  "tf2_msgs.TFMessage": "tf", "nav_msgs.Path": "path",
 }
-app.receiveRequest(handleAppMessage)
-window.__lv_inject = handleAppMessage   // test hook: feed synthetic bus messages
-window.__lv_scene = scene               // test hook: inspect the rendered scene graph
-app.send("hello")
+const subscribed = new Map()   // key -> [subscriptions]
+let zenoh = null, lastDropped = 0
+function streamName(key) {
+  const parts = key.split("/")
+  return "/" + parts.slice(1, -1).join("/")
+}
+function decodeRaw(bytes) {
+  try { return decode(bytes) } catch { undecodableCount++; return null }
+}
+// The point codec carries no header, so a cloud's frame_id comes from a raw copy every
+// few seconds; only the header at the front of it is read (hash, seq, stamp, frame_id).
+function headerFrameId(bytes) {
+  if (bytes.length < 24) { return null }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const length = view.getUint32(20, false)
+  if (length < 1 || 24 + length > bytes.length) { return null }
+  return new TextDecoder().decode(bytes.subarray(24, 24 + length - 1))
+}
+function poseFrom(stream, frame, pose) {
+  const p = pose?.position, q = pose?.orientation
+  if (!p || !q) { return }
+  onOdom({ stream, frame, pos: [p.x, p.y, p.z], quat: [q.x, q.y, q.z, q.w] })
+  setStatus()
+}
+function subscribeTopic(key, kind) {
+  const stream = streamName(key)
+  const isDepth = /depth/i.test(stream)
+  const subs = []
+  if (kind === "image" || kind === "compressed-image") {
+    const prefix = kind === "image" ? "dimos-" : "dimos-compressed-"
+    if (isDepth) {
+      subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 10, codec: prefix + "depth" }, (msg) => { if (msg.depth) { onDepth(stream, msg.depth) } }))
+    } else {
+      subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 20, codec: prefix + "image" }, (msg) => onVideo(stream, msg.mediaStream, msg.video)))
+    }
+  } else if (kind === "cloud") {
+    let frame = ""
+    subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 0.2, bandwidthPriority: 0 }, (msg) => { frame = headerFrameId(msg.bytes) ?? frame }))
+    subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: 10, codec: "dimos-pointcloud2" }, (msg) => {
+      if (msg.points) { onCloud({ stream, frame, xyz: msg.points.positions }); setStatus() }
+    }))
+  } else {
+    subs.push(zenoh.subscribe(key, { delivery: "latest", maxHz: kind === "tf" ? 50 : 20 }, (msg) => {
+      const decoded = decodeRaw(msg.bytes)
+      if (!decoded) { return }
+      if (kind === "pose") { poseFrom(stream, decoded.header?.frame_id || "", decoded.pose) }
+      else if (kind === "odometry") { poseFrom(stream, decoded.header?.frame_id || "", decoded.pose?.pose) }
+      else if (kind === "tf") {
+        for (const t of decoded.transforms || []) {
+          const { translation: tr, rotation: ro } = t.transform
+          setTf(t.header?.frame_id || "", t.child_frame_id || "", [tr.x, tr.y, tr.z], [ro.x, ro.y, ro.z, ro.w])
+        }
+      } else if (kind === "path") {
+        const poses = decoded.poses || []
+        const xyz = new Float32Array(poses.length * 3)
+        let count = 0
+        for (const poseStamped of poses) {
+          const p = poseStamped?.pose?.position
+          if (!p || !isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) { continue }
+          xyz[count * 3] = p.x; xyz[count * 3 + 1] = p.y; xyz[count * 3 + 2] = p.z; count++
+        }
+        onPath({ stream, frame: decoded.header?.frame_id || "", xyz: xyz.subarray(0, count * 3) })
+        setStatus()
+      }
+    }))
+  }
+  subscribed.set(key, subs)
+}
+// Topics come and go with the blueprint, so discovery reruns every few seconds.
+async function discover() {
+  const topics = await zenoh.listTopics("dimos/**", { probeMs: 800 })
+  for (const { key } of topics) {
+    if (subscribed.has(key) || key.includes("*")) { continue }
+    const kind = KINDS[key.split("/").at(-1)]
+    if (kind) { subscribeTopic(key, kind) }
+  }
+}
+async function start() {
+  while (!zenoh) {
+    try { zenoh = await connect("/zenoh-web") } catch { await new Promise((resolve) => setTimeout(resolve, 3000)) }
+  }
+  bridgeUp = true; setStatus()
+  zenoh.onState((state) => { bridgeUp = state === "connected"; setStatus() })
+  setInterval(() => {
+    const dropped = Object.values(zenoh.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
+    droppedPerSecond = dropped - lastDropped; lastDropped = dropped; setStatus()
+  }, 1000)
+  for (;;) {
+    try { await discover() } catch { /* bridge reconnecting; try again */ }
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+  }
+}
+window.__lv_scene = scene   // test hook: inspect the rendered scene graph
+window.__lv_subscribed = subscribed
 setStatus()
+start()
 </script>
 </body>
 </html>

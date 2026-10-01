@@ -1,0 +1,11 @@
+name: dim-live-viewer
+install: nix run .#install
+apps:
+    - name: live_viewer
+      title: Live Viewer
+      icon: dim/apps/live_viewer/frontend/icon.svg
+      frontend: dim/apps/live_viewer/frontend
+requires:
+    dimos-desktop:
+        version: ">=0.2.0"
+        apis: { app.frontend: 1, api.zenoh_web: 1 }
