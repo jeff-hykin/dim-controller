@@ -18,19 +18,35 @@ export const wantsRecording = (topic: Topic, chosen: Record<string, boolean>) =>
 const megabytes = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${(bytes / 1e6).toFixed(1)} MB`
 const age = (seconds: number) => seconds < 90 ? `${Math.round(seconds)} s ago` : seconds < 5400 ? `${Math.round(seconds / 60)} min ago` : seconds < 129600 ? `${Math.round(seconds / 3600)} h ago` : `${Math.round(seconds / 86400)} d ago`
 
-/** While recording, topics that appear and are wanted join the file. */
+/** While recording, topics that first appear after it started (and are wanted) join the file. */
 export function followNewTopics(app: ViewerApp) {
-    app.connection.status.subscribe(() => {
+    // the topics on the bridge when the recording started: the user already chose among those
+    let seenAtStart: Set<string> | null = null
+    const check = () => {
         const status = recorder.status.get()
-        if (!status.recording.active || !options.get().recordNew) {
+        const topics = app.connection.status.get().topics
+        if (!status.recording.active) {
+            seenAtStart = null
+            return
+        }
+        if (seenAtStart === null) {
+            seenAtStart = new Set(topics.map((topic) => topic.key))
+            return
+        }
+        if (!options.get().recordNew) {
             return
         }
         const recording = new Set(status.keys)
-        const fresh = app.connection.status.get().topics.filter((topic) => !recording.has(topic.key) && wantsRecording(topic, overrides.get())).map((topic) => topic.key)
+        const fresh = topics.filter((topic) => !seenAtStart!.has(topic.key) && !recording.has(topic.key) && wantsRecording(topic, overrides.get())).map((topic) => topic.key)
+        for (const key of fresh) {
+            seenAtStart.add(key)
+        }
         if (fresh.length) {
             recorder.add(fresh).then(() => recorder.refresh()).catch(() => {})
         }
-    })
+    }
+    app.connection.status.subscribe(check)
+    recorder.status.subscribe(check)
 }
 
 function TopicRow({ topic, chosen }: { topic: Topic; chosen: Record<string, boolean> }) {

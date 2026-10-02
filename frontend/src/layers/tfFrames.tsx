@@ -15,6 +15,7 @@ export interface TfSettings {
 }
 
 const AXES_CAP = 512
+const NAMES_CAP = 16
 
 class TfFramesLayer {
     readonly root = new THREE.Group()
@@ -60,7 +61,8 @@ class TfFramesLayer {
                 tip.copy(axis).multiplyScalar(settings.axesSize).applyMatrix4(matrix)
                 this.#axes.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z, color)
             }
-            if (settings.names) {
+            // a big tree (an arm, a humanoid) turns names into a pile; then only the robot and the fixed frame are named
+            if (settings.names && (snapshot.frames.length <= NAMES_CAP || name === frame.fixedFrame || name === this.context.profile.baseFrame)) {
                 this.#labels.place(name, origin)
             }
             const edge = snapshot.edges.find((other) => other.child === name)
