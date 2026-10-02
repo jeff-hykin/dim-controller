@@ -36,13 +36,19 @@ pub struct Args {
     /// the built page (vite's dist); the nix wrapper sets it
     #[arg(long, env = "LIVE_VIEWER_FRONTEND")]
     frontend: Option<PathBuf>,
-    /// where recordings go [default: $DIMOS_APP_DATA/recordings, else ~/.dimos/data/<app>/recordings]
+    /// where recordings go [default: Desktop's shared folder $DIMOS_RECORDINGS_DIR/live-viewer, else $DIMOS_APP_DATA/recordings]
     #[arg(long, env = "LIVE_VIEWER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
 }
 
-/// Where recordings go when nobody says: the app's data dir from Desktop, never the app's own (git) checkout.
+/// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
+/// app's data dir, never the app's own (git) checkout.
 fn default_record_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("DIMOS_RECORDINGS_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir).join("live-viewer");
+        }
+    }
     if let Ok(dir) = std::env::var("DIMOS_APP_DATA") {
         if !dir.is_empty() {
             return PathBuf::from(dir).join("recordings");

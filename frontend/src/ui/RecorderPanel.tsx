@@ -137,7 +137,7 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
                     <li key={file.name} className="file">
                         <span className="file-name" title={file.path}>{file.name}</span>
                         <span className="file-meta">{megabytes(file.bytes)} · {age(file.seconds_old)}</span>
-                        <a className="icon-button" href={recorder.downloadUrl(file.name)} download={file.name} title="Download"><Icon name="download" size={16} /></a>
+                        <a className="icon-button" href={recorder.downloadUrl(file)} download={file.name.split("/").pop()} title="Download"><Icon name="download" size={16} /></a>
                         <button type="button" className="icon-button" title="Copy path" onClick={() => navigator.clipboard?.writeText(file.path)}><Icon name="copy" size={16} /></button>
                         <button
                             type="button"
@@ -146,7 +146,7 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
                             onClick={() => {
                                 if (confirm === file.name) {
                                     setConfirm(null)
-                                    run(recorder.remove(file.name))
+                                    run(recorder.remove(file))
                                 } else {
                                     setConfirm(file.name)
                                 }

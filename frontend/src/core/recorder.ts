@@ -15,6 +15,8 @@ export interface RecordingFile {
     path: string
     bytes: number
     seconds_old: number
+    /** Desktop's id for it in the shared recordings folder (GET /recordings); absent when listed by this backend */
+    id?: string
 }
 
 export interface RecorderStatus {
@@ -28,6 +30,37 @@ export interface RecorderStatus {
 }
 
 const base = () => new URL("api/recorder", location.href).href
+// Desktop's shared recordings folder API (docs/api.md in dimos-desktop); the page lives at /apps/<name>/
+const desktopRecordings = () => new URL("../../recordings", location.href).href
+
+interface DesktopRecording {
+    id: string
+    name: string
+    path: string
+    size: number
+    modified: number
+}
+
+/** Every recording in Desktop's shared folder, or null when this page isn't running inside Desktop. */
+async function sharedRecordings(): Promise<RecordingFile[] | null> {
+    try {
+        const response = await fetch(desktopRecordings())
+        if (!response.ok) {
+            return null
+        }
+        const body = (await response.json()) as { recordings: DesktopRecording[] }
+        const now = Date.now() / 1000
+        return body.recordings.map((recording) => ({
+            id: recording.id,
+            name: recording.id,
+            path: recording.path,
+            bytes: recording.size,
+            seconds_old: Math.max(0, now - recording.modified),
+        }))
+    } catch {
+        return null
+    }
+}
 
 async function call(path: string, init?: RequestInit) {
     const response = await fetch(base() + path, { headers: { "content-type": "application/json" }, ...init })
@@ -58,7 +91,9 @@ class RecorderClient {
 
     async refresh() {
         try {
-            this.status.set({ ...(await call("")), unavailable: null })
+            const [status, shared] = await Promise.all([call(""), sharedRecordings()])
+            // the file list is Desktop's shared folder when there is one (it's where this recorder writes)
+            this.status.set({ ...status, files: shared ?? status.files, unavailable: null })
         } catch (error) {
             this.status.update({ unavailable: `recorder backend unreachable (${error})` })
         }
@@ -96,13 +131,23 @@ class RecorderClient {
         this.status.set({ ...(await call("/settings", { method: "PUT", body: JSON.stringify(patch) })), unavailable: null })
     }
 
-    async remove(name: string) {
-        await call(`/files/${encodeURIComponent(name)}`, { method: "DELETE" })
+    async remove(file: RecordingFile) {
+        if (file.id) {
+            const response = await fetch(`${desktopRecordings()}/${file.id.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" })
+            if (!response.ok) {
+                throw new Error((await response.json().catch(() => ({}))).error ?? `${response.status}`)
+            }
+        } else {
+            await call(`/files/${encodeURIComponent(file.name)}`, { method: "DELETE" })
+        }
         await this.refresh()
     }
 
-    downloadUrl(name: string) {
-        return `${base()}/files/${encodeURIComponent(name)}`
+    downloadUrl(file: RecordingFile) {
+        if (file.id) {
+            return `${desktopRecordings()}/${file.id.split("/").map(encodeURIComponent).join("/")}/file`
+        }
+        return `${base()}/files/${encodeURIComponent(file.name)}`
     }
 }
 

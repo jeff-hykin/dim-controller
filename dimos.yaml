@@ -4,4 +4,8 @@ dimos-desktop-api: ">=2 <3"
 dimos-api:
     - GET /dimos/runs
     - GET /dimos/blueprints/{name}
+    # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
+    - GET /recordings
+    - GET /recordings/{id}/file
+    - DELETE /recordings/{id}
 zenoh-web: ">=0.4 <0.5"
