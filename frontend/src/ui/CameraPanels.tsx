@@ -226,7 +226,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
 
     const floating = !isMain
     const style: React.CSSProperties = floating && !mobile
-        ? { width: panel.width, height: panel.height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * 24 }) }
+        ? { width: panel.width, height: panel.height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * (panel.height + 12) }) }
         : {}
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     return (
