@@ -4,7 +4,8 @@ import * as THREE from "three"
 /** Stops as [position 0..1, "#rrggbb"]; piecewise-linear in sRGB. */
 const RAMPS: Record<string, [number, string][]> = {
     // Turbo (Google's improved rainbow): the best general height ramp; every band reads apart
-    turbo: [[0, "#30123b"], [0.1, "#4145ab"], [0.2, "#4675ed"], [0.3, "#39a2fc"], [0.4, "#1bcfd4"], [0.5, "#24eca6"], [0.6, "#61fc6c"], [0.7, "#a4fc3b"], [0.8, "#d1e834"], [0.9, "#f3c63a"], [1, "#fe9b2d"]],
+    // the floor is usually the lowest band, so the ramp starts at turbo's blue rather than its near-black
+    turbo: [[0, "#3e5fd8"], [0.2, "#4675ed"], [0.3, "#39a2fc"], [0.4, "#1bcfd4"], [0.5, "#24eca6"], [0.6, "#61fc6c"], [0.7, "#a4fc3b"], [0.8, "#d1e834"], [0.9, "#f3c63a"], [1, "#fe9b2d"]],
     viridis: [[0, "#440154"], [0.25, "#3b528b"], [0.5, "#21918c"], [0.75, "#5ec962"], [1, "#fde725"]],
     magma: [[0, "#000004"], [0.25, "#51127c"], [0.5, "#b73779"], [0.75, "#fc8961"], [1, "#fcfdbf"]],
     plasma: [[0, "#0d0887"], [0.25, "#7e03a8"], [0.5, "#cc4778"], [0.75, "#f89540"], [1, "#f0f921"]],

@@ -68,6 +68,8 @@ void main() {
 `
 
 const fragmentShader = /* glsl */ `
+// three declares this for vertex shaders only; it is set for the program either way
+uniform mat4 projectionMatrix;
 uniform float uSize;
 uniform int uStyle;
 uniform float uOpacity;
