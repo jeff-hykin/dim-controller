@@ -28,22 +28,22 @@
                         '';
                     };
 
-                    # the backend: serves the page (its store path baked in) and records topics to mcap
+                    # the backend: serves the page and records topics to mcap (independent of the page, so a page
+                    # change doesn't rebuild it)
                     server = rustPlatform.buildRustPackage {
                         pname = "dim-live-viewer-server";
                         version = "0.1.0";
                         src = ./server;
                         cargoLock.lockFile = ./server/Cargo.lock;
-                        LIVE_VIEWER_FRONTEND_BUILT = "${frontend}";
                         # the tests open zenoh sessions on loopback; `cargo test` runs them in development
                         doCheck = false;
                     };
                 in {
                     inherit frontend server;
                     # what Desktop builds: bin/dimos-app-server, which serves everything under /apps/<name>/
-                    dimosApp = pkgs.runCommand "dim-live-viewer" { } ''
+                    dimosApp = pkgs.runCommand "dim-live-viewer" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
                         mkdir -p $out/bin
-                        ln -s ${server}/bin/dimos-app-server $out/bin/dimos-app-server
+                        makeWrapper ${server}/bin/dimos-app-server $out/bin/dimos-app-server --set-default LIVE_VIEWER_FRONTEND ${frontend}
                         cp ${self}/icon.svg $out/icon.svg
                     '';
                     default = self.packages.${pkgs.system}.dimosApp;

@@ -33,7 +33,7 @@ pub struct Args {
     dimos_dir: String,
     #[arg(long, env = "DIMOS_PYTHON", default_value = "")]
     dimos_python: String,
-    /// the built page (vite's dist); nix bakes in its store path
+    /// the built page (vite's dist); the nix wrapper sets it
     #[arg(long, env = "LIVE_VIEWER_FRONTEND")]
     frontend: Option<PathBuf>,
     /// where recordings go [default: $DIMOS_APP_DATA/recordings, else ~/.dimos/data/<app>/recordings]
@@ -55,22 +55,11 @@ fn default_record_dir() -> PathBuf {
     home.join("data").join(app).join("recordings")
 }
 
-fn frontend_dir(args: &Args) -> PathBuf {
-    if let Some(dir) = &args.frontend {
-        return dir.clone();
-    }
-    // nix sets this at build time to the store path of the built page
-    if let Some(dir) = option_env!("LIVE_VIEWER_FRONTEND_BUILT") {
-        return PathBuf::from(dir);
-    }
-    PathBuf::from("frontend/dist")
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
     let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
-    let frontend = frontend_dir(&args);
+    let frontend = args.frontend.clone().unwrap_or_else(|| PathBuf::from("frontend/dist"));
     eprintln!("live viewer: page {}, recordings {}", frontend.display(), record_dir.display());
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
     let app = recorder::router(state.clone()).fallback_service(
