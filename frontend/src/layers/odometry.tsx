@@ -2,7 +2,7 @@
 // has driven, kept in the fixed frame (bounded, configurable length; a jump leaves a gap instead of a streak).
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
-import { colorFor, poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
+import { poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
 import { FatLines } from "../core/render/lines.ts"
 import { robotPose } from "../core/robot.ts"
 import { useStore, type Store } from "../core/store.ts"
@@ -18,6 +18,8 @@ export interface PoseSettings {
     color: string
     width: number
     axesSize: number
+    /** drawn over everything (a path is usually inside the map it was driven through) */
+    onTop: boolean
 }
 
 const MIN_STEP = 0.02
@@ -51,6 +53,8 @@ class PoseLayer {
         this.#trail.material.color.set(settings.color)
         this.#trail.material.linewidth = settings.width
         this.#trail.object.visible = settings.trail
+        this.#trail.material.depthTest = settings.onTop === false
+        this.#trail.object.renderOrder = settings.onTop === false ? 0 : 10
         this.#axes.scale.setScalar(settings.axesSize)
         this.context.viewer.requestRender()
     }
@@ -126,6 +130,7 @@ function PoseSettingsEditor({ settings }: { settings: Store<PoseSettings>; topic
             <Field label="Length">
                 <Select value={String(value.trailLength)} options={[["500", "500 steps"], ["5000", "5k steps"], ["20000", "20k steps"], ["100000", "100k steps"]]} onChange={(length) => settings.update({ trailLength: Number(length) })} />
             </Field>
+            <Field label="On top"><Toggle value={value.onTop !== false} onChange={(onTop) => settings.update({ onTop })} /></Field>
             <Field label="Color"><input type="color" value={value.color} onChange={(event) => settings.update({ color: event.target.value })} /></Field>
             <Field label="Width"><Slider min={1} max={8} step={0.5} value={value.width} format={(width) => `${width}px`} onChange={(width) => settings.update({ width })} /></Field>
             <Field label="Axes"><Slider min={0} max={2} step={0.1} value={value.axesSize} format={(size) => `${size} m`} onChange={(axesSize) => settings.update({ axesSize })} /></Field>
@@ -137,7 +142,8 @@ registerLayer<PoseSettings>({
     id: "pose",
     label: "Pose + trail",
     types: ["nav_msgs.Odometry", "geometry_msgs.PoseStamped", "geometry_msgs.PoseWithCovarianceStamped"],
-    defaults: (topic) => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: `#${colorFor(topic.name).getHexString()}`, width: 3, axesSize: 0.6 }),
+    // magenta: no point-cloud gradient uses it, so the path reads over any map
+    defaults: () => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: "#ff2bd6", width: 4, axesSize: 0.6, onTop: true }),
     create: (context, topic, settings) => new PoseLayer(context, topic, settings),
     Settings: PoseSettingsEditor,
 })

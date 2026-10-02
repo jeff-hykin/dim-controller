@@ -33,6 +33,8 @@ export class ViewerApp {
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
     #framed = false
+    /** where the robot is now (followed or not), for recentering */
+    #robotPosition: THREE.Vector3 | null = null
 
     constructor(host: HTMLElement) {
         this.profile = profiles.find((profile) => profile.name === this.settings.get().profile) ?? profiles[0]
@@ -58,6 +60,7 @@ export class ViewerApp {
         const base = this.tf.lookup(this.profile.baseFrame, fixedFrame)
         const robot = base ?? robotPose.matrix
         const position = robot ? new THREE.Vector3().setFromMatrixPosition(robot) : null
+        this.#robotPosition = position
         if (position && !this.#framed) {
             this.#framed = true
             this.viewer.followTarget = position
@@ -72,7 +75,7 @@ export class ViewerApp {
 
     /** Recenter on the robot (or the origin). */
     recenter(topDown = false) {
-        const target = this.viewer.followTarget?.clone() ?? new THREE.Vector3()
+        const target = this.#robotPosition?.clone() ?? new THREE.Vector3()
         if (topDown) {
             this.viewer.topDown(target, 14)
         } else {

@@ -285,7 +285,8 @@ class CloudLayer {
     }
 }
 
-const formatCount = (count: number) => count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count)
+const formatCount = (count: number) =>
+    count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count)
 
 function CloudSettingsEditor({ settings }: { settings: Store<CloudSettings>; topic: Topic }) {
     const value = useStore(settings)
