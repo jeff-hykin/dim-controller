@@ -2,6 +2,7 @@
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { recorder } from "../core/recorder.ts"
+import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
 import type { Tab } from "./SidePanel.tsx"
 
@@ -19,6 +20,7 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
     const tf = useStore(app.tf.summary)
     const recording = useStore(recorder.status).recording.active
     const drive = useStore(app.drive.state)
+    const fallback = useStore(splatFallback)
     const live = connection.state === "connected"
     return (
         <header className="topbar">
@@ -32,6 +34,11 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
             <span className="pill stats-pill" title="frames per second · bridge → screen latency (p50)">
                 {stats.fps} fps{stats.latencyP50 !== null ? ` · ${Math.round(stats.latencyP50)} ms` : ""}
             </span>
+            {fallback.active && (
+                <button type="button" className="pill warn-pill" title={`splat frames took ${fallback.frameMs.toFixed(0)} ms (over 16 ms): drawing cubes instead. Click to try splats again.`} onClick={() => splatFallback.set({ active: false, frameMs: 0 })}>
+                    splats → cubes ({fallback.frameMs.toFixed(0)} ms)
+                </button>
+            )}
             {drive.armed && <span className="pill armed-pill">ARMED</span>}
             <span className="spacer" />
             <nav className="tabs">

@@ -4,9 +4,13 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { Field, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
+import { rendering } from "../core/render/rendering.ts"
+import { StylePicker } from "./StylePicker.tsx"
+import type { PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
+    const render = useStore(rendering)
     return (
         <div className="settings-panel">
             <Field label="Robot" hint="key bindings, drive topics, speeds and extra controls (src/profile)">
@@ -27,6 +31,12 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     ))}
                 </span>
             </Field>
+            <h3>Rendering</h3>
+            <div className="field-block">
+                <span className="field-label">Point style</span>
+                <StylePicker value={render.pointStyle} onChange={(pointStyle) => rendering.update({ pointStyle: pointStyle as PointStyle })} />
+                <p className="hint">The default for every point cloud; a layer can pick its own in its settings.</p>
+            </div>
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <div className="button-row">

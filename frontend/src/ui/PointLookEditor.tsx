@@ -1,20 +1,21 @@
 // Edits how points look: style, size, color mode, gradient and range. Used by every layer that draws points.
 import { GRADIENTS, gradientCss } from "../core/render/gradients.ts"
 import { POINT_STYLES, type PointLook, type PointStyle } from "../core/render/pointMaterial.ts"
+import { rendering } from "../core/render/rendering.ts"
+import { useStore } from "../core/store.ts"
+import { StylePicker } from "./StylePicker.tsx"
 import { Field, NumberInput, Select, Slider } from "./controls.tsx"
 
 export function PointLookEditor({ look, onChange }: { look: PointLook; onChange: (look: PointLook) => void }) {
     const set = (patch: Partial<PointLook>) => onChange({ ...look, ...patch })
+    const global = useStore(rendering)
+    const shown = look.style === "default" ? global.pointStyle : look.style
     return (
         <>
             <Field label="Style">
-                <span className="segmented">
-                    {(Object.keys(POINT_STYLES) as PointStyle[]).map((style) => (
-                        <button type="button" key={style} className={look.style === style ? "on" : ""} onClick={() => set({ style })}>{POINT_STYLES[style].label}</button>
-                    ))}
-                </span>
+                <StylePicker value={look.style} onChange={(style) => set({ style })} withDefault={POINT_STYLES[global.pointStyle].label} />
             </Field>
-            <Field label={look.style === "voxel" ? "Voxel" : "Size"}>
+            <Field label={shown === "voxel" ? "Voxel" : "Size"}>
                 <Slider min={0.01} max={0.5} step={0.01} value={look.size} format={(size) => `${Math.round(size * 100)} cm`} onChange={(size) => set({ size })} />
             </Field>
             <Field label="Color">

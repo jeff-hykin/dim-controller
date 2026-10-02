@@ -9,6 +9,7 @@ import { applyLook, makePointMaterial, type PointLook } from "../core/render/poi
 import type { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
+import { rendering, resolveStyle, splatFallback } from "../core/render/rendering.ts"
 import { Field, Select, Slider } from "../ui/controls.tsx"
 import { useStore } from "../core/store.ts"
 
@@ -28,13 +29,15 @@ export interface CloudSettings {
 const isMap = (topic: Topic) => /map|global|voxel|terrain|costmap/i.test(topic.name)
 
 const DEFAULTS: CloudSettings = {
-    look: { style: "disc", size: 0.04, colorMode: "height", gradient: "memworld", axis: 2, rangeMin: null, rangeMax: null, solid: "#7fd4ff", opacity: 1 },
+    look: { style: "default", size: 0.04, colorMode: "height", gradient: "memworld", axis: 2, rangeMin: null, rangeMax: null, solid: "#7fd4ff", opacity: 1 },
     mode: "latest",
     windowSeconds: 10,
     maxPoints: 2_000_000,
     maxHz: 20,
     detail: "auto",
 }
+
+const SPLAT_BUDGET = 3_000_000
 
 /** How often the cloud's frame_id is re-read from one raw message (the codec output carries no header). */
 const FRAME_RECHECK_MS = 30_000
@@ -72,6 +75,7 @@ class CloudLayer {
         this.#readFrame()
         this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
         settings.subscribe(() => this.#onSettings())
+        this.#unsubscribe.push(rendering.subscribe(() => this.#onSettings()), splatFallback.subscribe(() => this.#onSettings()))
         this.#onSettings()
     }
 
@@ -85,8 +89,9 @@ class CloudLayer {
             this.#streamOptions = `${settings.maxHz}/${settings.detail}`
             this.#subscribe()
         }
-        applyLook(this.#material, settings.look, this.#range)
         this.#material.uniforms.uWindow.value = settings.mode === "accumulate" && settings.windowSeconds > 0 ? settings.windowSeconds : -1
+        applyLook(this.#material, this.#look(), this.#range)
+        this.#syncSplatBudget()
         this.context.viewer.requestRender()
     }
 
@@ -118,6 +123,17 @@ class CloudLayer {
             stop = null
         })
         this.#unsubscribe.push(() => stop?.())
+    }
+
+    /** the look with "default" and the splat fallback resolved */
+    #look(): PointLook {
+        const look = this.#settings.get().look
+        return { ...look, style: resolveStyle(look.style) }
+    }
+
+    /** Glow is fill-bound: over SPLAT_BUDGET points a stable random subset is drawn (see the vertex shader). */
+    #syncSplatBudget() {
+        this.#material.uniforms.uKeep.value = Math.min(1, SPLAT_BUDGET / Math.max(1, this.#filled))
     }
 
     #resize(capacity: number) {
@@ -209,6 +225,7 @@ class CloudLayer {
             this.#filled = count
         }
         this.#geometry.setDrawRange(0, this.#filled)
+        this.#syncSplatBudget()
         this.#updateRange(positions, intensity, transform ?? this.context.tf.lookup(this.#frame, this.context.viewer.fixedFrame))
         this.context.viewer.noteData(timestamp)
     }
@@ -246,7 +263,7 @@ class CloudLayer {
         } else {
             this.#range = [this.#range[0] + (low - this.#range[0]) * 0.2, this.#range[1] + (high - this.#range[1]) * 0.2]
         }
-        applyLook(this.#material, look, this.#range)
+        applyLook(this.#material, this.#look(), this.#range)
     }
 
     update(frame: { now: number; fixedFrame: string }) {
@@ -317,7 +334,7 @@ registerLayer<CloudSettings>({
     label: "Point cloud",
     types: ["sensor_msgs.PointCloud2"],
     // MemWorld's look: lit spheres (a map's at its 10 cm voxel size), lit cubes as the "voxel" style
-    defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, style: "disc", size: 0.1 } } : structuredClone(DEFAULTS),
+    defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, size: 0.1 } } : structuredClone(DEFAULTS),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
 })

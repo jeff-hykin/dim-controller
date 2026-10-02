@@ -33,9 +33,11 @@ to the fixed frame is not drawn; the layer list says why.
 | `sensor_msgs.Image`, `CompressedImage` | camera panels; optionally projected into 3D (frustum + picture, from `CameraInfo`) |
 | `vision_msgs.Detection2DArray`, `Detection2D`, `BoundingBox2DArray` | boxes over a camera panel |
 
-Point clouds are GL point sprites, never meshes. Voxel style snaps each point to a grid in the vertex shader and
-ray-casts an axis-aligned cube inside the sprite (writing the cube's real depth), so a voxel map looks like cubes for
-the cost of points. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
+Point clouds are GL point sprites, never meshes. The styles (Settings → Rendering for the default, each cloud's
+settings to override): **Glow** (default: soft gaussian splats fading into the background with distance), **Cubes**
+(MemWorld's: snaps each point to a grid and ray-casts an axis-aligned cube inside the sprite), **Spheres** (MemWorld's
+lit balls) and **Squares**. Over 3M points a glow cloud draws a stable random subset, and if frames stay over 16 ms
+the viewer switches glow to cubes and says so in the top bar. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
 accumulating, aged out in the shader), so a new scan costs one partial buffer upload. The view only redraws when
 something changed. Settings → Stats shows fps, CPU per frame and bridge-to-screen latency.
 

@@ -4,6 +4,8 @@ import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js"
 import { Store } from "../store.ts"
+import { focusDistance } from "./pointMaterial.ts"
+import { FRAME_BUDGET_MS, splatFallback } from "./rendering.ts"
 
 export interface RenderStats {
     fps: number
@@ -53,6 +55,7 @@ export class Viewer {
     #arrivals: number[] = []
     #lastStats = 0
     #lastDeclutter = 0
+    #slowSeconds = 0
     #bridgeNow: () => number
     #lastFollow = new THREE.Vector3()
     #following = false
@@ -61,7 +64,8 @@ export class Viewer {
     constructor(host: HTMLElement, bridgeNow: () => number) {
         this.#host = host
         this.#bridgeNow = bridgeNow
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" })
+        // no MSAA (as MemWorld): it nearly doubled the cost of blended splats at 2880×1800
+        this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" })
         this.renderer.setPixelRatio(Math.min(2, devicePixelRatio))
         this.renderer.setClearColor(0x000000, 0)
         host.appendChild(this.renderer.domElement)
@@ -190,6 +194,7 @@ export class Viewer {
         } else {
             this.#following = false
         }
+        focusDistance.value = this.camera.position.distanceTo(this.controls.target)
         if (this.controls.update()) {
             this.#dirty = true
         }
@@ -235,8 +240,10 @@ export class Viewer {
         const span = (now - this.#lastStats) / 1000
         const info = this.renderer.info
         let points = 0
+        let splats = false
         this.scene.traverseVisible((object) => {
             if ((object as THREE.Points).isPoints) {
+                splats ||= "SPLAT" in (((object as THREE.Points).material as THREE.ShaderMaterial).defines ?? {})
                 const geometry = (object as THREE.Points).geometry
                 points += Math.min(geometry.drawRange.count, geometry.getAttribute("position")?.count ?? 0)
             }
@@ -250,6 +257,12 @@ export class Viewer {
             drawCalls: info.render.calls,
             points,
         })
+        // splats that can't keep up for 3 s in a row are drawn as cubes instead (the stats pill says so; clicking it retries)
+        const frameMs = this.#frameTimes.length > 1 ? (this.#frameTimes[this.#frameTimes.length - 1] - this.#frameTimes[0]) / (this.#frameTimes.length - 1) : 0
+        this.#slowSeconds = splats && frameMs > FRAME_BUDGET_MS * 1.25 ? this.#slowSeconds + 1 : 0
+        if (this.#slowSeconds >= 3 && !splatFallback.get().active) {
+            splatFallback.set({ active: true, frameMs })
+        }
         this.#frameTimes.length = 0
         this.#cpuTimes.length = 0
         this.#latencies.length = 0

@@ -4,3 +4,4 @@ node_modules
 frontend/dist
 server/target
 deno.lock
+frontend/public/gallery_cloud.txt
