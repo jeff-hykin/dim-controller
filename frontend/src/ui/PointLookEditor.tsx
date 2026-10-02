@@ -1,6 +1,6 @@
 // Edits how points look: style, size, color mode, gradient and range. Used by every layer that draws points.
 import { GRADIENTS, gradientCss } from "../core/render/gradients.ts"
-import type { PointLook } from "../core/render/pointMaterial.ts"
+import { POINT_STYLES, type PointLook, type PointStyle } from "../core/render/pointMaterial.ts"
 import { Field, NumberInput, Select, Slider } from "./controls.tsx"
 
 export function PointLookEditor({ look, onChange }: { look: PointLook; onChange: (look: PointLook) => void }) {
@@ -9,8 +9,8 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
         <>
             <Field label="Style">
                 <span className="segmented">
-                    {(["disc", "square", "voxel"] as const).map((style) => (
-                        <button type="button" key={style} className={look.style === style ? "on" : ""} onClick={() => set({ style })}>{style}</button>
+                    {(Object.keys(POINT_STYLES) as PointStyle[]).map((style) => (
+                        <button type="button" key={style} className={look.style === style ? "on" : ""} onClick={() => set({ style })}>{POINT_STYLES[style].label}</button>
                     ))}
                 </span>
             </Field>

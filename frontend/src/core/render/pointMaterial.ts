@@ -7,7 +7,17 @@
 import * as THREE from "three"
 import { gradientTexture } from "./gradients.ts"
 
-export type PointStyle = "disc" | "square" | "voxel"
+/**
+ * The point styles. Each is a shader path selected by `uStyle` (and a `#define` when it needs one, e.g. VOXEL writes
+ * depth). Adding a style (EDL, splats, AO, ...) = one entry here + its branch in the shaders below; the settings
+ * editor lists whatever is here.
+ */
+export const POINT_STYLES = {
+    disc: { id: 0, label: "spheres", define: null },
+    square: { id: 1, label: "squares", define: null },
+    voxel: { id: 2, label: "cubes", define: "VOXEL" },
+} as const
+export type PointStyle = keyof typeof POINT_STYLES
 export type ColorMode = "height" | "intensity" | "range" | "solid"
 
 export interface PointLook {
@@ -25,7 +35,6 @@ export interface PointLook {
     opacity: number
 }
 
-const STYLE = { disc: 0, square: 1, voxel: 2 }
 const COLOR = { height: 0, intensity: 1, range: 2, solid: 3 }
 
 const vertexShader = /* glsl */ `
@@ -158,13 +167,19 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
 export function applyLook(material: THREE.ShaderMaterial, look: PointLook, range: [number, number]) {
     const uniforms = material.uniforms
     uniforms.uSize.value = Math.max(0.001, look.size)
-    uniforms.uStyle.value = STYLE[look.style]
-    const voxel = look.style === "voxel"
-    if (voxel !== ("VOXEL" in material.defines)) {
-        if (voxel) {
-            material.defines.VOXEL = 1
-        } else {
-            delete material.defines.VOXEL
+    const style = POINT_STYLES[look.style] ?? POINT_STYLES.disc
+    uniforms.uStyle.value = style.id
+    // the active style's #define only; switching recompiles once
+    const defines = material.defines as Record<string, number>
+    const changed = Object.values(POINT_STYLES).some(({ define }) => define && (define === style.define) !== (define in defines))
+    if (changed) {
+        for (const { define } of Object.values(POINT_STYLES)) {
+            if (define) {
+                delete defines[define]
+            }
+        }
+        if (style.define) {
+            defines[style.define] = 1
         }
         material.needsUpdate = true
     }
