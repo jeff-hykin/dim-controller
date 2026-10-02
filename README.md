@@ -1,6 +1,6 @@
 # dim-live-viewer
 
-A [DimOS dashboard](https://github.com/jeff-hykin/dim-app) app that renders a
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app that renders a
 **live 3D scene** of a running DimOS stack — the way the PimSim frontend does,
 but fed by live data off the DimOS bridge (works with the sim *or* a real robot).
 
@@ -37,7 +37,7 @@ its topics appear as they start flowing.
 
 `dim/apps/live_viewer/frontend/index.html` is the whole app: a [three.js](https://threejs.org) scene
 (ROS Z-up) fed straight from Desktop's [zenoh-web](https://github.com/jeff-hykin/zenoh-web) bridge at
-`/zenoh-web`. It lists the `dimos/**` topics every few seconds and picks how to draw each from the
+`../../zenoh-web` (Desktop's same-origin `/zenoh-web`). It lists the `dimos/**` topics every few seconds and picks how to draw each from the
 message type in its key (`dimos/<topic>/<msg_name>`):
 
 - `sensor_msgs.Image` / `CompressedImage` — the bridge's `dimos-image` / `dimos-compressed-image`

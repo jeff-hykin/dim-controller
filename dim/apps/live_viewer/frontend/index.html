@@ -12,7 +12,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Live Viewer · DimOS</title>
-<link rel="stylesheet" href="/assets/theme.css" />
+<link rel="stylesheet" href="theme.css" />
 <style>
   html, body { height: 100%; margin: 0; overflow: hidden; font-family: var(--sans); }
   #scene { position: absolute; inset: 0;
@@ -1598,7 +1598,7 @@ async function discover() {
 }
 async function start() {
   while (!zenoh) {
-    try { zenoh = await connect("/zenoh-web") } catch { await new Promise((resolve) => setTimeout(resolve, 3000)) }
+    try { zenoh = await connect(new URL("../../zenoh-web", location.href).href) } catch { await new Promise((resolve) => setTimeout(resolve, 3000)) }
   }
   bridgeUp = true; setStatus()
   zenoh.onState((state) => { bridgeUp = state === "connected"; setStatus() })
