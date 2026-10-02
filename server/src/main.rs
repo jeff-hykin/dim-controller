@@ -1,6 +1,8 @@
 //! Live Viewer's `dimos-app-server` (dimOS Desktop app contract, docs/apps.md in dimos-desktop): serves the built
-//! page and an mcap recorder that subscribes to the chosen dimos topics over zenoh while a recording runs.
+//! page, an mcap recorder that subscribes to the chosen dimos topics over zenoh while a recording runs, and live
+//! annotations plus the agent's view of the page (annotations.rs).
 
+mod annotations;
 mod cdr;
 mod image;
 mod msgs;
@@ -68,7 +70,8 @@ async fn main() -> Result<()> {
     let frontend = args.frontend.clone().unwrap_or_else(|| PathBuf::from("frontend/dist"));
     eprintln!("live viewer: page {}, recordings {}", frontend.display(), record_dir.display());
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
-    let app = recorder::router(state.clone()).fallback_service(
+    let annotations = Arc::new(annotations::Annotations::default());
+    let app = recorder::router(state.clone()).merge(annotations::router(annotations)).fallback_service(
         tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))),
     );
     // Desktop stops an app server with SIGTERM to its process group

@@ -8,6 +8,7 @@ import { Viewer } from "./render/viewer.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
+import { AgentLink } from "./agent.ts"
 import { robotPose } from "./robot.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profiles } from "../profile/index.ts"
@@ -31,6 +32,8 @@ export class ViewerApp {
     readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false, theme: "dark" })
     readonly profile: RobotProfile
     readonly drive: Drive
+    /** live annotations and the agent's captures (server/src/annotations.rs) */
+    readonly agent: AgentLink
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
     #framed = false
@@ -48,6 +51,7 @@ export class ViewerApp {
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.viewer.onFrame(() => this.#eachFrame())
         this.connection.start()
+        this.agent = new AgentLink(this)
         this.#pollRobotInputs()
     }
 

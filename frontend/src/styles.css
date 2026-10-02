@@ -280,3 +280,6 @@ body.dark .joystick-knob { background: var(--primary); }
 .swatch-default { background: none; border: 1px dashed var(--muted-fg); }
 .field-block { padding: 4px 0 8px; display: grid; gap: 6px; }
 .warn-pill { cursor: pointer; color: var(--warn); border-color: color-mix(in oklch, var(--warn) 50%, var(--border)); background: none; }
+
+/* live annotations' labels: the label, then a note line */
+.scene-label.annotation-label { white-space: pre; text-align: center; color: var(--label-color, #ffd166); background: rgba(0, 0, 0, 0.55); font-size: 12px; }

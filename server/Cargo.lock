@@ -649,6 +649,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "futures-util",
  "image-webp",
  "jpeg-encoder",
  "jxl-oxide",
