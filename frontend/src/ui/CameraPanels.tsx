@@ -5,10 +5,10 @@ import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { type Store, useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
-import { type DepthImage, isDepthTopic } from "../core/video.ts"
+import { isDepthTopic } from "../core/video.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
-import { sampleGradient } from "../core/render/gradients.ts"
+import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
 import { Icon } from "./icons.tsx"
 
 export interface PanelState {
@@ -21,6 +21,8 @@ export interface PanelState {
     y: number
     width: number
     height: number
+    /** depth topics: colormap and fixed range (null = auto) */
+    depth?: DepthLook
 }
 
 export interface CameraLayout {
@@ -104,7 +106,12 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
 }) {
     const element = useRef<HTMLDivElement>(null)
     const video = useRef<HTMLVideoElement>(null)
-    const depthCanvas = useRef<HTMLCanvasElement>(null)
+    const depthHost = useRef<HTMLDivElement>(null)
+    const depthRenderer = useRef<DepthCanvas | null>(null)
+    const depthLook = panel.depth ?? DEFAULT_DEPTH_LOOK
+    const lookRef = useRef(depthLook)
+    lookRef.current = depthLook
+    const [depthRange, setDepthRange] = useState<[number, number] | null>(null)
     const overlayCanvas = useRef<HTMLCanvasElement>(null)
     const topic = topics.find((other) => other.key === panel.key) ?? null
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
@@ -119,8 +126,14 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         const unsubscribe = depth
             ? source.depth.subscribe(() => {
                 const image = source.depth.get().image
-                if (image && depthCanvas.current) {
-                    drawDepth(depthCanvas.current, image)
+                if (image && depthHost.current) {
+                    if (!depthRenderer.current) {
+                        depthRenderer.current = new DepthCanvas()
+                        depthRenderer.current.canvas.className = "camera-media"
+                        depthHost.current.prepend(depthRenderer.current.canvas)
+                    }
+                    const range = depthRenderer.current.draw(image, lookRef.current)
+                    setDepthRange((old) => old && Math.abs(old[0] - range[0]) < 0.05 && Math.abs(old[1] - range[1]) < 0.05 ? old : range)
                     setSize((old) => old.width === image.width ? old : { width: image.width, height: image.height, fps: 0 })
                 }
             })
@@ -229,56 +242,23 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                         {overlays.map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
                     </select>
                 )}
-                <span className="camera-info">{size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}` : "…"}</span>
+                {depth && (
+                    <>
+                        <select value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
+                            {DEPTH_COLORMAPS.map((name) => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <input className="number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
+                        <input className="number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
+                    </>
+                )}
+                <span className="camera-info">{size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : "…"}</span>
                 <button type="button" className="icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
                 <button type="button" className="icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
             </div>
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
-                {depth ? <canvas ref={depthCanvas} className="camera-media" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}
+                {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}
                 <canvas ref={overlayCanvas} className="camera-overlay" />
             </div>
         </div>
     )
-}
-
-/** Depth as a near-red/far-blue colormap over the 2nd–98th percentile (zero and NaN = no return, black). */
-function drawDepth(canvas: HTMLCanvasElement, image: DepthImage) {
-    const { width, height, data } = image
-    if (!width || !height || data.length < width * height) {
-        return
-    }
-    if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width
-        canvas.height = height
-    }
-    const step = Math.max(1, Math.floor(data.length / 4096))
-    const samples: number[] = []
-    for (let index = 0; index < data.length; index += step) {
-        const value = data[index]
-        if (value > 0 && Number.isFinite(value)) {
-            samples.push(value)
-        }
-    }
-    samples.sort((a, b) => a - b)
-    const near = samples[Math.floor(samples.length * 0.02)] ?? 0
-    const far = samples[Math.floor(samples.length * 0.98)] ?? 1
-    const context = canvas.getContext("2d")!
-    const pixels = context.createImageData(width, height)
-    const lut = new Uint8Array(256 * 3)
-    for (let index = 0; index < 256; index++) {
-        lut.set(sampleGradient("turbo", 1 - index / 255).map(Math.round), index * 3)
-    }
-    for (let index = 0; index < width * height; index++) {
-        const value = data[index]
-        const at = index * 4
-        pixels.data[at + 3] = 255
-        if (!(value > 0) || !Number.isFinite(value)) {
-            continue
-        }
-        const t = Math.max(0, Math.min(255, Math.round(((value - near) / (far - near || 1)) * 255))) * 3
-        pixels.data[at] = lut[t]
-        pixels.data[at + 1] = lut[t + 1]
-        pixels.data[at + 2] = lut[t + 2]
-    }
-    context.putImageData(pixels, 0, 0)
 }

@@ -262,3 +262,5 @@ body.dark .scene-label { background: rgba(6, 9, 15, 0.78); border-left-color: va
 body.dark .frame-label { border-left-color: var(--muted-fg); color: #b9c7d6; }
 body.dark .pill.on .dot { box-shadow: 0 0 0 3px rgba(122, 240, 168, 0.18); }
 body.dark .joystick-knob { background: var(--primary); }
+.depth-host canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-head .depth-range { width: 52px; padding: 2px 4px; font-size: 11px; }

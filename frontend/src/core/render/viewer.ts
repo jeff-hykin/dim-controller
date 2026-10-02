@@ -106,8 +106,8 @@ export class Viewer {
         ;(this.#grid.material as THREE.Material).dispose()
         this.#grid = this.#makeGrid(dark)
         this.scene.add(this.#grid)
-        // the far grid fades into the page instead of ending in a hard edge
-        this.scene.fog = new THREE.Fog(dark ? 0x06090f : 0xe9edf1, 40, 110)
+        // light: the far grid fades into the page; dark: no fog, like MemWorld (scene.js)
+        this.scene.fog = dark ? null : new THREE.Fog(0xe9edf1, 40, 110)
         this.requestRender()
     }
 

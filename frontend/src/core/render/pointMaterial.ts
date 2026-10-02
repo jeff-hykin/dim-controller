@@ -1,4 +1,6 @@
-// One shader for every point-like thing. Points are GL point sprites, never meshes: "disc" shades each sprite as a
+// One shader for every point-like thing, a port of MemWorld's sprite shader
+// (memory_world/web/static/voxel_sprites.js): same view-space light normalize(2, 4, 3), same sphere (0.45 + 0.75·n·L)
+// and cube-face (0.42 + 0.72·n·L) lighting, sprites sized to the projected diameter. Points are GL point sprites, never meshes: "disc" shades each sprite as a
 // small sphere, "square" is flat, and "voxel" snaps the point to a world grid and ray-casts an axis-aligned cube
 // inside the sprite (with the cube's true depth written), so a voxel map looks like cubes for the cost of points.
 // Coloring (gradient lookup by height / intensity / range) happens on the GPU too, so restyling costs nothing.

@@ -315,8 +315,8 @@ registerLayer<CloudSettings>({
     id: "pointcloud",
     label: "Point cloud",
     types: ["sensor_msgs.PointCloud2"],
-    // a map reads best as voxels; a scan as small discs
-    defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, style: "voxel", size: 0.1 } } : structuredClone(DEFAULTS),
+    // MemWorld's look: lit spheres (a map's at its 10 cm voxel size), lit cubes as the "voxel" style
+    defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, style: "disc", size: 0.1 } } : structuredClone(DEFAULTS),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
 })

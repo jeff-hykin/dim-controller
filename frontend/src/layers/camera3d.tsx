@@ -8,7 +8,8 @@ import { FatLines } from "../core/render/lines.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { cameraInfoFor, isDepthTopic } from "../core/video.ts"
-import { Field, Select, Slider, Toggle } from "../ui/controls.tsx"
+import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthMaterial, type DepthLook } from "../core/render/depth.ts"
+import { Field, NumberInput, Select, Slider, Toggle } from "../ui/controls.tsx"
 
 export interface Camera3dSettings {
     /** meters from the camera to the picture */
@@ -18,6 +19,8 @@ export interface Camera3dSettings {
     frustum: boolean
     /** "optical": z forward, x right, y down (ROS *_optical_frame); "body": x forward, y left, z up */
     convention: "auto" | "optical" | "body"
+    /** depth topics: heat-map colormap and fixed range (null = auto) */
+    depth: DepthLook
 }
 
 interface Intrinsics {
@@ -35,7 +38,11 @@ const OPTICAL_TO_BODY = new THREE.Matrix4().set(0, 0, 1, 0, -1, 0, 0, 0, 0, -1, 
 class Camera3dLayer {
     readonly root = new THREE.Group()
     #content = new THREE.Group()
-    #plane: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+    #plane: THREE.Mesh<THREE.BufferGeometry, THREE.Material>
+    #video: THREE.MeshBasicMaterial | null = null
+    #depth: DepthMaterial | null = null
+    #depthSize: [number, number] = [0, 0]
+    #stopDepth: (() => void) | null = null
     #frustum: FatLines
     #texture: THREE.VideoTexture | null = null
     #frame: string | null = null
@@ -44,7 +51,7 @@ class Camera3dLayer {
     #stopInfo: (() => void) | null = null
     #stopFrame: (() => void) | null = null
     #source
-    #element: HTMLVideoElement
+    #element: HTMLVideoElement | null = null
     #videoCallback = 0
     #lastShape = ""
     #checkedInfoAt = 0
@@ -53,23 +60,37 @@ class Camera3dLayer {
         this.#content.matrixAutoUpdate = false
         this.root.add(this.#content)
         this.#frustum = new FatLines(context.viewer.resolution, { width: 1.5, color: 0xffd166 })
-        this.#plane = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, toneMapped: false }))
-        this.#content.add(this.#plane, this.#frustum.object)
         this.#source = context.video.acquire(topic)
-        this.#element = context.video.element(this.#source)
-        this.#texture = new THREE.VideoTexture(this.#element)
-        this.#texture.colorSpace = THREE.SRGBColorSpace
-        this.#plane.material.map = this.#texture
-        // the view only redraws on demand, so each decoded video frame asks for one
-        const onVideoFrame = () => {
-            context.viewer.requestRender()
-            this.#videoCallback = this.#element.requestVideoFrameCallback(onVideoFrame)
-        }
-        this.#videoCallback = this.#element.requestVideoFrameCallback(onVideoFrame)
-        settings.subscribe(() => this.#reshape(true))
         if (isDepthTopic(topic)) {
-            context.setStatus({ problem: "depth images aren't projected (use a point cloud)" })
+            // depth: a heat map coloured on the GPU, redrawn as each image arrives
+            this.#depth = new DepthMaterial()
+            this.#plane = new THREE.Mesh(new THREE.BufferGeometry(), this.#depth.material)
+            this.#stopDepth = this.#source.depth.subscribe(() => {
+                const image = this.#source.depth.get().image
+                if (image && this.#depth) {
+                    this.#depthSize = [image.width, image.height]
+                    this.#depth.update(image, this.settings.get().depth ?? DEFAULT_DEPTH_LOOK)
+                    this.#reshape(false)
+                    context.viewer.requestRender()
+                }
+            })
+        } else {
+            this.#video = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, toneMapped: false })
+            this.#plane = new THREE.Mesh(new THREE.BufferGeometry(), this.#video)
+            const element = context.video.element(this.#source)
+            this.#element = element
+            this.#texture = new THREE.VideoTexture(element)
+            this.#texture.colorSpace = THREE.SRGBColorSpace
+            this.#video.map = this.#texture
+            // the view only redraws on demand, so each decoded video frame asks for one
+            const onVideoFrame = () => {
+                context.viewer.requestRender()
+                this.#videoCallback = element.requestVideoFrameCallback(onVideoFrame)
+            }
+            this.#videoCallback = element.requestVideoFrameCallback(onVideoFrame)
         }
+        this.#content.add(this.#plane, this.#frustum.object)
+        settings.subscribe(() => this.#reshape(true))
         this.#findInfo()
     }
 
@@ -126,7 +147,8 @@ class Camera3dLayer {
     #reshape(force: boolean) {
         const settings = this.settings.get()
         const video = this.#source.video.get()
-        const intrinsics = this.#intrinsics ?? (video.width ? guess(video.width, video.height) : null)
+        const [width, height] = this.#depth ? this.#depthSize : [video.width, video.height]
+        const intrinsics = this.#intrinsics ?? (width ? guess(width, height) : null)
         if (!intrinsics) {
             return
         }
@@ -144,7 +166,11 @@ class Camera3dLayer {
         geometry.setIndex([0, 1, 2, 0, 2, 3])
         this.#plane.geometry.dispose()
         this.#plane.geometry = geometry
-        this.#plane.material.opacity = settings.opacity
+        if (this.#video) {
+            this.#video.opacity = settings.opacity
+        } else if (this.#depth) {
+            this.#depth.material.uniforms.opacity.value = settings.opacity
+        }
         this.#plane.visible = settings.image
         this.#frustum.clear()
         for (const corner of [topLeft, topRight, bottomRight, bottomLeft]) {
@@ -174,13 +200,15 @@ class Camera3dLayer {
     }
 
     dispose() {
-        this.#element.cancelVideoFrameCallback(this.#videoCallback)
+        this.#element?.cancelVideoFrameCallback(this.#videoCallback)
+        this.#stopDepth?.()
+        this.#depth?.dispose()
         this.#stopInfo?.()
         this.#stopFrame?.()
         this.context.video.release(this.topic)
         this.#texture?.dispose()
         this.#plane.geometry.dispose()
-        this.#plane.material.dispose()
+        this.#video?.dispose()
         this.#frustum.dispose()
     }
 }
@@ -190,7 +218,7 @@ function guess(width: number, height: number): Intrinsics {
     return { width, height, fx, fy: fx, cx: width / 2, cy: height / 2 }
 }
 
-function Camera3dSettingsEditor({ settings }: { settings: Store<Camera3dSettings>; topic: Topic }) {
+function Camera3dSettingsEditor({ settings, topic }: { settings: Store<Camera3dSettings>; topic: Topic }) {
     const value = useStore(settings)
     return (
         <>
@@ -198,6 +226,19 @@ function Camera3dSettingsEditor({ settings }: { settings: Store<Camera3dSettings
             <Field label="Frustum"><Toggle value={value.frustum} onChange={(frustum) => settings.update({ frustum })} /></Field>
             <Field label="Distance"><Slider min={0.2} max={10} step={0.1} value={value.distance} format={(distance) => `${distance.toFixed(1)} m`} onChange={(distance) => settings.update({ distance })} /></Field>
             <Field label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => settings.update({ opacity })} /></Field>
+            {topic && isDepthTopic(topic) && (
+                <>
+                    <Field label="Colormap">
+                        <Select value={(value.depth ?? DEFAULT_DEPTH_LOOK).colormap} options={DEPTH_COLORMAPS.map((name) => [name, name])} onChange={(colormap) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), colormap } })} />
+                    </Field>
+                    <Field label="Range" hint="meters; empty = automatic (2nd–98th percentile)">
+                        <span className="range-inputs">
+                            <NumberInput value={(value.depth ?? DEFAULT_DEPTH_LOOK).near} placeholder="auto" onChange={(near) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), near } })} />
+                            <NumberInput value={(value.depth ?? DEFAULT_DEPTH_LOOK).far} placeholder="auto" onChange={(far) => settings.update({ depth: { ...(value.depth ?? DEFAULT_DEPTH_LOOK), far } })} />
+                        </span>
+                    </Field>
+                </>
+            )}
             <Field label="Frame">
                 <Select value={value.convention} options={[["auto", "auto (by name)"], ["optical", "optical (z forward)"], ["body", "body (x forward)"]]} onChange={(convention) => settings.update({ convention: convention as Camera3dSettings["convention"] })} />
             </Field>
@@ -209,7 +250,7 @@ registerLayer<Camera3dSettings>({
     id: "camera3d",
     label: "Camera in 3D",
     types: ["sensor_msgs.Image", "sensor_msgs.CompressedImage"],
-    defaults: { distance: 1.5, opacity: 0.95, image: true, frustum: true, convention: "auto" },
+    defaults: { distance: 1.5, opacity: 0.95, image: true, frustum: true, convention: "auto", depth: DEFAULT_DEPTH_LOOK },
     // the camera panels show images; projecting one into the scene is opt-in
     enabledByDefault: () => false,
     create: (context: LayerContext, topic, settings) => new Camera3dLayer(context, topic, settings),
