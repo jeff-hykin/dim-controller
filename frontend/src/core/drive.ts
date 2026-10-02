@@ -45,7 +45,10 @@ export class Drive {
     #stopFlush = 0
     #timer: ReturnType<typeof setInterval>
     #controlPublishers = new Map<string, Publisher>()
-    #candidates: string[] = []
+    /** Twist topics the running blueprint reads (from Desktop's /dimos/ API) */
+    #inputs: string[] = []
+    /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
+    #onBridge: string[] = []
 
     constructor(readonly connection: Connection, readonly profile: RobotProfile) {
         const { speeds } = profile.drive
@@ -55,28 +58,34 @@ export class Drive {
         this.settings.subscribe(() => this.#refreshTopic())
     }
 
-    /** Twist topics the robot listens on or that are on the bridge; the picker lists them. */
-    setCandidates(topics: string[]) {
-        this.#candidates = topics
+    /** What the picker lists: the robot's Twist inputs, Twist topics on the bridge, the profile's. */
+    setCandidates(inputs: string[], onBridge: string[] = []) {
+        this.#inputs = inputs
+        this.#onBridge = onBridge
         this.#refreshTopic()
     }
 
     candidates(): string[] {
-        return [...new Set([...this.#candidates, ...this.profile.drive.cmdVelTopics])]
+        return [...new Set([...this.#inputs, ...this.#onBridge, ...this.profile.drive.cmdVelTopics])]
     }
 
-    /** The configured topic, else the profile's first preference that's live, else tele_cmd_vel, cmd_vel, the profile's first. */
+    /**
+     * The chosen topic, else from what the robot reads (if known), else from what's on the bridge: the profile's
+     * first preference there, else one ending tele_cmd_vel, else cmd_vel. A topic only someone writes and nothing
+     * reads would move nothing, so the robot's inputs come first.
+     */
     #pickTopic(): string {
         const chosen = this.settings.get().topic
         if (chosen) {
             return chosen
         }
-        const live = new Set(this.#candidates)
-        return this.profile.drive.cmdVelTopics.find((topic) => live.has(topic))
-            ?? this.#candidates.find((topic) => /tele_cmd_vel$/.test(topic))
-            ?? this.#candidates.find((topic) => /cmd_vel$/.test(topic))
-            ?? this.profile.drive.cmdVelTopics[0]
-            ?? "/cmd_vel"
+        const pick = (topics: string[]) => {
+            const live = new Set(topics)
+            return this.profile.drive.cmdVelTopics.find((topic) => live.has(topic))
+                ?? topics.find((topic) => /tele_cmd_vel$/.test(topic))
+                ?? topics.find((topic) => /cmd_vel$/.test(topic))
+        }
+        return pick(this.#inputs) ?? pick(this.#onBridge) ?? this.profile.drive.cmdVelTopics[0] ?? "/cmd_vel"
     }
 
     #refreshTopic() {

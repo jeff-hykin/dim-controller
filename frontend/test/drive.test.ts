@@ -64,15 +64,16 @@ Deno.test("armed: forward at the linear speed, shift doubles linear and halves t
     drive.dispose()
 })
 
-Deno.test("the topic: tele_cmd_vel when the robot listens on it, the profile's otherwise; a chosen one wins", () => {
+Deno.test("the topic: tele_cmd_vel when the robot reads it, a read topic over one only written, a chosen one wins", () => {
     localStorage.clear()
     const { connection } = fakeBridge()
     const drive = new Drive(connection, go2)
     drive.setCandidates(["/cmd_vel", "/tele_cmd_vel"])
     assertEquals(drive.state.get().topic, "/tele_cmd_vel")
-    drive.setCandidates(["/cmd_vel"])
+    // go2-basic: the web vis module writes tele_cmd_vel but nothing reads it; the robot reads cmd_vel
+    drive.setCandidates(["/cmd_vel"], ["/tele_cmd_vel"])
     assertEquals(drive.state.get().topic, "/cmd_vel")
-    drive.setCandidates(["/robot1/cmd_vel"])
+    drive.setCandidates([], ["/robot1/cmd_vel"])
     assertEquals(drive.state.get().topic, "/robot1/cmd_vel")
     drive.settings.update({ topic: "/mine" })
     assertEquals(drive.state.get().topic, "/mine")
