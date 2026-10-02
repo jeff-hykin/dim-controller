@@ -6,7 +6,7 @@ import { Field, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
 import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
-import type { PointStyle } from "../core/render/pointMaterial.ts"
+import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
@@ -37,6 +37,13 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <StylePicker value={render.pointStyle} onChange={(pointStyle) => rendering.update({ pointStyle: pointStyle as PointStyle })} />
                 <p className="hint">The default for every point cloud; a layer can pick its own in its settings.</p>
             </div>
+            <Field label="Cube shading" hint={CUBE_SHADES[render.cubeShade]?.about}>
+                <span className="segmented" data-cube-shade>
+                    {(Object.keys(CUBE_SHADES) as CubeShade[]).map((shade) => (
+                        <button type="button" key={shade} className={render.cubeShade === shade ? "on" : ""} onClick={() => rendering.update({ cubeShade: shade })}>{CUBE_SHADES[shade].label}</button>
+                    ))}
+                </span>
+            </Field>
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <div className="button-row">

@@ -7,16 +7,21 @@
 </head>
 <body>
 <!-- Development only (not in the app build): frame time for a big cloud through the real point material.
-     ?points=10000000&style=splat|voxel|disc|square&size=0.05&aa=0|1&cloud=gallery_cloud.txt ; results in window.__bench.
+     ?points=10000000&style=splat|voxel|disc|square&shade=<cube shade>&size=0.05&aa=0|1&cloud=gallery_cloud.txt&zoom=1&quiet=1 ;
+     results in window.__bench (quiet: not printed on the page, for screenshots).
      cloud=: the shader gallery's page (copied next to this file), for its real MID-360 voxels and camera -->
 <script type="module">
 import * as THREE from "three"
 import * as pointShaders from "./src/core/render/pointMaterial.ts"
+import { rendering } from "./src/core/render/rendering.ts"
 const { applyLook, makePointMaterial } = pointShaders
 
 const query = new URLSearchParams(location.search)
 const count = Number(query.get("points") ?? 10_000_000)
 const style = query.get("style") ?? "disc"
+if (query.get("shade")) {
+    rendering.update({ cubeShade: query.get("shade") })
+}
 const renderer = new THREE.WebGLRenderer({ antialias: query.get("aa") !== "0", powerPreference: "high-performance" })
 renderer.setPixelRatio(devicePixelRatio)
 renderer.setSize(innerWidth, innerHeight)
@@ -54,7 +59,7 @@ if (galleryUrl) {
     const bounds = new THREE.Box3().setFromArray(real)
     const centre = bounds.getCenter(new THREE.Vector3())
     const size = bounds.getSize(new THREE.Vector3())
-    const reach = Math.max(size.x, size.y) * meta.distance
+    const reach = Math.max(size.x, size.y) * meta.distance * Number(query.get("zoom") ?? 1)
     camera.fov = 50
     camera.updateProjectionMatrix()
     fixedCamera = { position: new THREE.Vector3(centre.x + reach * meta.view[0], centre.y + reach * meta.view[1], centre.z + reach * meta.view[2]), target: centre, reach }
@@ -131,7 +136,7 @@ function tick() {
     } else {
         times.sort((a, b) => a - b)
         window.__bench = { count, style, bytesPerPoint, attributes: attributes.map(([type, name]) => `${type} ${name}`), p50: times[30], p90: times[54], mean: times.reduce((a, b) => a + b, 0) / times.length }
-        document.body.insertAdjacentHTML("beforeend", `<pre style="position:fixed;top:8px;left:8px">${JSON.stringify(window.__bench, null, 1)}</pre>`)
+        query.get("quiet") || document.body.insertAdjacentHTML("beforeend", `<pre style="position:fixed;top:8px;left:8px">${JSON.stringify(window.__bench, null, 1)}</pre>`)
     }
 }
 requestAnimationFrame(tick)
