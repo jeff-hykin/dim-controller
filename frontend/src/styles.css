@@ -198,7 +198,8 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, oklch(0.
 
 /* ── phone ── */
 .mobile .topbar { height: calc(44px + env(safe-area-inset-top)); gap: 6px; padding-left: 10px; padding-right: 4px; }
-.mobile .topbar .title, .mobile .stats-pill, .mobile .tab-label { display: none; }
+.mobile .topbar .title, .mobile .stats-pill, .mobile .tab-label, .mobile .fullscreen-tab { display: none; }
+.mobile .topbar .pill { padding: 3px 8px; }
 .mobile .tab { padding: 8px 7px; }
 .mobile .camera-panel.floating { position: absolute; top: calc(52px + env(safe-area-inset-top)); right: 8px; width: 42vw; height: 28vw; resize: none; }
 .mobile .camera-panel.floating ~ .camera-panel.floating { display: none; }

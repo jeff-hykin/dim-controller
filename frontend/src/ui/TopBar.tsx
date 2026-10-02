@@ -45,7 +45,7 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
                 ))}
                 <button
                     type="button"
-                    className="tab"
+                    className="tab fullscreen-tab"
                     title="Fullscreen"
                     aria-label="Fullscreen"
                     onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {})}
