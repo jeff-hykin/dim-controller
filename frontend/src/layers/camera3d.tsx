@@ -73,33 +73,50 @@ class Camera3dLayer {
         this.#findInfo()
     }
 
+    /**
+     * The image's own frame comes from one raw image; intrinsics from the CameraInfo whose frame_id is that frame.
+     * Several cameras can share one CameraInfo topic (Spot publishes all five on one port), so every info topic is
+     * read and only messages for this camera's frame are used; the name-matched topic is the fallback when an info
+     * carries no frame_id.
+     */
     #findInfo() {
         this.#checkedInfoAt = performance.now()
-        const info = cameraInfoFor(this.topic, this.context.topics(), this.context.profile.cameras.cameraInfo)
-        if (info?.key === this.#infoKey) {
-            return
-        }
-        this.#stopInfo?.()
-        this.#stopInfo = null
-        this.#infoKey = info?.key ?? ""
-        if (info) {
-            this.#stopInfo = subscribeDecoded(this.context, info, { maxHz: 1 }, (message) => {
-                const K = message.K ?? []
-                if (message.width && K[0]) {
-                    this.#intrinsics = { width: message.width, height: message.height, fx: K[0], fy: K[4], cx: K[2], cy: K[5] }
-                }
-                this.#frame = message.header?.frame_id ?? this.#frame ?? ""
-                this.#reshape(false)
-            })
-        } else if (this.#frame === null && !this.#stopFrame) {
-            // no CameraInfo: read the frame off one raw image
+        if (this.#frame === null && !this.#stopFrame) {
             this.#stopFrame = this.context.connection.subscribe(this.topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
-                this.#frame = headerFrameId(this.topic.type, message.bytes) ?? ""
+                const frame = headerFrameId(this.topic.type, message.bytes)
+                if (frame === null) {
+                    return
+                }
+                this.#frame = frame
                 this.#stopFrame?.()
                 this.#stopFrame = null
                 this.#reshape(false)
             })
         }
+        const infos = this.context.topics().filter((topic) => topic.type === "sensor_msgs.CameraInfo")
+        const key = infos.map((topic) => topic.key).join(",")
+        if (key === this.#infoKey || this.#intrinsics) {
+            return
+        }
+        this.#stopInfo?.()
+        this.#infoKey = key
+        const named = cameraInfoFor(this.topic, infos, this.context.profile.cameras.cameraInfo)
+        const stops = infos.map((info) =>
+            subscribeDecoded(this.context, info, { maxHz: 30, reliable: true }, (message) => {
+                const K = message.K ?? []
+                const infoFrame = message.header?.frame_id ?? ""
+                const mine = infoFrame ? infoFrame === this.#frame : info.key === named?.key
+                if (!mine || !message.width || !K[0]) {
+                    return
+                }
+                this.#intrinsics = { width: message.width, height: message.height, fx: K[0], fy: K[4], cx: K[2], cy: K[5] }
+                // intrinsics don't change: stop listening (a shared port is busy)
+                this.#stopInfo?.()
+                this.#stopInfo = null
+                this.#reshape(false)
+            })
+        )
+        this.#stopInfo = () => stops.forEach((stop) => stop())
     }
 
     #reshape(force: boolean) {
@@ -142,7 +159,7 @@ class Camera3dLayer {
     }
 
     update(frame: { now: number; fixedFrame: string }) {
-        if (!this.#infoKey && frame.now - this.#checkedInfoAt > 2000) {
+        if (!this.#intrinsics && frame.now - this.#checkedInfoAt > 2000) {
             this.#findInfo()
         }
         if (this.#frame !== null) {
