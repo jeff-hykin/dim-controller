@@ -192,7 +192,14 @@ class Camera3dLayer {
         if (!this.#intrinsics && frame.now - this.#checkedInfoAt > 2000) {
             this.#findInfo()
         }
-        if (this.#frame !== null) {
+        if (this.#frame === "" && !this.#intrinsics) {
+            // an image with no frame_id is placed by its CameraInfo's frame, so it waits for one rather than sit at the origin
+            if (this.root.visible) {
+                this.root.visible = false
+                this.context.viewer.requestRender()
+            }
+            this.context.setStatus({ problem: "waiting for a CameraInfo (the image has no frame_id)" })
+        } else if (this.#frame !== null) {
             if (placeInFixedFrame(this.context, this.root, this.#frame, frame.fixedFrame)) {
                 this.#reshape(false)
             }
