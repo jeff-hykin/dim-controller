@@ -219,6 +219,7 @@ body.dark .scene-label { background: color-mix(in srgb, var(--card) 72%, transpa
    muted, the mono font stack, uppercase tracked labels, square panels with a 3px accent edge) and scene.js (grid line
    0x1f2a3a, clear colour 0x06090f, red 0xff3344 / #ff5f6d); the two chart series colours for info/warn come from the R1
    pages' dark tokens (~/datasets/r1/local_map_rate_over_time.html --s1 #3987e5, --s2 #eb6834). ── */
+/* MemWorld's mint accent is swapped for dimOS blue (#4da3ff); mint stays as --ok for status only. */
 body.science:not(.dark) { color-scheme: light; }
 body.science.dark {
     color-scheme: dark;
@@ -230,16 +231,18 @@ body.science.dark {
     --accent-fg: #d8e6f4;
     --secondary: #111b28;
     --secondary-fg: #b9c7d6;
-    --border: rgba(122, 240, 168, 0.12);
+    --border: rgba(127, 200, 255, 0.12);
     --input: #1f2a3a;
-    --primary: #7af0a8;
+    --primary: #4da3ff; /* dimOS blue: interactive + identity; --ok (mint) is status only */
+    --primary-hover: #7fc8ff;
+    --primary-soft: rgba(77, 163, 255, 0.14);
     --primary-fg: #06090f;
     --info: #3987e5;
     --ok: #7af0a8;
     --warn: #eb6834;
     --danger: #ff5f6d;
     --danger-fg: #06090f;
-    --ring: #7af0a8;
+    --ring: #4da3ff;
     --sans: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, Consolas, monospace;
     --mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, Consolas, monospace;
     --radius: 2px;
@@ -257,7 +260,7 @@ body.dark .topbar .title::before { content: "// "; color: var(--primary); }
 body.dark .panel-head h2 { color: var(--fg); letter-spacing: 0.16em; }
 body.dark .panel-head { border-left: 3px solid var(--primary); margin: 8px 0 0; padding-left: 11px; }
 body.dark h3 { color: var(--primary); opacity: 0.8; }
-body.dark .tab.active { background: rgba(122, 240, 168, 0.12); color: var(--primary); }
+body.dark .tab.active { background: var(--primary-soft); color: var(--primary); }
 body.dark .stats-overlay { color: var(--primary); }
 body.dark .arm-button, body.dark .record-button { text-transform: uppercase; letter-spacing: 0.18em; }
 body.dark .scene-label { background: rgba(6, 9, 15, 0.78); border-left-color: var(--label-color, var(--primary)); }
