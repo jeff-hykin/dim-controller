@@ -37,6 +37,8 @@ export interface PointLook {
 
 const COLOR = { height: 0, intensity: 1, range: 2, solid: 3 }
 
+const VIEW_LIGHT = new THREE.Vector3(2, 4, 3).normalize()
+
 const vertexShader = /* glsl */ `
 uniform float uSize;
 uniform float uPxPerMeter;
@@ -84,6 +86,7 @@ uniform mat4 projectionMatrix;
 uniform float uSize;
 uniform int uStyle;
 uniform float uOpacity;
+uniform vec3 uLightWorld;
 // view-space light direction, MemWorld's normalize(2, 4, 3)
 const vec3 LIGHT = vec3(0.3713907, 0.7427814, 0.5570860);
 varying vec3 vColor;
@@ -127,9 +130,8 @@ void main() {
     if (a.x >= a.y && a.x >= a.z) { normal = vec3(sign(local.x), 0.0, 0.0); face = local.yz; }
     else if (a.y >= a.z) { normal = vec3(0.0, sign(local.y), 0.0); face = local.xz; }
     else { normal = vec3(0.0, 0.0, sign(local.z)); face = local.xy; }
-    // per-face light in view space (MemWorld's cube faces), so each face of a voxel has its own brightness
-    vec3 viewNormal = normalize((viewMatrix * vec4(normal, 0.0)).xyz);
-    float light = 0.42 + 0.72 * max(dot(viewNormal, LIGHT), 0.0);
+    // per-face light (MemWorld's cube faces): the view-space light turned into world space once per draw, on the CPU
+    float light = 0.42 + 0.72 * max(dot(normal, uLightWorld), 0.0);
     float edge = smoothstep(0.86, 0.99, max(abs(face.x), abs(face.y)));
     vec4 clip = projectionMatrix * viewMatrix * vec4(hit, 1.0);
     gl_FragDepthEXT = 0.5 * clip.z / clip.w + 0.5;
@@ -156,9 +158,14 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
             uWindow: { value: -1 },
             uOpacity: { value: 1 },
             uGradient: { value: gradientTexture("memworld") },
+            uLightWorld: { value: new THREE.Vector3() },
         },
         defines: {},
     })
+    const light = material.uniforms.uLightWorld.value as THREE.Vector3
+    material.onBeforeRender = (_renderer, _scene, camera) => {
+        light.copy(VIEW_LIGHT).transformDirection(camera.matrixWorld)
+    }
     // three compiles this as GLSL 3 (WebGL2) and maps gl_FragColor / gl_FragDepthEXT / texture2D onto it
     return material
 }

@@ -124,7 +124,8 @@ class CloudLayer {
         this.#capacity = capacity
         const position = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage)
         const time = new THREE.BufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage)
-        const intensity = new THREE.BufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage)
+        // u8 like the bridge sends it (the shader reads 0..255 as a float): 17 bytes a point with position and time
+        const intensity = new THREE.BufferAttribute(new Uint8Array(capacity), 1).setUsage(THREE.DynamicDrawUsage)
         this.#geometry.dispose()
         this.#geometry = new THREE.BufferGeometry()
         this.#geometry.setAttribute("position", position)
@@ -172,7 +173,7 @@ class CloudLayer {
         const start = accumulate ? this.#write : 0
         const xyz = position.array as Float32Array
         const times = time.array as Float32Array
-        const values = strength.array as Float32Array
+        const values = strength.array as Uint8Array
         const e = transform?.elements
         for (let index = 0; index < count; index++) {
             const slot = (start + index) % this.#capacity
