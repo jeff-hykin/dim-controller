@@ -42,3 +42,30 @@ export function nearestCluster<T extends { depth: number }>(hits: T[]): T[] {
     }
     return []
 }
+
+/** The object the front of the nearest band belongs to: hits connected (within `radius`) to the band's first 25 cm. */
+export function frontObject<T extends { depth: number; point: THREE.Vector3 }>(hits: T[], radius = 0.15): T[] {
+    const band = nearestCluster(hits)
+    if (!band.length) {
+        return []
+    }
+    const front = band[0].depth + 0.25
+    const taken = new Set<number>()
+    const queue: number[] = []
+    hits.forEach((hit, index) => {
+        if (band.includes(hit) && hit.depth <= front) {
+            taken.add(index)
+            queue.push(index)
+        }
+    })
+    while (queue.length) {
+        const current = hits[queue.pop()!].point
+        hits.forEach((hit, index) => {
+            if (!taken.has(index) && hit.point.distanceTo(current) <= radius) {
+                taken.add(index)
+                queue.push(index)
+            }
+        })
+    }
+    return hits.filter((_, index) => taken.has(index))
+}

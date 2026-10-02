@@ -7,7 +7,7 @@ import { LabelPool } from "./render/labels.ts"
 import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
-import { groundLevel, nearestCluster } from "./locate.ts"
+import { frontObject, groundLevel } from "./locate.ts"
 
 export interface Annotation {
     id: string
@@ -51,6 +51,7 @@ export class AgentLink {
     #objects = new Map<string, { root: THREE.Group; key: string }>()
     #camera: { topic: Topic; element: HTMLVideoElement } | null = null
     #info: CameraInfo | null = null
+    #infoTopic: string | null = null
     #cloud: { positions: Float32Array; frame: string | null; at: number } | null = null
     #stops: (() => void)[] = []
 
@@ -196,13 +197,17 @@ export class AgentLink {
             if (topic) {
                 const source = this.app.video.acquire(topic)
                 this.#camera = { topic, element: this.app.video.element(source) }
-                const info = cameraInfoFor(topic, topics, this.app.profile.cameras.cameraInfo)
-                if (info) {
-                    this.#stops.push(this.app.connection.subscribe(info.key, { delivery: "latest", maxHz: 1 }, (message) => {
-                        const value = decode("sensor_msgs.CameraInfo", message.bytes) as { header: { frame_id: string }; width: number; height: number; K: number[] }
-                        this.#info = { frame: value.header.frame_id, width: value.width, height: value.height, fx: value.K[0], fy: value.K[4], cx: value.K[2], cy: value.K[5] }
-                    }))
-                }
+            }
+        }
+        // its CameraInfo may show up on the bridge after the image does: keep looking until it has
+        if (this.#camera && !this.#infoTopic) {
+            const info = cameraInfoFor(this.#camera.topic, topics, this.app.profile.cameras.cameraInfo)
+            if (info) {
+                this.#infoTopic = info.key
+                this.#stops.push(this.app.connection.subscribe(info.key, { delivery: "latest", maxHz: 1 }, (message) => {
+                    const value = decode("sensor_msgs.CameraInfo", message.bytes) as { header: { frame_id: string }; width: number; height: number; K: number[] }
+                    this.#info = { frame: value.header.frame_id, width: value.width, height: value.height, fx: value.K[0], fy: value.K[4], cx: value.K[2], cy: value.K[5] }
+                }))
             }
         }
         if (!this.#cloud) {
@@ -251,11 +256,16 @@ export class AgentLink {
         if (!camera) {
             return { error: "no camera topic on the bridge" }
         }
-        await this.#until(() => camera.element.readyState >= 2 && camera.element.videoWidth > 0 && !!this.#info, 4000)
-        const { videoWidth: width, videoHeight: height } = camera.element
-        if (!width) {
+        await this.#until(() => {
+            this.#ensureSources()
+            return camera.element.readyState >= 2 && camera.element.videoWidth > 0 && !!this.#info
+        }, 5000)
+        if (!camera.element.videoWidth) {
             return { topic: camera.topic.name, error: "no camera frame yet" }
         }
+        // the stream may be scaled for video; draw it at CameraInfo's size so pixels match the intrinsics
+        const width = this.#info?.width || camera.element.videoWidth
+        const height = this.#info?.height || camera.element.videoHeight
         const canvas = document.createElement("canvas")
         canvas.width = width
         canvas.height = height
@@ -353,7 +363,10 @@ export class AgentLink {
     /** An object's 3D box from a box around it in the camera image: lidar points inside, else the floor under it. */
     async locate({ bbox }: { bbox: Bbox }) {
         this.#ensureSources()
-        await this.#until(() => !!this.#info && !!this.#cloud?.positions.length, 3000)
+        await this.#until(() => {
+            this.#ensureSources()
+            return !!this.#info && !!this.#cloud?.positions.length && this.#cloud.frame !== null
+        }, 5000)
         const info = this.#info
         if (!info) {
             return { error: "no CameraInfo for the camera yet" }
@@ -383,7 +396,7 @@ export class AgentLink {
                 hits.push({ point: point.clone(), depth: local.z })
             }
         }
-        const cluster = nearestCluster(hits)
+        const cluster = frontObject(hits)
         if (cluster.length >= 8) {
             const low = new THREE.Vector3(Infinity, Infinity, Infinity)
             const high = new THREE.Vector3(-Infinity, -Infinity, -Infinity)
