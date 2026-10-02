@@ -1,3 +1,7 @@
 title: Live Viewer
 dimos-desktop-api: ">=2 <3"
+# the running blueprint's Twist inputs, for the drive topic picker
+dimos-api:
+    - GET /dimos/runs
+    - GET /dimos/blueprints/{name}
 zenoh-web: ">=0.4 <0.5"

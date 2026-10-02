@@ -1,23 +1,52 @@
 {
-    description = "dim-live-viewer: a live 3D scene of a running dimOS stack, as a dimOS Desktop app";
+    description = "dim-live-viewer: live 3D view, driving and recording for a running dimOS stack, as a dimOS Desktop app";
 
-    inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    inputs = {
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        rust-overlay.url = "github:oxalica/rust-overlay";
+        rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+    };
 
-    outputs = { self, nixpkgs }:
+    outputs = { self, nixpkgs, rust-overlay }:
         let
             systems = [ "aarch64-darwin" "x86_64-darwin" "x86_64-linux" "aarch64-linux" ];
-            forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+            forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; }));
         in {
-            packages = forAllSystems (pkgs: {
-                # a static page, served at /apps/<name>/; the rail icon rides along for the page's own use
-                dimosApp = pkgs.runCommand "dim-live-viewer" { } ''
-                    cp -r ${self}/dim/apps/live_viewer/frontend $out
-                    chmod -R u+w $out
-                    cp ${self}/icon.svg $out/icon.svg
-                    # nothing to build (a plain-JS page); parse its module script so a broken edit fails the build
-                    ${pkgs.gawk}/bin/awk '/<script type="module">/{on=1; next} /<\/script>/{on=0} on' $out/index.html \
-                        | ${pkgs.esbuild}/bin/esbuild --loader=js --format=esm --log-level=error > /dev/null
-                '';
-            });
+            packages = forAllSystems (pkgs:
+                let
+                    rust = pkgs.rust-bin.stable.latest.default;
+                    rustPlatform = pkgs.makeRustPlatform { cargo = rust; rustc = rust; };
+
+                    # the page: React + Vite (type-checked first), from package-lock.json
+                    frontend = pkgs.buildNpmPackage {
+                        pname = "dim-live-viewer-frontend";
+                        version = "0.1.0";
+                        src = ./frontend;
+                        npmDepsHash = "sha256-nMfPTXcTe9isOLJdYf7KVJLNOjWpVJ5UMabV+vjydvA=";
+                        installPhase = ''
+                            cp -r dist $out
+                        '';
+                    };
+
+                    # the backend: serves the page (its store path baked in) and records topics to mcap
+                    server = rustPlatform.buildRustPackage {
+                        pname = "dim-live-viewer-server";
+                        version = "0.1.0";
+                        src = ./server;
+                        cargoLock.lockFile = ./server/Cargo.lock;
+                        LIVE_VIEWER_FRONTEND_BUILT = "${frontend}";
+                        # the tests open zenoh sessions on loopback; `cargo test` runs them in development
+                        doCheck = false;
+                    };
+                in {
+                    inherit frontend server;
+                    # what Desktop builds: bin/dimos-app-server, which serves everything under /apps/<name>/
+                    dimosApp = pkgs.runCommand "dim-live-viewer" { } ''
+                        mkdir -p $out/bin
+                        ln -s ${server}/bin/dimos-app-server $out/bin/dimos-app-server
+                        cp ${self}/icon.svg $out/icon.svg
+                    '';
+                    default = self.packages.${pkgs.system}.dimosApp;
+                });
         };
 }
