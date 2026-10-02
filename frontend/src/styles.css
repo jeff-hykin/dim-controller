@@ -17,7 +17,7 @@ h3 { margin: 14px 0 6px; font-size: 10px; letter-spacing: var(--track-label); te
 /* ── the 3D view: fullscreen, or a picture-in-picture while a camera is main ── */
 .scene-slot { position: absolute; inset: 0; z-index: 0;
     background: radial-gradient(120% 90% at 50% 0%, oklch(0.99 0.002 250), oklch(0.93 0.005 252)); }
-body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, oklch(0.27 0.025 250), oklch(0.17 0.015 256) 45%, oklch(0.12 0.012 258)); }
+body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, #0d141e, #06090f 60%); }
 .scene { position: absolute; inset: 0; touch-action: none; }
 .scene canvas { display: block; }
 .label-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -33,6 +33,9 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, oklch(0.
     background: color-mix(in oklch, var(--card) 80%, transparent); border-left: 3px solid var(--label-color, var(--info));
     transform: translateY(-14px); }
 .frame-label { font-weight: 500; font-size: 10px; opacity: 0.8; border-left-color: var(--muted-fg); }
+.scene-label { transition: opacity 0.15s; }
+.scene-label.covered { opacity: 0; }
+body.dark .scene-label { background: color-mix(in oklch, var(--card) 72%, transparent); color: var(--fg); }
 
 /* ── top bar ── */
 .topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 10; display: flex; align-items: center; gap: 10px;
@@ -210,3 +213,52 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, oklch(0.
 .mobile .field-label { width: 70px; }
 .mobile .gradients { margin-left: 0; }
 .mobile select, .mobile input { font-size: 16px; } /* iOS zooms into anything smaller */
+
+/* ── dark theme (the default): MemWorld's HUD look. Tokens from
+   ~/repos/_memworld_wt/dimos/teleop/memory_world/web/static/index.html :root (bg, panel, accent, accent-soft, text,
+   muted, the mono font stack, uppercase tracked labels, square panels with a 3px accent edge) and scene.js (grid line
+   0x1f2a3a, clear colour 0x06090f, red 0xff3344 / #ff5f6d); the two chart series colours for info/warn come from the R1
+   pages' dark tokens (~/datasets/r1/local_map_rate_over_time.html --s1 #3987e5, --s2 #eb6834). ── */
+body.science.dark {
+    --bg: #06090f;
+    --card: #0d141e;
+    --fg: #d8e6f4;
+    --muted-fg: #6c778c; /* MemWorld's #5a6478, one step lighter so small text stays legible on #0d141e */
+    --accent: #142030;
+    --accent-fg: #d8e6f4;
+    --secondary: #111b28;
+    --secondary-fg: #b9c7d6;
+    --border: rgba(122, 240, 168, 0.12);
+    --input: #1f2a3a;
+    --primary: #7af0a8;
+    --primary-fg: #06090f;
+    --info: #3987e5;
+    --ok: #7af0a8;
+    --warn: #eb6834;
+    --danger: #ff5f6d;
+    --danger-fg: #06090f;
+    --ring: #7af0a8;
+    --sans: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, Consolas, monospace;
+    --mono: "JetBrains Mono", "Fira Code", "SF Mono", ui-monospace, Consolas, monospace;
+    --radius: 2px;
+    --radius-sm: 1px;
+    --radius-lg: 3px;
+    --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.7);
+    --shadow-lg: 0 12px 36px -10px rgba(0, 0, 0, 0.8);
+    letter-spacing: 0.03em;
+}
+body.dark .topbar, body.dark .side-panel, body.dark .drive-hud:not(.mobile), body.dark .stats-overlay, body.dark .camera-head {
+    background: rgba(13, 20, 30, 0.92);
+}
+body.dark .topbar .title { text-transform: uppercase; letter-spacing: 0.12em; }
+body.dark .topbar .title::before { content: "// "; color: var(--primary); }
+body.dark .panel-head h2 { color: var(--fg); letter-spacing: 0.16em; }
+body.dark .panel-head { border-left: 3px solid var(--primary); margin: 8px 0 0; padding-left: 11px; }
+body.dark h3 { color: var(--primary); opacity: 0.8; }
+body.dark .tab.active { background: rgba(122, 240, 168, 0.12); color: var(--primary); }
+body.dark .stats-overlay { color: var(--primary); }
+body.dark .arm-button, body.dark .record-button { text-transform: uppercase; letter-spacing: 0.18em; }
+body.dark .scene-label { background: rgba(6, 9, 15, 0.78); border-left-color: var(--label-color, var(--primary)); }
+body.dark .frame-label { border-left-color: var(--muted-fg); color: #b9c7d6; }
+body.dark .pill.on .dot { box-shadow: 0 0 0 3px rgba(122, 240, 168, 0.18); }
+body.dark .joystick-knob { background: var(--primary); }

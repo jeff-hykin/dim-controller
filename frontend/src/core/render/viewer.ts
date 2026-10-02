@@ -52,6 +52,7 @@ export class Viewer {
     #latencies: number[] = []
     #arrivals: number[] = []
     #lastStats = 0
+    #lastDeclutter = 0
     #bridgeNow: () => number
     #lastFollow = new THREE.Vector3()
     #following = false
@@ -81,10 +82,7 @@ export class Viewer {
         const sun = new THREE.DirectionalLight(0xffffff, 1.2)
         sun.position.set(5, 3, 10)
         this.scene.add(sun)
-        this.#grid = new THREE.GridHelper(100, 100, 0x3a4a56, 0x222c34)
-        this.#grid.rotation.x = Math.PI / 2
-        ;(this.#grid.material as THREE.Material).transparent = true
-        ;(this.#grid.material as THREE.Material).opacity = 0.55
+        this.#grid = this.#makeGrid(true)
         this.scene.add(this.#grid)
 
         new ResizeObserver(() => this.#resize()).observe(host)
@@ -92,10 +90,41 @@ export class Viewer {
         requestAnimationFrame(this.#loop)
     }
 
+    #makeGrid(dark: boolean): THREE.GridHelper {
+        const grid = dark ? new THREE.GridHelper(200, 200, 0x2a3a4e, 0x1f2a3a) : new THREE.GridHelper(200, 200, 0x97a4b0, 0xc4ccd4)
+        grid.rotation.x = Math.PI / 2
+        const material = grid.material as THREE.Material
+        material.transparent = true
+        material.opacity = dark ? 0.7 : 0.55
+        return grid
+    }
+
+    /** Grid, fog and light for a dark or light page (the background itself is CSS behind the transparent canvas). */
     setTheme(dark: boolean) {
-        const material = this.#grid.material as THREE.LineBasicMaterial
-        material.color.set(dark ? 0x2c3a44 : 0xaab6c0)
+        this.scene.remove(this.#grid)
+        this.#grid.geometry.dispose()
+        ;(this.#grid.material as THREE.Material).dispose()
+        this.#grid = this.#makeGrid(dark)
+        this.scene.add(this.#grid)
+        // the far grid fades into the page instead of ending in a hard edge
+        this.scene.fog = new THREE.Fog(dark ? 0x06090f : 0xe9edf1, 40, 110)
         this.requestRender()
+    }
+
+    /** Hides scene labels that overlap a more important one (frame names give way to data labels, then to the nearer). */
+    #declutter() {
+        const elements = [...this.labels.domElement.querySelectorAll<HTMLElement>(".scene-label")].filter((element) => element.style.display !== "none")
+        const placed: DOMRect[] = []
+        const ranked = elements
+            .map((element) => ({ element, rect: element.getBoundingClientRect(), minor: element.classList.contains("frame-label") }))
+            .sort((a, b) => Number(a.minor) - Number(b.minor))
+        for (const { element, rect } of ranked) {
+            const hit = placed.some((other) => rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top)
+            element.classList.toggle("covered", hit)
+            if (!hit) {
+                placed.push(rect)
+            }
+        }
     }
 
     requestRender() {
@@ -173,6 +202,10 @@ export class Viewer {
             this.#dirty = false
             this.renderer.render(this.scene, this.camera)
             this.labels.render(this.scene, this.camera)
+            if (now - this.#lastDeclutter > 150) {
+                this.#lastDeclutter = now
+                this.#declutter()
+            }
             const drawn = performance.now()
             // everything that arrived before this frame is on screen once the GPU picks this frame up
             if (this.#pendingData.length) {

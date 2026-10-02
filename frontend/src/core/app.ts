@@ -19,6 +19,7 @@ export interface ViewSettings {
     fixedFrame: string
     follow: boolean
     showStats: boolean
+    theme: "dark" | "light" | "system"
 }
 
 export class ViewerApp {
@@ -27,7 +28,7 @@ export class ViewerApp {
     readonly viewer: Viewer
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false, theme: "dark" })
     readonly profile: RobotProfile
     readonly drive: Drive
     /** the fixed frame in use and where the robot is (for the UI) */

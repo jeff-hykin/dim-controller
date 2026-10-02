@@ -31,14 +31,22 @@ export function App() {
         followNewTopics(created)
         window.__lv = created
         setApp(created)
+        // dark unless Settings says light (or system and the system is light)
         const media = matchMedia("(prefers-color-scheme: light)")
         const theme = () => {
-            document.body.classList.toggle("dark", !media.matches)
-            created.viewer.setTheme(!media.matches)
+            const choice = created.settings.get().theme ?? "dark"
+            const dark = choice === "dark" || (choice === "system" && !media.matches)
+            document.body.classList.toggle("dark", dark)
+            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#06090f" : "#f4f6f8")
+            created.viewer.setTheme(dark)
         }
         theme()
         media.addEventListener("change", theme)
-        return () => media.removeEventListener("change", theme)
+        const stop = created.settings.subscribe(theme)
+        return () => {
+            media.removeEventListener("change", theme)
+            stop()
+        }
     }, [])
 
     const layout = useStore(cameraLayout)

@@ -73,6 +73,8 @@ uniform mat4 projectionMatrix;
 uniform float uSize;
 uniform int uStyle;
 uniform float uOpacity;
+// view-space light direction, MemWorld's normalize(2, 4, 3)
+const vec3 LIGHT = vec3(0.3713907, 0.7427814, 0.5570860);
 varying vec3 vColor;
 varying vec3 vCenter;
 varying float vHalf;
@@ -86,9 +88,11 @@ void main() {
         gl_FragColor = vec4(vColor, uOpacity);
         return;
     }
+    // a ball: the sphere normal the disc implies, lit like MemWorld's voxel_sprites.js
     float r2 = dot(p, p);
     if (r2 > 1.0) discard;
-    gl_FragColor = vec4(vColor * (0.62 + 0.38 * sqrt(1.0 - r2)), uOpacity);
+    vec3 n = vec3(p, sqrt(1.0 - r2));
+    gl_FragColor = vec4(vColor * (0.45 + 0.75 * max(dot(n, LIGHT), 0.0)), uOpacity);
 #else
     // voxel: cast this fragment's camera ray at the cube around vCenter
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
@@ -112,11 +116,13 @@ void main() {
     if (a.x >= a.y && a.x >= a.z) { normal = vec3(sign(local.x), 0.0, 0.0); face = local.yz; }
     else if (a.y >= a.z) { normal = vec3(0.0, sign(local.y), 0.0); face = local.xz; }
     else { normal = vec3(0.0, 0.0, sign(local.z)); face = local.xy; }
-    float light = 0.5 + 0.32 * max(dot(normal, normalize(vec3(0.35, 0.55, 1.0))), 0.0) + (normal.z > 0.5 ? 0.18 : 0.0);
-    float edge = smoothstep(0.8, 0.98, max(abs(face.x), abs(face.y)));
+    // per-face light in view space (MemWorld's cube faces), so each face of a voxel has its own brightness
+    vec3 viewNormal = normalize((viewMatrix * vec4(normal, 0.0)).xyz);
+    float light = 0.42 + 0.72 * max(dot(viewNormal, LIGHT), 0.0);
+    float edge = smoothstep(0.86, 0.99, max(abs(face.x), abs(face.y)));
     vec4 clip = projectionMatrix * viewMatrix * vec4(hit, 1.0);
     gl_FragDepthEXT = 0.5 * clip.z / clip.w + 0.5;
-    gl_FragColor = vec4(vColor * light * (1.0 - 0.28 * edge), uOpacity);
+    gl_FragColor = vec4(vColor * light * (1.0 - 0.18 * edge), uOpacity);
 #endif
 }
 `
@@ -138,7 +144,7 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
             uNow: { value: 0 },
             uWindow: { value: -1 },
             uOpacity: { value: 1 },
-            uGradient: { value: gradientTexture("turbo") },
+            uGradient: { value: gradientTexture("memworld") },
         },
         defines: {},
     })

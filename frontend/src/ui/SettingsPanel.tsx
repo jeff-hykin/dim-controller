@@ -20,6 +20,13 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     {profiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name}</option>)}
                 </select>
             </Field>
+            <Field label="Theme">
+                <span className="segmented">
+                    {(["dark", "light", "system"] as const).map((theme) => (
+                        <button type="button" key={theme} className={(view.theme ?? "dark") === theme ? "on" : ""} onClick={() => app.settings.update({ theme })}>{theme}</button>
+                    ))}
+                </span>
+            </Field>
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <div className="button-row">

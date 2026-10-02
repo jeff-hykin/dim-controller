@@ -38,7 +38,7 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                                 <Select value={String(look.axis)} options={[["2", "z (height)"], ["0", "x"], ["1", "y"]]} onChange={(axis) => set({ axis: Number(axis) as PointLook["axis"] })} />
                             </Field>
                         )}
-                        <Field label="Range" hint="empty = automatic (2nd–98th percentile)">
+                        <Field label="Range" hint="empty = automatic (5th–95th percentile)">
                             <span className="range-inputs">
                                 <NumberInput value={look.rangeMin} placeholder="auto" onChange={(rangeMin) => set({ rangeMin })} />
                                 <NumberInput value={look.rangeMax} placeholder="auto" onChange={(rangeMax) => set({ rangeMax })} />

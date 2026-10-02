@@ -28,7 +28,7 @@ export interface CloudSettings {
 const isMap = (topic: Topic) => /map|global|voxel|terrain|costmap/i.test(topic.name)
 
 const DEFAULTS: CloudSettings = {
-    look: { style: "disc", size: 0.04, colorMode: "height", gradient: "turbo", axis: 2, rangeMin: null, rangeMax: null, solid: "#7fd4ff", opacity: 1 },
+    look: { style: "disc", size: 0.04, colorMode: "height", gradient: "memworld", axis: 2, rangeMin: null, rangeMax: null, solid: "#7fd4ff", opacity: 1 },
     mode: "latest",
     windowSeconds: 10,
     maxPoints: 2_000_000,
@@ -212,7 +212,7 @@ class CloudLayer {
         this.context.viewer.noteData(timestamp)
     }
 
-    /** Auto color range: 2nd-98th percentile of a sample, eased so it doesn't flicker scan to scan. */
+    /** Auto color range: 5th-95th percentile (MemWorld's) of a sample, eased so it doesn't flicker scan to scan. */
     #updateRange(positions: Float32Array, intensity: Uint8Array | undefined, transform: THREE.Matrix4 | null) {
         const look = this.#settings.get().look
         const count = positions.length / 3
@@ -233,8 +233,8 @@ class CloudLayer {
                 samples.push(look.colorMode === "range" ? Math.hypot(world[0] - sensor[0], world[1] - sensor[1], world[2] - sensor[2]) : world[look.axis])
             }
             samples.sort((a, b) => a - b)
-            low = samples[Math.floor(samples.length * 0.02)]
-            high = samples[Math.floor(samples.length * 0.98)]
+            low = samples[Math.floor(samples.length * 0.05)]
+            high = samples[Math.floor(samples.length * 0.95)]
             if (look.colorMode === "range") {
                 low = 0
             }
