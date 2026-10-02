@@ -3,7 +3,9 @@ layer can be checked by eye: markers (all types), 3D boxes, a graph, a pose arra
 
     python tools/synthetic_publisher.py [--connect tcp/127.0.0.1:7447] [--seconds 600]
 
-Run with a dimos venv (dimos_lcm + eclipse-zenoh). Everything is in frame `synthetic`, a child of `world` 3 m out on
+Run with a dimos venv (dimos_lcm + eclipse-zenoh). dimos_lcm's classes share their nested default objects between
+instances (ObjectHypothesisWithPose().hypothesis is the same object every time), so every nested field here is built
+fresh. Everything is in frame `synthetic`, a child of `world` 3 m out on
 x (published on /synthetic_tf), so the viewer has to go through TF to place it. Publishes nothing a robot listens to.
 """
 
@@ -27,7 +29,10 @@ from dimos_lcm.vision_msgs import (
     Detection2DArray,
     Detection3D,
     Detection3DArray,
+    ObjectHypothesis,
     ObjectHypothesisWithPose,
+    Point2D,
+    Pose2D,
 )
 from dimos_lcm.visualization_msgs import Marker, MarkerArray
 
@@ -102,8 +107,7 @@ def detections3d() -> Detection3DArray:
         detection = Detection3D()
         detection.header = header()
         hypothesis = ObjectHypothesisWithPose()
-        hypothesis.hypothesis.class_id = name
-        hypothesis.hypothesis.score = score
+        hypothesis.hypothesis = ObjectHypothesis(name, score)
         detection.results = [hypothesis]
         detection.results_length = 1
         detection.bbox = BoundingBox3D()
@@ -195,13 +199,11 @@ def detections2d(t: float) -> Detection2DArray:
         detection = Detection2D()
         detection.header = header("camera_optical")
         hypothesis = ObjectHypothesisWithPose()
-        hypothesis.hypothesis.class_id = name
-        hypothesis.hypothesis.score = 0.9 - 0.1 * index
+        hypothesis.hypothesis = ObjectHypothesis(name, 0.9 - 0.1 * index)
         detection.results = [hypothesis]
         detection.results_length = 1
         detection.bbox = BoundingBox2D()
-        detection.bbox.center.position.x = x
-        detection.bbox.center.position.y = y
+        detection.bbox.center = Pose2D(Point2D(x, y), 0.0)
         detection.bbox.size_x = w
         detection.bbox.size_y = h
         detection.id = name

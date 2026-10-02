@@ -1,5 +1,5 @@
 // Fixtures in fixtures/lcm.json are dimos's own lcm_encode() output (made with the dimos venv).
-import { assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
+import { assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
 import { decode, encode, fingerprint, headerFrameId } from "../src/core/lcm/lcm.ts"
 import fixtures from "./fixtures/lcm.json" with { type: "json" }
 
@@ -31,6 +31,10 @@ Deno.test("decodes stamped, nested and variable-length messages", () => {
     assertEquals([info.width, info.height, info.K[0], info.K[2]], [640, 480, 500, 320])
     const marker = decode("visualization_msgs.Marker", bytes("visualization_msgs.Marker"))
     assertEquals([marker.text, marker.id, marker.type, marker.points[0].z], ["hello", 7, 9, 3])
+})
+
+Deno.test("another type's bytes are refused", () => {
+    assertThrows(() => decode("nav_msgs.Path", bytes("nav_msgs.Odometry")), Error, "fingerprint")
 })
 
 Deno.test("headerFrameId reads only the header", () => {

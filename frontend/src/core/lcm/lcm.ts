@@ -71,8 +71,14 @@ class Reader {
     }
 }
 
-/** Decodes a dimos payload (fingerprint + struct) of `type`, e.g. "nav_msgs.Odometry". */
+/** Decodes a dimos payload (fingerprint + struct) of `type`, e.g. "nav_msgs.Odometry"; a different type's bytes throw. */
 export function decode(type: string, bytes: Uint8Array): LcmValue {
+    const expected = fingerprint(type)
+    for (let index = 0; index < 8; index++) {
+        if (bytes[index] !== expected[index]) {
+            throw new Error(`not a ${type} (fingerprint mismatch)`)
+        }
+    }
     return new Reader(bytes, 8).struct(type)
 }
 

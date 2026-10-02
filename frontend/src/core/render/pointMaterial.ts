@@ -79,7 +79,7 @@ void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     p.y = -p.y;
 #ifndef VOXEL
-    // disc / square never touch gl_FragDepth, so the GPU's early depth test keeps working for them
+    // disc / square never write depth themselves, so the GPU's early depth test keeps working for them
     if (uStyle == 1) {
         gl_FragColor = vec4(vColor, uOpacity);
         return;
@@ -113,7 +113,7 @@ void main() {
     float light = 0.5 + 0.32 * max(dot(normal, normalize(vec3(0.35, 0.55, 1.0))), 0.0) + (normal.z > 0.5 ? 0.18 : 0.0);
     float edge = smoothstep(0.8, 0.98, max(abs(face.x), abs(face.y)));
     vec4 clip = projectionMatrix * viewMatrix * vec4(hit, 1.0);
-    gl_FragDepth = 0.5 * clip.z / clip.w + 0.5;
+    gl_FragDepthEXT = 0.5 * clip.z / clip.w + 0.5;
     gl_FragColor = vec4(vColor * light * (1.0 - 0.28 * edge), uOpacity);
 #endif
 }
@@ -140,8 +140,7 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
         },
         defines: {},
     })
-    // gl_FragDepth needs GLSL 3 (WebGL2); three maps attribute/varying/texture2D/gl_FragColor onto it
-    material.glslVersion = THREE.GLSL3
+    // three compiles this as GLSL 3 (WebGL2) and maps gl_FragColor / gl_FragDepthEXT / texture2D onto it
     return material
 }
 
