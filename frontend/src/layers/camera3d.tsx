@@ -76,8 +76,8 @@ class Camera3dLayer {
     /**
      * The image's own frame comes from one raw image; intrinsics from the CameraInfo whose frame_id is that frame.
      * Several cameras can share one CameraInfo topic (Spot publishes all five on one port), so every info topic is
-     * read and only messages for this camera's frame are used; the name-matched topic is the fallback when an info
-     * carries no frame_id.
+     * read and only messages for this camera's frame are used; the name-matched topic is the fallback when either
+     * side has no frame_id.
      */
     #findInfo() {
         this.#checkedInfoAt = performance.now()
@@ -105,9 +105,13 @@ class Camera3dLayer {
             subscribeDecoded(this.context, info, { maxHz: 30, reliable: true }, (message) => {
                 const K = message.K ?? []
                 const infoFrame = message.header?.frame_id ?? ""
-                const mine = infoFrame ? infoFrame === this.#frame : info.key === named?.key
+                // an image without a frame_id (the go2 sim's) is matched by name and placed at its info's frame
+                const mine = infoFrame && this.#frame ? infoFrame === this.#frame : info.key === named?.key
                 if (!mine || !message.width || !K[0]) {
                     return
+                }
+                if (!this.#frame) {
+                    this.#frame = infoFrame
                 }
                 this.#intrinsics = { width: message.width, height: message.height, fx: K[0], fy: K[4], cx: K[2], cy: K[5] }
                 // intrinsics don't change: stop listening (a shared port is busy)
