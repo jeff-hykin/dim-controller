@@ -95,7 +95,8 @@ void main() {
     vViewDepth = depth;
 #endif
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = clamp(px, uMinPx, 512.0);
+    // a splat right in front of the camera would be a screen-filling blob (and the most expensive fragment work)
+    gl_PointSize = clamp(px, uMinPx, uStyle == 3 ? 64.0 : 512.0);
     vCenter = center;
     vHalf = 0.5 * gl_PointSize / uPxPerMeter * depth;
 }

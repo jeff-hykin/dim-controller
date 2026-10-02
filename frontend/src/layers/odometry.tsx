@@ -54,6 +54,9 @@ class PoseLayer {
         this.#trail.material.linewidth = settings.width
         this.#trail.object.visible = settings.trail
         this.#trail.material.depthTest = settings.onTop === false
+        // three draws every transparent object after every opaque one: on top of blended (glow) clouds needs the
+        // trail in the transparent list too, where renderOrder puts it last
+        this.#trail.material.transparent = settings.onTop !== false
         this.#trail.object.renderOrder = settings.onTop === false ? 0 : 10
         this.#axes.scale.setScalar(settings.axesSize)
         this.context.viewer.requestRender()
