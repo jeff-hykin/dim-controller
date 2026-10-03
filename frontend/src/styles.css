@@ -147,7 +147,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, var(--ca
 .key.empty { visibility: hidden; }
 .key.down { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
 .key.shift { width: 30px; }
-.hud-readout { font: 11px var(--mono); min-width: 150px; }
+.hud-readout { font: 11px var(--mono); min-width: 190px; }
 
 .drive-hud.mobile { left: 0; right: 0; bottom: 0; transform: none; border-radius: 0; justify-content: space-between; align-items: flex-end;
     background: none; border: 0; box-shadow: none; backdrop-filter: none; padding: 10px 14px calc(14px + env(safe-area-inset-bottom)); pointer-events: none; }

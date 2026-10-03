@@ -1,10 +1,11 @@
 //! Driving from an endpoint (the agent's way; the page's keys and stick publish through the bridge at 20 Hz with the
 //! bridge's deadman): a Twist on `dimos/<topic>/geometry_msgs.Twist` at 10 Hz for a few seconds, then a second of
 //! zeros so the stop is heard. `dryRun` says what would be sent and sends nothing. A new command or a stop replaces
-//! the one running.
+//! the one running. Driving is armed or disarmed here, for every page and the agent alike: commands are refused while
+//! disarmed, and disarming stops a running one. A restart comes up disarmed.
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -18,6 +19,14 @@ const HZ: u64 = 10;
 pub struct Drive {
     /// bumped by every command: a running one stops when it no longer matches
     generation: AtomicU64,
+    /// who armed driving (agent, page, ...), or None while disarmed
+    armed_by: Mutex<Option<String>>,
+    /// the running command (what `send` described, plus source and `until`, ms since the epoch)
+    running: Mutex<Option<Value>>,
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 pub struct Command {
@@ -60,6 +69,25 @@ pub fn key(topic: &str) -> String {
 }
 
 impl Drive {
+    pub fn armed_by(&self) -> Option<String> {
+        self.armed_by.lock().unwrap().clone()
+    }
+
+    /// Arms (by `source`) or disarms; returns whether a running command has to be stopped.
+    pub fn set_armed(&self, armed: bool, source: &str) -> bool {
+        *self.armed_by.lock().unwrap() = armed.then(|| source.to_string());
+        !armed && self.running().is_some()
+    }
+
+    /// The command being sent now, if any.
+    pub fn running(&self) -> Option<Value> {
+        let mut running = self.running.lock().unwrap();
+        if running.as_ref().is_some_and(|command| command["until"].as_u64().unwrap_or(0) < now_ms()) {
+            *running = None;
+        }
+        running.clone()
+    }
+
     /// Starts sending `command` (replacing any running one); returns what it sends.
     pub fn send(self: &Arc<Self>, recorder: Arc<recorder::State>, command: Command, dry_run: bool) -> Value {
         let described = json!({
@@ -75,6 +103,12 @@ impl Drive {
             return described;
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let moving = command.linear.iter().chain(&command.angular).any(|v| *v != 0.0);
+        *self.running.lock().unwrap() = moving.then(|| {
+            let mut running = described.clone();
+            running["until"] = json!(now_ms() + (command.seconds * 1000.0) as u64);
+            running
+        });
         let drive = self.clone();
         tokio::spawn(async move {
             let Ok(session) = recorder.session().await else { return };
@@ -98,6 +132,9 @@ impl Drive {
     /// Stops any running command and sends a second of zeros on `topic`.
     pub fn stop(self: &Arc<Self>, recorder: Arc<recorder::State>, topic: &str, dry_run: bool) -> Value {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        if !dry_run {
+            *self.running.lock().unwrap() = None;
+        }
         let command = Command { topic: topic.to_string(), linear: [0.0; 3], angular: [0.0; 3], seconds: 0.1 };
         self.send(recorder, command, dry_run)
     }
@@ -117,6 +154,19 @@ mod tests {
         assert!(parse(&json!({ "linear": "fast" }), "/cmd_vel").is_err());
         assert!(parse(&json!({ "topic": "dimos/**" }), "/cmd_vel").is_err());
         assert_eq!(key("/cmd_vel"), "dimos/cmd_vel/geometry_msgs.Twist");
+    }
+
+    #[test]
+    fn arming() {
+        let drive = Drive::default();
+        assert_eq!(drive.armed_by(), None, "a restart comes up disarmed");
+        assert!(!drive.set_armed(true, "agent"));
+        assert_eq!(drive.armed_by().as_deref(), Some("agent"));
+        *drive.running.lock().unwrap() = Some(json!({ "until": now_ms() + 5000 }));
+        assert!(drive.set_armed(false, "page"), "disarming stops a running command");
+        assert_eq!(drive.armed_by(), None);
+        *drive.running.lock().unwrap() = Some(json!({ "until": 1 }));
+        assert!(drive.running().is_none(), "a finished command isn't running");
     }
 
     /// a real zenoh round trip on loopback: the twist arrives, then zeros

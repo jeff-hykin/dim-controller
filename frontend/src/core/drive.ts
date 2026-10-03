@@ -2,6 +2,8 @@
 // publishHz straight through the bridge. Nothing is published while disarmed or idle: a release sends a second of
 // zeros so the stop is heard, then the topic goes quiet. While moving the bridge holds a zero Twist as a deadman
 // and publishes it if this page goes silent for deadmanMs or disconnects (port of web_ctrl's drive loop).
+// Arming is the backend's (POST api/drive/arm), one switch for every page and the agent; its `drive` events carry it
+// back here, with the agent's commands (and dry runs) for the HUD.
 import { encode } from "./lcm/lcm.ts"
 import { persistentStore, Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
@@ -29,12 +31,33 @@ export interface DriveState {
     publishing: boolean
     sent: number
     error: string | null
+    /** who armed it (page, agent), from the backend */
+    armedBy: string | null
+    /** the last endpoint command (POST api/drive), shown until it ends */
+    command: DriveCommand | null
+}
+
+/** What POST api/drive sent (or would have, for a dry run), as the backend describes it. */
+export interface DriveCommand {
+    key: string
+    linear: [number, number, number]
+    angular: [number, number, number]
+    seconds: number
+    dryRun: boolean
+    source: string
+}
+
+/** The backend's `drive` event (server/src/api.rs). */
+export interface DriveEvent {
+    armed: boolean
+    armedBy: string | null
+    command: DriveCommand | null
 }
 
 const zeroAxes = (): Axes => ({ forward: 0, strafe: 0, turn: 0, vertical: 0 })
 
 export class Drive {
-    readonly state = new Store<DriveState>({ armed: false, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topic: "", publishing: false, sent: 0, error: null })
+    readonly state = new Store<DriveState>({ armed: false, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topic: "", publishing: false, sent: 0, error: null, armedBy: null, command: null })
     readonly settings: Store<DriveSettings>
     readonly controlValues = new Store<Record<string, number>>({})
     /** axis contributions by source (keys, stick, pad), summed and clamped */
@@ -44,6 +67,7 @@ export class Drive {
     #deadmanArmed = false
     #stopFlush = 0
     #timer: ReturnType<typeof setInterval>
+    #commandTimer: ReturnType<typeof setTimeout> | undefined
     #controlPublishers = new Map<string, Publisher>()
     /** Twist topics the running blueprint reads (from Desktop's /dimos/ API) */
     #inputs: string[] = []
@@ -95,7 +119,35 @@ export class Drive {
         }
     }
 
+    /** Arm or disarm for everyone: through the backend, applied here at once so a key right after works. */
     setArmed(armed: boolean) {
+        this.#applyArmed(armed, armed ? "page" : null)
+        if (typeof location === "undefined") {
+            return // tests: no backend
+        }
+        fetch(new URL("api/drive/arm", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ armed, source: "page" }) })
+            .then(async (response) => {
+                if (!response.ok) {
+                    this.state.update({ error: `arm: ${(await response.json().catch(() => ({}))).error ?? response.status}` })
+                }
+            })
+            .catch(() => this.state.update({ error: "arm: the backend didn't answer" }))
+    }
+
+    /** The backend's `drive` event: arming (from any page or the agent) and the endpoint's commands. */
+    applyEvent(event: DriveEvent) {
+        this.#applyArmed(event.armed, event.armedBy)
+        if (event.command) {
+            clearTimeout(this.#commandTimer)
+            this.state.update({ command: event.command })
+            this.#commandTimer = setTimeout(() => this.state.update({ command: null }), Math.max(1500, event.command.seconds * 1000))
+        } else if (this.state.get().command && !event.armed) {
+            clearTimeout(this.#commandTimer)
+            this.state.update({ command: null })
+        }
+    }
+
+    #applyArmed(armed: boolean, armedBy: string | null) {
         if (!armed) {
             this.#sources.clear()
             this.#recompute()
@@ -104,7 +156,9 @@ export class Drive {
             this.#publisher = null
             this.#publisherKey = ""
         }
-        this.state.update({ armed, error: null })
+        if (armed !== this.state.get().armed || armedBy !== this.state.get().armedBy) {
+            this.state.update({ armed, armedBy, error: null })
+        }
     }
 
     /** A source (e.g. "keys", "stick") sets its share of the axes; the sum (clamped to ±1) drives. */
@@ -120,10 +174,15 @@ export class Drive {
         }
     }
 
-    /** Stop: every source released at once (space, the STOP button). */
+    /** Stop: every source released at once (space, the STOP button), and the agent's command too. */
     stop() {
         this.#sources.clear()
         this.#recompute()
+        const command = this.state.get().command
+        if (command && !command.dryRun && typeof location !== "undefined") {
+            this.state.update({ command: null })
+            fetch(new URL("api/drive/stop", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {})
+        }
     }
 
     #recompute() {
@@ -258,6 +317,7 @@ export class Drive {
 
     dispose() {
         clearInterval(this.#timer)
+        clearTimeout(this.#commandTimer)
         this.#publisher?.close()
         this.#controlPublishers.forEach((publisher) => publisher.close())
     }

@@ -11,6 +11,7 @@ import { frontObject, groundLevel } from "./locate.ts"
 import { appEvents } from "./events.js"
 import type { LocationLabel } from "./labels.ts"
 import { applyRemoteSetting } from "./store.ts"
+import type { DriveEvent } from "./drive.ts"
 
 export interface Annotation {
     id: string
@@ -85,13 +86,25 @@ export class AgentLink {
                 this.app.labels.apply(event.labels)
             } else if (event.type === "settings" && event.key) {
                 applyRemoteSetting(event.key, event.value)
+            } else if (event.type === "drive") {
+                this.app.drive.applyEvent(event as unknown as DriveEvent)
             } else if (event.type === "camera" && event.action) {
                 this.app.applyCamera({ action: event.action, target: event.target, distance: event.distance })
             } else if (event.type === "capture" && event.request) {
                 this.#answer(event.request, event.kind ?? "", event.args)
             }
-        }, { query: { page: pageId } })
+        }, { query: { page: pageId }, onOpen: () => this.#syncDrive() })
         this.#stops.push(stop)
+    }
+
+    /** Arming lives in the backend (a restart comes up disarmed): read it on every (re)connect. */
+    async #syncDrive() {
+        try {
+            const status = await (await fetch(this.#url("api/status"))).json()
+            this.app.drive.applyEvent({ armed: !!status.armed, armedBy: status.armedBy ?? null, command: null })
+        } catch {
+            // the next reconnect tries again
+        }
     }
 
     /** Tells the server this page is the one the user is looking at (it answers the agent's captures). */
@@ -361,8 +374,20 @@ export class AgentLink {
             },
             view: { mimeType: "image/jpeg", data: canvas.toDataURL("image/jpeg", 0.85).split(",")[1] },
             cameraImage: await this.cameraImage(),
+            robot: this.#robot(),
             annotations: this.#annotations,
         }
+    }
+
+    /** The robot's pose in the fixed frame (TF base frame, else a pose/odometry topic), or null. */
+    #robot() {
+        const matrix = this.app.robotMatrix
+        if (!matrix) {
+            return null
+        }
+        const position = new THREE.Vector3().setFromMatrixPosition(matrix)
+        const forward = new THREE.Vector3(1, 0, 0).transformDirection(matrix)
+        return { frame: this.app.viewer.fixedFrame, position: position.toArray().map((v) => round(v)), yaw: round(Math.atan2(forward.y, forward.x), 3), convention: "yaw: radians about +z, 0 = +x" }
     }
 
     /** An object's 3D box from a box around it in the camera image: lidar points inside, else the floor under it. */

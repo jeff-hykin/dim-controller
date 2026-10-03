@@ -1,5 +1,6 @@
 // Driving on screen. Desktop: an arm switch and the profile's keys lighting up as they're held. Phone: arm, a left
 // stick (forward/back + turn), a right stick (strafe, or up/down for profiles with a vertical axis), boost and STOP.
+// Both show who armed it and the agent's commands (POST api/drive), dry runs included.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
@@ -12,6 +13,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const usesVertical = Object.values(keys).some((action) => "axis" in action && action.axis === "vertical")
     const usesStrafe = Object.values(keys).some((action) => "axis" in action && action.axis === "strafe")
     const keyFor = (axis: Axis, sign: number) => Object.entries(keys).find(([code, action]) => !code.startsWith("Arrow") && "axis" in action && action.axis === axis && Math.sign(action.value) === sign)?.[0].replace(/^Key/, "")
+    const command = state.command
+    const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`
     const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
 
     const arm = (
@@ -25,6 +28,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
             <div className={`drive-hud mobile ${state.armed ? "armed" : ""}`}>
                 {state.armed && <Joystick label="drive" onMove={(x, y) => drive.setAxes("left-stick", { forward: y, turn: -x })} />}
                 <div className="hud-center">
+                    {command && <span className="dim-badge hud-note">{command.dryRun ? "dry run" : command.source} · {velocity(command.linear, command.angular)}</span>}
                     {arm}
                     {state.armed && (
                         <>
@@ -52,9 +56,11 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                 <div>{cell("turn", 1)}{cell("forward", -1)}{cell("turn", -1)}</div>
             </div>
             <span className={`key shift ${state.boost ? "down" : ""}`}>⇧</span>
-            <div className="hud-readout">
-                {state.armed
-                    ? <>{state.twist.linear[0].toFixed(2)} m/s · {state.twist.angular[2].toFixed(2)} rad/s<br /><span className="dim">→ {state.topic}</span></>
+            <div className="hud-readout" data-testid="drive-readout">
+                {command
+                    ? <>{command.dryRun ? "dry run · nothing sent" : `${command.source} driving`}<br /><span className="dim">{velocity(command.linear, command.angular)} · {command.seconds} s</span></>
+                    : state.armed
+                    ? <>{velocity(state.twist.linear, state.twist.angular)}<br /><span className="dim">{state.armedBy && state.armedBy !== "page" ? `armed by ${state.armedBy} · ` : ""}→ {state.topic}</span></>
                     : <span className="dim">disarmed · nothing is sent</span>}
             </div>
         </div>

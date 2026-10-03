@@ -1,5 +1,5 @@
 // The keyboard as a drive source: the profile maps KeyboardEvent.code to axes or controls; Shift boosts, Space stops.
-// Keys only drive while drive is armed, and never while typing in a field.
+// Keys only drive while drive is armed, and never while typing in a field. Escape disarms, and so does hiding the page.
 import { useEffect } from "react"
 import type { Drive } from "../core/drive.ts"
 import type { Axes, RobotProfile } from "../profile/types.ts"
@@ -28,6 +28,11 @@ export function useDriveKeys(drive: Drive | null, profile: RobotProfile | null) 
             }
             if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
                 drive.setBoost(true)
+                return
+            }
+            if (event.code === "Escape" && drive.state.get().armed) {
+                held.clear()
+                drive.setArmed(false)
                 return
             }
             if (event.code === "Space") {
@@ -68,6 +73,9 @@ export function useDriveKeys(drive: Drive | null, profile: RobotProfile | null) 
             held.clear()
             drive.setBoost(false)
             apply()
+            if (document.visibilityState === "hidden" && drive.state.get().armed) {
+                drive.setArmed(false)
+            }
         }
         addEventListener("keydown", down)
         addEventListener("keyup", up)

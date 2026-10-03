@@ -43,6 +43,8 @@ export class ViewerApp {
     readonly labels: LocationLabels
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
+    /** the robot's pose in the fixed frame, or null (updated every frame) */
+    robotMatrix: THREE.Matrix4 | null = null
     #framed = false
     /** where the robot is now (followed or not), for recentering */
     #robotPosition: THREE.Vector3 | null = null
@@ -79,6 +81,7 @@ export class ViewerApp {
         }
         const base = this.tf.lookup(this.profile.baseFrame, fixedFrame)
         const robot = base ?? robotPose.matrix
+        this.robotMatrix = robot
         const position = robot ? new THREE.Vector3().setFromMatrixPosition(robot) : null
         this.#robotPosition = position
         if (position && !this.#framed) {

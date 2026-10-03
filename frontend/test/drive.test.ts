@@ -90,3 +90,24 @@ Deno.test("a drone profile's Q/E-style vertical axis lands in linear.z", async (
     assertAlmostEquals(puts.at(-1)!.twist.linear.z, drone.drive.speeds.vertical)
     drive.dispose()
 })
+
+Deno.test("arming comes from the backend's drive events (another page, the agent), and so do its commands", async () => {
+    localStorage.clear()
+    const { connection, puts } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    drive.setCandidates(["/cmd_vel"])
+    drive.applyEvent({ armed: true, armedBy: "agent", command: null })
+    assertEquals([drive.state.get().armed, drive.state.get().armedBy], [true, "agent"])
+    drive.setAxes("keys", { forward: 1 })
+    await wait(150)
+    assert(puts.length > 0, "keys drive once armed elsewhere")
+    const command = { key: "dimos/cmd_vel/geometry_msgs.Twist", linear: [0.3, 0, 0] as [number, number, number], angular: [0, 0, 0] as [number, number, number], seconds: 1, dryRun: true, source: "agent" }
+    drive.applyEvent({ armed: true, armedBy: "agent", command })
+    assertEquals(drive.state.get().command, command)
+    drive.applyEvent({ armed: false, armedBy: null, command: null })
+    assertEquals([drive.state.get().armed, drive.state.get().command], [false, null])
+    const count = puts.length
+    await wait(200)
+    assertEquals(puts.length, count, "disarmed: quiet")
+    drive.dispose()
+})
