@@ -72,7 +72,7 @@
                             printf '#!%s\nexport LIVE_VIEWER_FRONTEND="''${LIVE_VIEWER_FRONTEND:-%s}"\nexec %s "$@"\n' \
                                 ${linux.runtimeShell} ${frontend} ${crossServer arch}/bin/dimos-app-server > $out/bin/dimos-app-server
                             chmod +x $out/bin/dimos-app-server
-                            cp ${self}/icon.svg $out/icon.svg
+                            cp ${./icon.svg} $out/icon.svg
                         '';
                 in {
                     inherit frontend server;
@@ -80,7 +80,7 @@
                     dimosApp = pkgs.runCommand "dim-live-viewer" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
                         mkdir -p $out/bin
                         makeWrapper ${server}/bin/dimos-app-server $out/bin/dimos-app-server --set-default LIVE_VIEWER_FRONTEND ${frontend}
-                        cp ${self}/icon.svg $out/icon.svg
+                        cp ${./icon.svg} $out/icon.svg
                     '';
                     default = self.packages.${pkgs.system}.dimosApp;
                     dimosApp-aarch64-linux = linuxApp "aarch64";
