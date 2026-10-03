@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
 image-webp = "0.2.4"
@@ -29,6 +29,7 @@ zune-jpegxl = "0.5.2"
 
 [dev-dependencies]
 jxl-oxide = { version = "0.12.6", default-features = false }
+tokio-tungstenite = "0.29"
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]

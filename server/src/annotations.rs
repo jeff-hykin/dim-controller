@@ -1,5 +1,5 @@
 //! Live annotations and the agent's view of the viewer. Annotations are ephemeral 3D boxes with labels (not zenoh
-//! topics): kept here, pushed to every open page over `GET /api/events` the moment they change. The page also answers
+//! topics): kept here, pushed to every open page over the `GET /api/events/ws` websocket the moment they change. The page also answers
 //! capture requests through that stream (its 3D view, the camera image, locating an object from an image box),
 //! since only the page has the rendered view, the decoded clouds and the TF tree. `GET /agent.json` describes all of
 //! it for Desktop's agent (dimos-desktop docs/agent.md).
@@ -8,12 +8,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::extract::{Path, Query, State as Extract};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, oneshot};
@@ -260,9 +262,9 @@ pub fn manifest() -> Value {
     })
 }
 
-async fn events(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>) -> impl IntoResponse {
-    let annotations = state.clone();
-    let page = query.page.unwrap_or_default();
+/// One page's events: registers the page (forgotten when the stream is dropped), starts with the annotations, then
+/// every broadcast event except capture requests meant for another page. Shared by the SSE and websocket routes.
+fn page_events(annotations: Arc<Annotations>, page: String) -> impl futures_util::Stream<Item = Value> + Send + 'static {
     if !page.is_empty() {
         annotations.pages.lock().unwrap().insert(page.clone(), Page { visible: true, last_active: now_ms() });
     }
@@ -275,10 +277,10 @@ async fn events(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<P
             self.0.pages.lock().unwrap().remove(&self.1);
         }
     }
-    let guard = Leave(annotations.clone(), page.clone());
-    let stream = futures_util::stream::unfold((Some(first), receiver, guard), |(first, mut receiver, guard)| async move {
+    let guard = Leave(annotations, page);
+    futures_util::stream::unfold((Some(first), receiver, guard), |(first, mut receiver, guard)| async move {
         if let Some(first) = first {
-            return Some((Ok::<_, std::convert::Infallible>(Event::default().data(first.to_string())), (None, receiver, guard)));
+            return Some((first, (None, receiver, guard)));
         }
         loop {
             match receiver.recv().await {
@@ -287,20 +289,51 @@ async fn events(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<P
                     if event["type"] == "capture" && event["page"] != guard.1.as_str() {
                         continue;
                     }
-                    return Some((Ok(Event::default().data(event.to_string())), (None, receiver, guard)));
+                    return Some((event, (None, receiver, guard)));
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return None,
             }
         }
-    });
+    })
+}
+
+/// The old SSE stream, kept for compatibility; pages use `api/events/ws`.
+async fn events(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>) -> impl IntoResponse {
+    let stream = page_events(state, query.page.unwrap_or_default())
+        .map(|event| Ok::<_, std::convert::Infallible>(Event::default().data(event.to_string())));
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// The standard backend → page channel (dim-app's events.js): the same events, one JSON text message each.
+async fn events_ws(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>, upgrade: WebSocketUpgrade) -> Response {
+    upgrade.on_upgrade(move |mut socket| async move {
+        let mut events = std::pin::pin!(page_events(state, query.page.unwrap_or_default()));
+        loop {
+            tokio::select! {
+                event = events.next() => {
+                    let Some(event) = event else {
+                        let _ = socket.send(Message::Close(None)).await;
+                        break;
+                    };
+                    if socket.send(Message::Text(event.to_string().into())).await.is_err() {
+                        break;
+                    }
+                }
+                incoming = socket.recv() => match incoming {
+                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Ok(_)) => {}
+                },
+            }
+        }
+    })
 }
 
 pub fn router(state: Arc<Annotations>) -> Router {
     Router::new()
         .route("/agent.json", get(|| async { Json(manifest()) }))
         .route("/api/events", get(events))
+        .route("/api/events/ws", get(events_ws))
         .route(
             "/api/annotations",
             get(|Extract(state): Extract<Arc<Annotations>>| async move { Json(json!({ "annotations": state.list() })) })
@@ -447,5 +480,39 @@ mod tests {
         let sender = annotations.pending.lock().unwrap().remove(request["request"].as_str().unwrap()).unwrap();
         sender.send(json!({ "camera": { "fov": 60 } })).unwrap();
         assert_eq!(task.await.unwrap().unwrap()["camera"]["fov"], 60);
+    }
+
+    /// The websocket route over a real socket: registers the page, sends the annotations first, then each change and
+    /// only this page's captures, one JSON text message each; the page is forgotten when the socket closes.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_websocket_carries_this_pages_events() {
+        use tokio_tungstenite::tungstenite::Message as Frame;
+        let annotations = Arc::new(Annotations::default());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = router(annotations.clone());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/api/events/ws?page=p1")).await.unwrap();
+        let mut next = async || loop {
+            match socket.next().await.unwrap().unwrap() {
+                Frame::Text(text) => return serde_json::from_str::<Value>(&text).unwrap(),
+                _ => continue,
+            }
+        };
+        assert_eq!(next().await["type"], "annotations");
+        assert!(annotations.pages.lock().unwrap().contains_key("p1"));
+        annotations.create(json!({ "label": "chair", "center": [0, 0, 0], "size": [1, 1, 1] })).unwrap();
+        assert_eq!(next().await["annotations"][0]["label"], "chair");
+        let _ = annotations.events.send(json!({ "type": "capture", "page": "p2", "request": "r1" }));
+        let _ = annotations.events.send(json!({ "type": "capture", "page": "p1", "request": "r2" }));
+        assert_eq!(next().await["request"], "r2");
+        socket.close(None).await.unwrap();
+        for _ in 0..50 {
+            if !annotations.pages.lock().unwrap().contains_key("p1") {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("the page outlived its socket");
     }
 }

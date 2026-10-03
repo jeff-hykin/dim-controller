@@ -8,6 +8,7 @@ import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
+import { appEvents } from "./events.js"
 
 export interface Annotation {
     id: string
@@ -72,21 +73,15 @@ export class AgentLink {
     }
 
     #listen() {
-        const source = new EventSource(this.#url(`api/events?page=${pageId}`))
-        source.onmessage = (message) => {
-            let event: { type: string; annotations?: Annotation[]; request?: string; kind?: string; args?: unknown }
-            try {
-                event = JSON.parse(message.data)
-            } catch {
-                return
-            }
+        const stop = appEvents((event: { type: string; annotations?: Annotation[]; request?: string; kind?: string; args?: unknown }) => {
             if (event.type === "annotations" && event.annotations) {
                 this.#annotations = event.annotations
                 this.#rebuild()
             } else if (event.type === "capture" && event.request) {
                 this.#answer(event.request, event.kind ?? "", event.args)
             }
-        }
+        }, { query: { page: pageId } })
+        this.#stops.push(stop)
     }
 
     /** Tells the server this page is the one the user is looking at (it answers the agent's captures). */
