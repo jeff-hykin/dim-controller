@@ -68,7 +68,7 @@ async function sharedRecordings(): Promise<RecordingFile[] | null> {
  * Where the running dimos writes its jsonl logs, from Desktop: each run's log dir (`GET /dimos/runs`, every Desktop),
  * else the logs roots (`GET /dimos/paths`, newer Desktops; the backend then follows run dirs that appear in them).
  */
-async function dimosLogDirs(): Promise<{ log_dirs: string[]; log_roots: string[] }> {
+async function dimosLogDirs(withRoots = true): Promise<{ log_dirs: string[]; log_roots: string[] }> {
     const log_dirs: string[] = []
     try {
         const runs = await (await fetch(new URL("../../dimos/runs", location.href))).json()
@@ -80,7 +80,7 @@ async function dimosLogDirs(): Promise<{ log_dirs: string[]; log_roots: string[]
     } catch {
         // not inside Desktop (dev server): no logs to record
     }
-    if (log_dirs.length) {
+    if (log_dirs.length || !withRoots) {
         return { log_dirs, log_roots: [] }
     }
     try {
@@ -154,7 +154,7 @@ class RecorderClient {
     async #followRuns() {
         while (this.status.get().recording.active) {
             await new Promise((resolve) => setTimeout(resolve, 10_000))
-            const dirs = await dimosLogDirs()
+            const dirs = await dimosLogDirs(false)
             if (this.status.get().recording.active && dirs.log_dirs.length) {
                 await call("/logs", { method: "POST", body: JSON.stringify(dirs) }).catch(() => {})
             }
