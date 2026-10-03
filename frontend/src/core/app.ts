@@ -20,7 +20,6 @@ export interface ViewSettings {
     fixedFrame: string
     follow: boolean
     showStats: boolean
-    theme: "dark" | "light" | "system"
 }
 
 export class ViewerApp {
@@ -29,7 +28,7 @@ export class ViewerApp {
     readonly viewer: Viewer
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false, theme: "dark" })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false })
     readonly profile: RobotProfile
     readonly drive: Drive
     /** live annotations and the agent's captures (server/src/annotations.rs) */

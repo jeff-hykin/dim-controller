@@ -11,6 +11,7 @@ import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { followNewTopics } from "./ui/RecorderPanel.tsx"
+import { Icon } from "./ui/icons.tsx"
 
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
 
@@ -31,22 +32,15 @@ export function App() {
         followNewTopics(created)
         window.__lv = created
         setApp(created)
-        // dark unless Settings says light (or system and the system is light)
-        const media = matchMedia("(prefers-color-scheme: light)")
+        // dimOS Desktop picks light/dark; dim-theme.js mirrors it onto body.dark and fires `dim-theme`
         const theme = () => {
-            const choice = created.settings.get().theme ?? "dark"
-            const dark = choice === "dark" || (choice === "system" && !media.matches)
-            document.body.classList.toggle("dark", dark)
-            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#06090f" : "#f4f6f8")
+            const dark = document.body.classList.contains("dark")
+            document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.body).getPropertyValue("--bg").trim())
             created.viewer.setTheme(dark)
         }
         theme()
-        media.addEventListener("change", theme)
-        const stop = created.settings.subscribe(theme)
-        return () => {
-            media.removeEventListener("change", theme)
-            stop()
-        }
+        addEventListener("dim-theme", theme)
+        return () => removeEventListener("dim-theme", theme)
     }, [])
 
     const layout = useStore(cameraLayout)
@@ -60,7 +54,7 @@ export function App() {
             <div className="scene-slot">
                 <div ref={host} className="scene" />
                 {view.mainCamera && (
-                    <button type="button" className="pip-expand" title="Make the 3D view fullscreen" onClick={() => cameraLayout.update({ main: null })}>⤢</button>
+                    <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => cameraLayout.update({ main: null })}><Icon name="expand" size={15} /></button>
                 )}
             </div>
             {app && (

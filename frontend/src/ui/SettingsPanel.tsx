@@ -15,6 +15,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
         <div className="settings-panel">
             <Field label="Robot" hint="key bindings, drive topics, speeds and extra controls (src/profile)">
                 <select
+                    className="dim-select"
                     value={app.profile.name}
                     onChange={(event) => {
                         app.settings.update({ profile: event.target.value })
@@ -24,31 +25,24 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     {profiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name}</option>)}
                 </select>
             </Field>
-            <Field label="Theme">
-                <span className="segmented">
-                    {(["dark", "light", "system"] as const).map((theme) => (
-                        <button type="button" key={theme} className={(view.theme ?? "dark") === theme ? "on" : ""} onClick={() => app.settings.update({ theme })}>{theme}</button>
-                    ))}
-                </span>
-            </Field>
-            <h3>Rendering</h3>
+            <h3 className="dim-label">Rendering</h3>
             <div className="field-block">
                 <span className="field-label">Point style</span>
                 <StylePicker value={render.pointStyle} onChange={(pointStyle) => rendering.update({ pointStyle: pointStyle as PointStyle })} />
                 <p className="hint">The default for every point cloud; a layer can pick its own in its settings.</p>
             </div>
             <Field label="Cube shading" hint={CUBE_SHADES[render.cubeShade]?.about}>
-                <span className="segmented" data-cube-shade>
+                <span className="dim-tabs segmented" data-cube-shade>
                     {(Object.keys(CUBE_SHADES) as CubeShade[]).map((shade) => (
-                        <button type="button" key={shade} className={render.cubeShade === shade ? "on" : ""} onClick={() => rendering.update({ cubeShade: shade })}>{CUBE_SHADES[shade].label}</button>
+                        <button type="button" key={shade} className={`dim-tab ${render.cubeShade === shade ? "on" : ""}`} aria-selected={render.cubeShade === shade} onClick={() => rendering.update({ cubeShade: shade })}>{CUBE_SHADES[shade].label}</button>
                     ))}
                 </span>
             </Field>
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <div className="button-row">
-                <button type="button" className="button" onClick={() => app.recenter(false)}><Icon name="target" size={16} /> Recenter</button>
-                <button type="button" className="button" onClick={() => app.recenter(true)}><Icon name="top" size={16} /> Top-down</button>
+                <button type="button" className="dim-btn sm icon" onClick={() => app.recenter(false)}><Icon name="target" size={16} /> Recenter</button>
+                <button type="button" className="dim-btn sm icon" onClick={() => app.recenter(true)}><Icon name="top" size={16} /> Top-down</button>
             </div>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom.</p>
         </div>

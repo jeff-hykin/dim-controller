@@ -1,3 +1,5 @@
+// follow dimOS Desktop's light/dark (sets body.dark) before the first render
+import "./dim-theme.js"
 import { createRoot } from "react-dom/client"
 import "./theme.css"
 import "./styles.css"
