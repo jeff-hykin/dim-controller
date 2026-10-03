@@ -1,15 +1,21 @@
 //! Live Viewer's `dimos-app-server` (dimOS Desktop app contract, docs/apps.md in dimos-desktop): serves the built
-//! page, an mcap recorder that subscribes to the chosen dimos topics over zenoh while a recording runs, and live
-//! annotations plus the agent's view of the page (annotations.rs).
+//! page and every action as an HTTP endpoint (api.rs, listed at /agent.json): an mcap recorder that subscribes to
+//! dimos topics over zenoh while a recording runs, location labels, live annotations, the agent's view of the page,
+//! the page's settings, the camera and driving.
 
 mod annotations;
+mod api;
 mod cdr;
+mod desktop;
+mod drive;
 mod image;
 mod labels;
 mod logs;
 mod msgs;
 mod record;
 mod recorder;
+mod routes;
+mod settings;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,6 +49,9 @@ pub struct Args {
     /// where recordings go [default: Desktop's shared folder $DIMOS_RECORDINGS_DIR/live-viewer, else $DIMOS_APP_DATA/recordings]
     #[arg(long, env = "LIVE_VIEWER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
+    /// print the endpoints (agent.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
+    #[arg(long)]
+    agent_json: bool,
 }
 
 /// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
@@ -68,14 +77,23 @@ fn default_record_dir() -> PathBuf {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    if args.agent_json {
+        println!("{}", serde_json::to_string_pretty(&api::routes().manifest(api::DESCRIPTION))?);
+        return Ok(());
+    }
     let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
     let frontend = args.frontend.clone().unwrap_or_else(|| PathBuf::from("frontend/dist"));
     eprintln!("live viewer: page {}, recordings {}", frontend.display(), record_dir.display());
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
-    let annotations = Arc::new(annotations::Annotations::default());
-    let app = recorder::router(state.clone())
-        .merge(labels::router(state.clone(), annotations.clone()))
-        .merge(annotations::router(annotations)).fallback_service(
+    let settings_file = std::env::var("DIMOS_APP_DATA").ok().filter(|dir| !dir.is_empty()).map(|dir| PathBuf::from(dir).join("settings.json"));
+    let api = api::Api {
+        recorder: state.clone(),
+        annotations: Arc::default(),
+        settings: Arc::new(settings::Settings::load(settings_file)),
+        drive: Arc::default(),
+        desktop_url: Arc::new(args.desktop_url.clone()),
+    };
+    let app = api::routes().router.with_state(api).fallback_service(
         tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))),
     );
     // Desktop stops an app server with SIGTERM to its process group

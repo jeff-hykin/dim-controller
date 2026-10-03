@@ -10,6 +10,7 @@ import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
 import { appEvents } from "./events.js"
 import type { LocationLabel } from "./labels.ts"
+import { applyRemoteSetting } from "./store.ts"
 
 export interface Annotation {
     id: string
@@ -74,13 +75,18 @@ export class AgentLink {
     }
 
     #listen() {
-        const stop = appEvents((event: { type: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown }) => {
+        // deno-lint-ignore no-explicit-any
+        const stop = appEvents((event: { type: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown; key?: string; value?: unknown; action?: string; target?: any; distance?: any }) => {
             if (event.type === "annotations" && event.annotations) {
                 this.#annotations = event.annotations
                 this.#rebuild()
             } else if (event.type === "labels" && event.labels) {
                 // location labels ride the same stream (one socket per page)
                 this.app.labels.apply(event.labels)
+            } else if (event.type === "settings" && event.key) {
+                applyRemoteSetting(event.key, event.value)
+            } else if (event.type === "camera" && event.action) {
+                this.app.applyCamera({ action: event.action, target: event.target, distance: event.distance })
             } else if (event.type === "capture" && event.request) {
                 this.#answer(event.request, event.kind ?? "", event.args)
             }

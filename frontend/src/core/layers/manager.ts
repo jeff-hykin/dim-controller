@@ -26,6 +26,15 @@ export class LayerManager {
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly video: VideoSources, readonly profile: RobotProfile) {
         connection.status.subscribe(() => this.#sync(connection.status.get().topics))
+        // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
+        this.#enabled.subscribe(() => {
+            for (const entry of this.entries.get().list) {
+                const wanted = this.#enabled.get()[entry.topic.key]
+                if (wanted !== undefined && wanted !== entry.enabled) {
+                    this.#apply(entry.topic.key, wanted)
+                }
+            }
+        })
         viewer.onFrame((frame) => {
             for (const instance of this.#instances.values()) {
                 instance.update?.(frame)
@@ -61,11 +70,15 @@ export class LayerManager {
     }
 
     setEnabled(key: string, enabled: boolean) {
+        this.#enabled.update({ [key]: enabled })
+        this.#apply(key, enabled)
+    }
+
+    #apply(key: string, enabled: boolean) {
         const entry = this.entries.get().list.find((other) => other.topic.key === key)
         if (!entry || entry.enabled === enabled) {
             return
         }
-        this.#enabled.update({ [key]: enabled })
         this.#patch(key, { enabled })
         if (enabled) {
             this.#start(entry)

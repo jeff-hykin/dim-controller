@@ -475,8 +475,7 @@ pub fn decode_twist(payload: &[u8]) -> Result<([f64; 3], [f64; 3])> {
     Ok((linear, angular))
 }
 
-/// Kept as the reference the page's own encoder (web/app.js `encodeTwist`) is checked against.
-#[cfg(test)]
+/// A Twist as dimos's LCM: `POST api/drive` publishes it; the page's own encoder is checked against it.
 pub fn encode_twist(linear: [f64; 3], angular: [f64; 3]) -> Vec<u8> {
     let mut out = Vec::with_capacity(56);
     out.extend_from_slice(&TWIST_FINGERPRINT);

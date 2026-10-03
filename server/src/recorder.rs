@@ -1,6 +1,8 @@
-//! The recorder's HTTP API and its zenoh side. The page picks the topics (it already lists them through the
-//! bridge); while a recording runs this process subscribes to exactly those keys and nothing else, so an idle
-//! recorder costs no bandwidth.
+//! The recorder and its zenoh side (routes in api.rs). A start names its keys, or leaves them out: then the topics on
+//! the bus now are found here (liveliness tokens and a short listen, as Desktop's /api/topics does) minus rpc topics and
+//! the ones unticked in the recorder panel (the `lv.record.topics` setting), and while it runs, new ones join (unless
+//! `lv.record.options.recordNew` is off) and dimos runs that start later bring their log dirs (Desktop's /dimos/runs).
+//! While a recording runs this process subscribes to exactly the recorded keys, so an idle recorder costs no bandwidth.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -10,9 +12,9 @@ use axum::body::Body;
 use axum::extract::{Path, State as Extract};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post, put};
-use axum::{Json, Router};
+use axum::Json;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::image::ImageFormat;
@@ -85,7 +87,7 @@ impl State {
         }
     }
 
-    async fn session(&self) -> anyhow::Result<zenoh::Session> {
+    pub async fn session(&self) -> anyhow::Result<zenoh::Session> {
         let mut session = self.session.lock().await;
         if let Some(open) = session.as_ref() {
             return Ok(open.clone());
@@ -193,7 +195,39 @@ impl State {
         .await?
     }
 
-    async fn status(&self) -> Status {
+    /// The dimos keys on the bus now: liveliness tokens, plus what is heard in a short listen.
+    pub async fn discover(&self) -> anyhow::Result<Vec<String>> {
+        let session = self.session().await?;
+        let found: Arc<Mutex<BTreeSet<String>>> = Arc::default();
+        let sink = found.clone();
+        let listener = session
+            .declare_subscriber("dimos/**")
+            .callback(move |sample| {
+                sink.lock().unwrap().insert(sample.key_expr().as_str().to_string());
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("zenoh: {error}"))?;
+        for selector in ["dimos/**", "dimos/**/@adv/pub/**"] {
+            if let Ok(replies) = session.liveliness().get(selector).timeout(std::time::Duration::from_millis(400)).await {
+                while let Ok(reply) = replies.recv_async().await {
+                    if let Ok(sample) = reply.result() {
+                        let token = sample.key_expr().as_str();
+                        found.lock().unwrap().insert(token.split_once("/@adv/pub/").map_or(token, |(key, _)| key).to_string());
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let _ = listener.undeclare().await;
+        let keys = found.lock().unwrap().iter().filter(|key| split_key(key).is_some()).cloned().collect();
+        Ok(keys)
+    }
+
+    pub async fn is_recording(&self, path: &Option<String>) -> bool {
+        self.active.lock().await.as_ref().is_some_and(|active| active.recorder.status().path == *path)
+    }
+
+    pub async fn status(&self) -> Status {
         let active = self.active.lock().await;
         let directory = self.record_dir.lock().unwrap().clone();
         Status {
@@ -208,9 +242,9 @@ impl State {
 }
 
 #[derive(Serialize)]
-struct Status {
-    recording: record::RecordingStatus,
-    keys: Vec<String>,
+pub struct Status {
+    pub recording: record::RecordingStatus,
+    pub keys: Vec<String>,
     /// the log dirs being tailed and the lines written so far (while recording)
     logs: LogStatus,
     files: Vec<record::RecordingFile>,
@@ -225,127 +259,177 @@ struct LogStatus {
 }
 
 #[derive(Deserialize)]
-struct StartBody {
-    keys: Vec<String>,
-    name: Option<String>,
-    #[serde(flatten)]
-    logs: LogDirs,
-}
-
-#[derive(Deserialize)]
-struct AddBody {
-    keys: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct SettingsBody {
+pub struct SettingsBody {
     compression: Option<Compression>,
     image_format: Option<ImageFormat>,
     directory: Option<String>,
 }
 
 fn error(status: StatusCode, error: impl std::fmt::Display) -> Response {
-    (status, Json(serde_json::json!({ "error": error.to_string() }))).into_response()
+    (status, Json(json!({ "error": error.to_string() }))).into_response()
 }
 
-pub fn router(state: Arc<State>) -> Router {
-    Router::new()
-        .route("/api/recorder", get(|Extract(state): Extract<Arc<State>>| async move { Json(state.status().await) }))
-        .route(
-            "/api/recorder/start",
-            post(|Extract(state): Extract<Arc<State>>, Json(body): Json<StartBody>| async move {
-                match state.start(body.keys, body.name, body.logs).await {
-                    Ok(status) => Json(status).into_response(),
-                    Err(problem) => error(StatusCode::CONFLICT, problem),
+/// rpc request/reply topics are off unless ticked
+pub fn is_rpc(topic: &str) -> bool {
+    topic.starts_with("/rpc/") || topic.ends_with("/req") || topic.ends_with("/res")
+}
+
+/// The keys a start without keys records: what is on the bus minus rpc topics and the ones unticked in the panel.
+pub fn wanted(keys: &[String], chosen: &Value) -> Vec<String> {
+    keys.iter()
+        .filter(|key| {
+            let topic = split_key(key).map(|(topic, _)| topic).unwrap_or_default();
+            chosen[key.as_str()].as_bool().unwrap_or(!is_rpc(&topic))
+        })
+        .cloned()
+        .collect()
+}
+
+pub async fn status(Extract(state): Extract<Arc<State>>) -> Response {
+    Json(state.status().await).into_response()
+}
+
+pub async fn start(Extract(api): Extract<crate::api::Api>, crate::api::Body(body): crate::api::Body) -> Response {
+    let state = api.recorder.clone();
+    let explicit: Option<Vec<String>> = match body.get("keys") {
+        None | Some(Value::Null) => None,
+        Some(keys) => match serde_json::from_value(keys.clone()) {
+            Ok(keys) => Some(keys),
+            Err(_) => return error(StatusCode::BAD_REQUEST, "keys: a list of dimos keys (dimos/<topic>/<pkg.Type>)"),
+        },
+    };
+    let follow = explicit.is_none();
+    let keys = match explicit {
+        Some(keys) => keys,
+        None => match state.discover().await {
+            Ok(keys) => wanted(&keys, &api.settings.get("lv.record.topics")),
+            Err(problem) => return error(StatusCode::SERVICE_UNAVAILABLE, problem),
+        },
+    };
+    let given: Option<LogDirs> = if body.get("log_dirs").is_some() || body.get("log_roots").is_some() { serde_json::from_value(body.clone()).ok() } else { None };
+    let logs = match given {
+        Some(logs) => logs,
+        None => crate::desktop::log_dirs(&api.desktop_url, true).await,
+    };
+    let name = body["name"].as_str().map(str::to_string);
+    match state.start(keys, name, logs).await {
+        Ok(status) => {
+            follow_recording(api, status.path.clone(), follow);
+            Json(status).into_response()
+        }
+        Err(problem) => error(StatusCode::CONFLICT, problem),
+    }
+}
+
+/// While this recording runs: dimos runs that start later bring their log dirs; with `topics`, new topics join.
+fn follow_recording(api: crate::api::Api, path: Option<String>, topics: bool) {
+    tokio::spawn(async move {
+        let mut tick = 0u64;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if !api.recorder.is_recording(&path).await {
+                return;
+            }
+            tick += 1;
+            let record_new = api.settings.get("lv.record.options")["recordNew"].as_bool().unwrap_or(true);
+            if topics && record_new {
+                if let Ok(keys) = api.recorder.discover().await {
+                    let _ = api.recorder.add(wanted(&keys, &api.settings.get("lv.record.topics"))).await;
                 }
-            }),
+            }
+            if tick % 2 == 0 {
+                let dirs = crate::desktop::log_dirs(&api.desktop_url, false).await;
+                if !dirs.log_dirs.is_empty() {
+                    let _ = api.recorder.add_logs(dirs).await;
+                }
+            }
+        }
+    });
+}
+
+pub async fn add(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+    let keys: Vec<String> = match serde_json::from_value(body["keys"].clone()) {
+        Ok(keys) => keys,
+        Err(_) => return error(StatusCode::BAD_REQUEST, "keys: a list of dimos keys"),
+    };
+    match state.add(keys).await {
+        Ok(added) => Json(json!({ "added": added })).into_response(),
+        Err(problem) => error(StatusCode::CONFLICT, problem),
+    }
+}
+
+pub async fn add_logs(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+    let logs: LogDirs = serde_json::from_value(body).unwrap_or_default();
+    match state.add_logs(logs).await {
+        Ok(dirs) => Json(json!({ "dirs": dirs })).into_response(),
+        Err(problem) => error(StatusCode::CONFLICT, problem),
+    }
+}
+
+pub async fn stop(Extract(state): Extract<Arc<State>>) -> Response {
+    match state.stop().await {
+        Ok(status) => Json(status).into_response(),
+        Err(problem) => error(StatusCode::CONFLICT, problem),
+    }
+}
+
+pub async fn settings(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+    let body: SettingsBody = match serde_json::from_value(body) {
+        Ok(body) => body,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
+    };
+    if state.active.lock().await.is_some() {
+        return error(StatusCode::CONFLICT, "can't change settings while recording");
+    }
+    {
+        let mut settings = state.settings.lock().unwrap();
+        if let Some(compression) = body.compression {
+            settings.compression = compression;
+        }
+        if let Some(format) = body.image_format {
+            settings.image_format = format;
+        }
+    }
+    if let Some(directory) = body.directory.filter(|directory| !directory.trim().is_empty()) {
+        *state.record_dir.lock().unwrap() = PathBuf::from(directory.trim());
+    }
+    Json(state.status().await).into_response()
+}
+
+pub async fn delete_file(Extract(state): Extract<Arc<State>>, Path(name): Path<String>) -> Response {
+    let directory = state.record_dir.lock().unwrap().clone();
+    let path = match record::resolve(&directory, &name) {
+        Ok(path) => path,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
+    };
+    if let Some(active) = state.active.lock().await.as_ref() {
+        if active.recorder.is_writing_to(&path) {
+            return error(StatusCode::CONFLICT, "that recording is still running");
+        }
+    }
+    match tokio::fs::remove_file(&path).await {
+        Ok(()) => Json(json!({ "ok": true, "removed": name })).into_response(),
+        Err(problem) => error(StatusCode::NOT_FOUND, problem),
+    }
+}
+
+pub async fn download_file(Extract(state): Extract<Arc<State>>, Path(name): Path<String>) -> Response {
+    let directory = state.record_dir.lock().unwrap().clone();
+    let path = match record::resolve(&directory, &name) {
+        Ok(path) => path,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
+    };
+    match tokio::fs::File::open(&path).await {
+        Ok(file) => (
+            [
+                (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+                (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
+            ],
+            Body::from_stream(tokio_util::io::ReaderStream::new(file)),
         )
-        .route(
-            "/api/recorder/add",
-            post(|Extract(state): Extract<Arc<State>>, Json(body): Json<AddBody>| async move {
-                match state.add(body.keys).await {
-                    Ok(added) => Json(serde_json::json!({ "added": added })).into_response(),
-                    Err(problem) => error(StatusCode::CONFLICT, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/recorder/logs",
-            post(|Extract(state): Extract<Arc<State>>, Json(body): Json<LogDirs>| async move {
-                match state.add_logs(body).await {
-                    Ok(dirs) => Json(serde_json::json!({ "dirs": dirs })).into_response(),
-                    Err(problem) => error(StatusCode::CONFLICT, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/recorder/stop",
-            post(|Extract(state): Extract<Arc<State>>| async move {
-                match state.stop().await {
-                    Ok(status) => Json(status).into_response(),
-                    Err(problem) => error(StatusCode::CONFLICT, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/recorder/settings",
-            put(|Extract(state): Extract<Arc<State>>, Json(body): Json<SettingsBody>| async move {
-                if state.active.lock().await.is_some() {
-                    return error(StatusCode::CONFLICT, "can't change settings while recording");
-                }
-                {
-                    let mut settings = state.settings.lock().unwrap();
-                    if let Some(compression) = body.compression {
-                        settings.compression = compression;
-                    }
-                    if let Some(format) = body.image_format {
-                        settings.image_format = format;
-                    }
-                }
-                if let Some(directory) = body.directory.filter(|directory| !directory.trim().is_empty()) {
-                    *state.record_dir.lock().unwrap() = PathBuf::from(directory.trim());
-                }
-                Json(state.status().await).into_response()
-            }),
-        )
-        .route(
-            "/api/recorder/files/{name}",
-            delete(|Extract(state): Extract<Arc<State>>, Path(name): Path<String>| async move {
-                let directory = state.record_dir.lock().unwrap().clone();
-                let path = match record::resolve(&directory, &name) {
-                    Ok(path) => path,
-                    Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
-                };
-                if let Some(active) = state.active.lock().await.as_ref() {
-                    if active.recorder.is_writing_to(&path) {
-                        return error(StatusCode::CONFLICT, "that recording is still running");
-                    }
-                }
-                match tokio::fs::remove_file(&path).await {
-                    Ok(()) => StatusCode::NO_CONTENT.into_response(),
-                    Err(problem) => error(StatusCode::NOT_FOUND, problem),
-                }
-            })
-            .get(|Extract(state): Extract<Arc<State>>, Path(name): Path<String>| async move {
-                let directory = state.record_dir.lock().unwrap().clone();
-                let path = match record::resolve(&directory, &name) {
-                    Ok(path) => path,
-                    Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
-                };
-                match tokio::fs::File::open(&path).await {
-                    Ok(file) => (
-                        [
-                            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
-                            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
-                        ],
-                        Body::from_stream(tokio_util::io::ReaderStream::new(file)),
-                    )
-                        .into_response(),
-                    Err(problem) => error(StatusCode::NOT_FOUND, problem),
-                }
-            }),
-        )
-        .with_state(state)
+            .into_response(),
+        Err(problem) => error(StatusCode::NOT_FOUND, problem),
+    }
 }
 
 #[cfg(test)]
@@ -370,7 +454,7 @@ mod tests {
         dir
     }
 
-    async fn call(app: &Router, method: &str, uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
+    async fn call(app: &axum::Router, method: &str, uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
         let request = Request::builder().method(method).uri(uri).header("content-type", "application/json").body(Body::from(body.to_string())).unwrap();
         let response = app.clone().oneshot(request).await.unwrap();
         let status = response.status();
@@ -383,7 +467,7 @@ mod tests {
         let dir = temp_dir("status");
         std::fs::write(dir.join("a.mcap"), b"x").unwrap();
         std::fs::write(dir.join("notes.txt"), b"x").unwrap();
-        let app = router(Arc::new(State::new(dir.clone(), String::new())));
+        let app = crate::api::test_router(Arc::new(State::new(dir.clone(), String::new())));
         let (status, body) = call(&app, "GET", "/api/recorder", "").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["recording"]["active"], false);
@@ -392,7 +476,7 @@ mod tests {
         let (status, _) = call(&app, "DELETE", "/api/recorder/files/..%2Fnotes.txt", "").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         let (status, _) = call(&app, "DELETE", "/api/recorder/files/a.mcap", "").await;
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(status, StatusCode::OK);
         assert!(!dir.join("a.mcap").exists());
         let (status, _) = call(&app, "POST", "/api/recorder/stop", "").await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -408,7 +492,7 @@ mod tests {
         let robot = zenoh::open(config).await.unwrap();
         let dir = temp_dir("zenoh");
         let state = Arc::new(State::new(dir.clone(), format!("tcp/127.0.0.1:{port}")));
-        let app = router(state.clone());
+        let app = crate::api::test_router(state.clone());
         let (status, body) = call(&app, "POST", "/api/recorder/start", r#"{"keys":["dimos/test_cmd/geometry_msgs.Twist"],"name":"zenoh.mcap"}"#).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -438,7 +522,8 @@ mod tests {
         std::fs::write(run.join("main.jsonl"), "{\"event\": \"old\", \"level\": \"info\"}\n").unwrap();
         let state = Arc::new(State::new(dir.clone(), String::new()));
         let annotations = Arc::new(crate::annotations::Annotations::default());
-        let app = router(state.clone()).merge(crate::labels::router(state.clone(), annotations));
+        let _ = annotations;
+        let app = crate::api::test_router(state.clone());
         let label = |text: &str| format!(r#"{{"label":"{text}","frame_id":"world","position":[1,2,0]}}"#);
         let (status, body) = call(&app, "POST", "/api/labels", &label("before")).await;
         assert_eq!((status, &body["recorded"]), (StatusCode::OK, &serde_json::json!(false)));
@@ -449,7 +534,7 @@ mod tests {
         assert_eq!(body["recorded"], true);
         let id = body["label"]["id"].as_str().unwrap().to_string();
         let (status, _) = call(&app, "DELETE", &format!("/api/labels/{id}"), "").await;
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(status, StatusCode::OK);
         {
             use std::io::Write;
             let mut file = std::fs::OpenOptions::new().append(true).open(run.join("main.jsonl")).unwrap();
@@ -488,7 +573,7 @@ mod tests {
 
     #[tokio::test]
     async fn settings_change_and_are_reported() {
-        let app = router(Arc::new(State::new(temp_dir("settings"), String::new())));
+        let app = crate::api::test_router(Arc::new(State::new(temp_dir("settings"), String::new())));
         let (status, body) = call(&app, "PUT", "/api/recorder/settings", r#"{"compression":"zstd","image_format":"png"}"#).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["settings"]["compression"], "zstd");

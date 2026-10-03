@@ -29,6 +29,8 @@ export interface CameraLayout {
     panels: PanelState[]
     /** the panel shown fullscreen (the 3D view becomes a picture-in-picture), or null */
     main: number | null
+    /** a panel was opened on the first camera once (closing it all stays closed) */
+    seeded?: boolean
 }
 
 const isImage = (topic: Topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage"
@@ -45,20 +47,19 @@ function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
 }
 
 export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: Store<CameraLayout>; mobile: boolean }) {
-    const { panels, main } = useStore(layout)
+    const { panels, main, seeded } = useStore(layout)
     const { topics } = useStore(app.connection.status)
 
     // the first time a camera shows up, open exactly one panel on it
     useEffect(() => {
-        if (panels.length || localStorage.getItem("lv.cameras.seeded")) {
+        if (panels.length || seeded) {
             return
         }
         const first = pickDefault(app, topics)
         if (first) {
-            localStorage.setItem("lv.cameras.seeded", "1")
-            layout.update({ panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+            layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
         }
-    }, [topics, panels.length, app, layout])
+    }, [topics, panels.length, seeded, app, layout])
 
     const update = (id: number, patch: Partial<PanelState>) => layout.update({ panels: layout.get().panels.map((panel) => panel.id === id ? { ...panel, ...patch } : panel) })
     const close = (id: number) => layout.update({ panels: layout.get().panels.filter((panel) => panel.id !== id), main: layout.get().main === id ? null : layout.get().main })

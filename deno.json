@@ -1,0 +1,23 @@
+{
+    "imports": {
+        "@std/yaml": "jsr:@std/yaml@1"
+    },
+    "tasks": {
+        "test": "cd server && cargo test --locked && cd ../frontend && npm run typecheck && npm test",
+        "check": "deno task check-endpoints",
+        "check-endpoints": "deno run -A scripts/check_endpoints.ts"
+    },
+    "fmt": {
+        "indentWidth": 4,
+        "semiColons": false,
+        "lineWidth": 120,
+        "include": [
+            "scripts/"
+        ]
+    },
+    "lint": {
+        "include": [
+            "scripts/"
+        ]
+    }
+}

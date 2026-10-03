@@ -9,3 +9,354 @@ dimos-api:
     - GET /recordings/{id}/file
     - DELETE /recordings/{id}
 zenoh-web: ">=0.4 <0.5"
+# Desktop's nix builds of this app pull from this cache (CI fills it)
+caches:
+    - url: https://dimos-desktop.cachix.org
+      key: "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ="
+agent:
+    description: >-
+        Live 3D view of the running robot (point clouds, camera, TF, map): recording to mcap, location labels, live 3D
+        annotations (boxes with labels every open viewer shows), the view's settings (layers, styles, fixed frame,
+        follow), the camera, and driving. Coordinates are meters in the world frame, +z up. GET api/status is the
+        overview; GET api/view what the user sees.
+    endpoints:
+        -
+            method: GET
+            path: api/status
+            description: >-
+                The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot
+                profile, fixed frame, follow), layers turned on or off, the drive topic, annotations and location
+                labels, and how many viewer pages are open.
+            role: context
+        -
+            method: GET
+            path: api/view
+            description: >-
+                What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and
+                intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the
+                annotations, and the fixed frame.
+            role: view
+        -
+            method: POST
+            path: api/camera
+            description: >-
+                Move the 3D camera in every open viewer: action=recenter (on the robot), topDown (straight down over the
+                robot), or lookAt (target [x, y, z], optional distance).
+            params:
+                action:
+                    description: recenter | topDown | lookAt
+                    required: true
+                    type: string
+                distance:
+                    description: 'lookAt: meters from the target'
+                    type: number
+                target:
+                    description: 'lookAt: the point, world frame'
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+        -
+            method: GET
+            path: api/settings
+            description: >-
+                Every page setting by key: lv.view {profile, fixedFrame ("" = auto), follow, showStats}; lv.rendering.v2
+                {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that
+                layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topic};
+                lv.record.topics {<topic key>: record or not}; lv.record.options {recordNew}; lv.cameras (the camera
+                panels).
+        -
+            method: PATCH
+            path: api/settings
+            description: >-
+                Change a page setting (merged into the key's object; a null field is removed); every open viewer applies
+                it at once. E.g. {key: "lv.layers.enabled", value: {"dimos/lidar/sensor_msgs.PointCloud2": false}} hides
+                a layer; {key: "lv.view", value: {follow: false}}. Keys: see GET api/settings.
+            params:
+                key:
+                    description: 'e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>'
+                    required: true
+                    type: string
+                value:
+                    description: the fields to set
+                    required: true
+                    type: object
+        -
+            method: GET
+            path: api/recorder
+            description: >-
+                The recorder: whether it's recording (messages, bytes, dropped, seconds, path), the keys and log dirs
+                being recorded, the files in the recordings folder, and the image/compression settings.
+        -
+            method: POST
+            path: api/recorder/start
+            description: >-
+                Start recording to mcap. Without keys: every topic on the bus except rpc topics and the ones unticked in
+                the recorder panel, and topics that appear later join (unless recordNew is off); the running dimos's
+                jsonl logs go in too. Location labels are written into it.
+            params:
+                keys:
+                    description: 'dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above'
+                    items:
+                        type: string
+                    type: array
+                name:
+                    description: file name (default live_viewer_<time>.mcap)
+                    type: string
+        -
+            method: POST
+            path: api/recorder/stop
+            description: Stop the recording and close the file (it shows in Desktop's recordings).
+        -
+            method: POST
+            path: api/recorder/add
+            description: Add keys to the running recording.
+            params:
+                keys:
+                    items:
+                        type: string
+                    required: true
+                    type: array
+        -
+            method: POST
+            path: api/recorder/logs
+            description: >-
+                Add dimos log dirs to the running recording (each run's log dir, or logs roots whose run dirs are
+                followed).
+            params:
+                log_dirs:
+                    items:
+                        type: string
+                    type: array
+                log_roots:
+                    items:
+                        type: string
+                    type: array
+        -
+            method: PUT
+            path: api/recorder/settings
+            description: >-
+                Recording settings (not while recording): image_format (raw | png | jpegxl | webp | jpeg), compression
+                (none | lz4 | zstd), directory.
+            params:
+                compression:
+                    description: none | lz4 | zstd
+                    type: string
+                directory:
+                    description: where recordings go
+                    type: string
+                image_format:
+                    description: raw | png | jpegxl | webp | jpeg
+                    type: string
+        -
+            method: GET
+            path: 'api/recorder/files/{name}'
+            description: Download a recording from the recordings folder.
+            params:
+                name:
+                    required: true
+                    type: string
+        -
+            method: DELETE
+            path: 'api/recorder/files/{name}'
+            description: Delete a recording from the recordings folder (not the running one).
+            params:
+                name:
+                    required: true
+                    type: string
+        -
+            method: GET
+            path: api/labels
+            description: >-
+                Location labels pinned in the map (right-click in the 3D view): id, label, frame_id, position,
+                orientation, created (ns).
+        -
+            method: POST
+            path: api/labels
+            description: >-
+                Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running it is
+                written into it on /labels.
+            params:
+                frame_id:
+                    description: 'the frame of position, e.g. world'
+                    required: true
+                    type: string
+                label:
+                    description: ''
+                    required: true
+                    type: string
+                position:
+                    description: '[x, y, z] meters in frame_id'
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    required: true
+                    type: array
+        -
+            method: DELETE
+            path: 'api/labels/{id}'
+            description: Remove a location label.
+            params:
+                id:
+                    required: true
+                    type: string
+        -
+            method: GET
+            path: api/annotations
+            description: 'The live annotations (id, label, center, size, yaw, frame, note).'
+        -
+            method: POST
+            path: api/annotations
+            description: Add a live 3D box annotation with a label; every open viewer shows it immediately.
+            params:
+                center:
+                    description: 'box center [x, y, z], meters in frame'
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                color:
+                    description: CSS color
+                    type: string
+                frame:
+                    description: TF frame of center (default world)
+                    type: string
+                id:
+                    description: optional id (default box-<n>); use it to update or delete
+                    type: string
+                label:
+                    description: shown above the box
+                    type: string
+                note:
+                    description: 'a second line under the label, e.g. "1.76 m tall"'
+                    type: string
+                size:
+                    description: 'full extents [dx, dy, dz], meters'
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                yaw:
+                    description: radians about +z (default 0)
+                    type: number
+        -
+            method: PATCH
+            path: 'api/annotations/{id}'
+            description: 'Change an annotation: label, note, center, size, yaw, color, or newId (to rename it).'
+            params:
+                center:
+                    description: new center
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                color:
+                    description: ''
+                    type: string
+                id:
+                    required: true
+                    type: string
+                label:
+                    description: ''
+                    type: string
+                newId:
+                    description: rename to this id
+                    type: string
+                note:
+                    description: ''
+                    type: string
+                size:
+                    description: new size
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                yaw:
+                    description: ''
+                    type: number
+        -
+            method: DELETE
+            path: 'api/annotations/{id}'
+            description: Remove an annotation by id.
+            params:
+                id:
+                    required: true
+                    type: string
+        -
+            method: DELETE
+            path: api/annotations
+            description: Remove every annotation.
+        -
+            method: POST
+            path: api/locate
+            description: >-
+                Find an object in 3D from a box around it in the robot camera image (pixel coordinates of the image GET
+                api/view returns): uses the lidar points inside that box (else where the box's bottom meets the floor)
+                and returns its 3D box and height. add=true also adds it as an annotation.
+            params:
+                add:
+                    description: ''
+                    type: boolean
+                bbox:
+                    description: '[x1, y1, x2, y2] pixels in the camera image'
+                    items:
+                        type: number
+                    maxItems: 4
+                    minItems: 4
+                    required: true
+                    type: array
+                id:
+                    description: ''
+                    type: string
+                label:
+                    description: ''
+                    type: string
+        -
+            method: POST
+            path: api/drive
+            description: >-
+                Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10
+                Hz for seconds (default 1, at most 10), then a second of zeros. topic: default the drive panel's, else
+                the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a
+                running one.
+            params:
+                angular:
+                    description: rad/s (z = turn left)
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                dryRun:
+                    description: 'send nothing, say what would be sent'
+                    type: boolean
+                linear:
+                    description: 'm/s, robot frame (x forward, y left)'
+                    items:
+                        type: number
+                    maxItems: 3
+                    minItems: 3
+                    type: array
+                seconds:
+                    description: 'default 1, at most 10'
+                    type: number
+                topic:
+                    description: e.g. /cmd_vel
+                    type: string
+        -
+            method: POST
+            path: api/drive/stop
+            description: 'Stop driving: cancels a running drive command and sends a second of zeros.'
+            params:
+                dryRun:
+                    description: ''
+                    type: boolean
+                topic:
+                    description: default as for api/drive
+                    type: string

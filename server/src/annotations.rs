@@ -1,8 +1,7 @@
 //! Live annotations and the agent's view of the viewer. Annotations are ephemeral 3D boxes with labels (not zenoh
 //! topics): kept here, pushed to every open page over the `GET /api/events/ws` websocket the moment they change. The page also answers
 //! capture requests through that stream (its 3D view, the camera image, locating an object from an image box),
-//! since only the page has the rendered view, the decoded clouds and the TF tree. `GET /agent.json` describes all of
-//! it for Desktop's agent (dimos-desktop docs/agent.md).
+//! since only the page has the rendered view, the decoded clouds and the TF tree. The routes are in api.rs.
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,10 +10,10 @@ use std::time::Duration;
 use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::extract::{Path, Query, State as Extract};
 use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
-use axum::{Json, Router};
+use axum::Json;
+
+use crate::api::Body;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -48,7 +47,7 @@ fn world() -> String {
 
 /// A page (a viewer tab) and when its user last looked at it.
 #[derive(Clone, Debug, Serialize)]
-struct Page {
+pub struct Page {
     visible: bool,
     #[serde(rename = "lastActive")]
     last_active: u64,
@@ -57,7 +56,7 @@ struct Page {
 pub struct Annotations {
     items: Mutex<BTreeMap<String, Annotation>>,
     next: AtomicU64,
-    events: broadcast::Sender<Value>,
+    pub events: broadcast::Sender<Value>,
     pages: Mutex<HashMap<String, Page>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Value>>>,
 }
@@ -95,6 +94,10 @@ pub struct Patch {
 impl Annotations {
     pub fn list(&self) -> Vec<Annotation> {
         self.items.lock().unwrap().values().cloned().collect()
+    }
+
+    pub fn page_count(&self) -> usize {
+        self.pages.lock().unwrap().len()
     }
 
     /// Sends an event to every open page.
@@ -224,52 +227,15 @@ fn error(status: StatusCode, message: impl std::fmt::Display) -> Response {
 }
 
 #[derive(Deserialize)]
-struct PageQuery {
+pub struct PageQuery {
     page: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct PageReport {
+pub struct PageReport {
     visible: bool,
     #[serde(default)]
     active: bool,
-}
-
-/// What Desktop's agent reads: the manifest of this app's endpoints.
-pub fn manifest() -> Value {
-    let vec3 = |what: &str| json!({ "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": what });
-    let box_params = json!({
-        "id": { "type": "string", "description": "optional id (default box-<n>); use it to update or delete" },
-        "label": { "type": "string", "description": "shown above the box" },
-        "center": vec3("box center [x, y, z], meters in frame"),
-        "size": vec3("full extents [dx, dy, dz], meters"),
-        "yaw": { "type": "number", "description": "radians about +z (default 0)" },
-        "frame": { "type": "string", "description": "TF frame of center (default world)" },
-        "color": { "type": "string", "description": "CSS color" },
-        "note": { "type": "string", "description": "a second line under the label, e.g. \"1.76 m tall\"" }
-    });
-    json!({
-        "description": "Live 3D view of the running robot (point clouds, camera, TF, map) with live 3D annotations: boxes with labels that every open viewer shows within a frame. Coordinates are meters in the world frame, +z up.",
-        "endpoints": [
-            { "method": "GET", "path": "api/view", "role": "view", "description": "What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the annotations, and the fixed frame." },
-            { "method": "POST", "path": "api/locate", "description": "Find an object in 3D from a box around it in the robot camera image (pixel coordinates of the image GET api/view returns): uses the lidar points inside that box (else where the box's bottom meets the floor) and returns its 3D box and height. add=true also adds it as an annotation.", "params": {
-                "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "[x1, y1, x2, y2] pixels in the camera image", "required": true },
-                "label": { "type": "string" }, "add": { "type": "boolean" }, "id": { "type": "string" } } },
-            { "method": "GET", "path": "api/annotations", "role": "context", "description": "The live annotations (id, label, center, size, yaw, frame, note)." },
-            { "method": "POST", "path": "api/annotations", "description": "Add a live 3D box annotation with a label; every open viewer shows it immediately.", "params": box_params },
-            { "method": "PATCH", "path": "api/annotations/{id}", "description": "Change an annotation: label, note, center, size, yaw, color, or id (to rename it).", "params": {
-                "id": { "type": "string", "description": "the annotation's id", "required": true },
-                "label": { "type": "string" }, "note": { "type": "string" }, "center": vec3("new center"), "size": vec3("new size"),
-                "yaw": { "type": "number" }, "color": { "type": "string" }, "newId": { "type": "string", "description": "rename to this id" } } },
-            { "method": "DELETE", "path": "api/annotations/{id}", "description": "Remove an annotation by id.", "params": { "id": { "type": "string", "required": true } } },
-            { "method": "DELETE", "path": "api/annotations", "description": "Remove every annotation." },
-            { "method": "GET", "path": "api/labels", "role": "context", "description": "Location labels the user (or you) pinned in the map: id, label, frame_id, position, orientation, created (ns)." },
-            { "method": "POST", "path": "api/labels", "description": "Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running it is written into it on /labels.", "params": {
-                "label": { "type": "string", "required": true }, "frame_id": { "type": "string", "required": true, "description": "the frame of position, e.g. world" },
-                "position": vec3("[x, y, z] meters in frame_id") } },
-            { "method": "DELETE", "path": "api/labels/{id}", "description": "Remove a location label.", "params": { "id": { "type": "string", "required": true } } }
-        ]
-    })
 }
 
 /// One page's events: registers the page (forgotten when the stream is dropped), starts with the annotations, then
@@ -308,15 +274,8 @@ fn page_events(annotations: Arc<Annotations>, page: String) -> impl futures_util
     })
 }
 
-/// The old SSE stream, kept for compatibility; pages use `api/events/ws`.
-async fn events(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>) -> impl IntoResponse {
-    let stream = page_events(state, query.page.unwrap_or_default())
-        .map(|event| Ok::<_, std::convert::Infallible>(Event::default().data(event.to_string())));
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
 /// The standard backend → page channel (dim-app's events.js): the same events, one JSON text message each.
-async fn events_ws(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>, upgrade: WebSocketUpgrade) -> Response {
+pub async fn events_ws(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>, upgrade: WebSocketUpgrade) -> Response {
     upgrade.on_upgrade(move |mut socket| async move {
         let mut events = std::pin::pin!(page_events(state, query.page.unwrap_or_default()));
         loop {
@@ -339,106 +298,95 @@ async fn events_ws(Extract(state): Extract<Arc<Annotations>>, Query(query): Quer
     })
 }
 
-pub fn router(state: Arc<Annotations>) -> Router {
-    Router::new()
-        .route("/agent.json", get(|| async { Json(manifest()) }))
-        .route("/api/events", get(events))
-        .route("/api/events/ws", get(events_ws))
-        .route(
-            "/api/annotations",
-            get(|Extract(state): Extract<Arc<Annotations>>| async move { Json(json!({ "annotations": state.list() })) })
-                .post(|Extract(state): Extract<Arc<Annotations>>, Json(body): Json<Value>| async move {
-                    match state.create(body) {
-                        Ok(annotation) => Json(annotation).into_response(),
-                        Err(problem) => error(StatusCode::BAD_REQUEST, problem),
-                    }
-                })
-                .delete(|Extract(state): Extract<Arc<Annotations>>| async move { Json(json!({ "removed": state.clear() })) }),
-        )
-        .route(
-            "/api/annotations/{id}",
-            patch(|Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>, Json(body): Json<Value>| async move {
-                let mut body = body;
-                if let Some(new_id) = body.get("newId").cloned() {
-                    body["id"] = new_id;
-                } else if let Some(object) = body.as_object_mut() {
-                    object.remove("id");
-                }
-                let patch: Patch = match serde_json::from_value(body) {
-                    Ok(patch) => patch,
-                    Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
-                };
-                match state.update(&id, patch) {
-                    Ok(annotation) => Json(annotation).into_response(),
-                    Err(problem) => error(StatusCode::NOT_FOUND, problem),
-                }
-            })
-            .delete(|Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>| async move {
-                match state.delete(&id) {
-                    Ok(()) => Json(json!({ "ok": true, "removed": id })).into_response(),
-                    Err(problem) => error(StatusCode::NOT_FOUND, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/pages/{page}",
-            post(|Extract(state): Extract<Arc<Annotations>>, Path(page): Path<String>, Json(report): Json<PageReport>| async move {
-                let mut pages = state.pages.lock().unwrap();
-                let entry = pages.entry(page).or_insert(Page { visible: report.visible, last_active: now_ms() });
-                entry.visible = report.visible;
-                if report.active {
-                    entry.last_active = now_ms();
-                }
-                Json(json!({ "ok": true }))
-            }),
-        )
-        .route(
-            "/api/captures/{request}",
-            post(|Extract(state): Extract<Arc<Annotations>>, Path(request): Path<String>, Json(body): Json<Value>| async move {
-                match state.pending.lock().unwrap().remove(&request) {
-                    Some(sender) => {
-                        let _ = sender.send(body);
-                        Json(json!({ "ok": true })).into_response()
-                    }
-                    None => error(StatusCode::NOT_FOUND, "no such capture request (timed out?)"),
-                }
-            }),
-        )
-        .route(
-            "/api/view",
-            get(|Extract(state): Extract<Arc<Annotations>>| async move {
-                match state.ask_page("view", json!({})).await {
-                    Ok(view) => Json(view).into_response(),
-                    Err(problem) => error(StatusCode::SERVICE_UNAVAILABLE, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/locate",
-            post(|Extract(state): Extract<Arc<Annotations>>, Json(body): Json<Value>| async move {
-                let bbox_ok = body["bbox"].as_array().is_some_and(|b| b.len() == 4 && b.iter().all(Value::is_number));
-                if !bbox_ok {
-                    return error(StatusCode::BAD_REQUEST, "bbox: [x1, y1, x2, y2] in camera image pixels");
-                }
-                let found = match state.ask_page("locate", body.clone()).await {
-                    Ok(found) => found,
-                    Err(problem) => return error(StatusCode::UNPROCESSABLE_ENTITY, problem),
-                };
-                if body["add"].as_bool() != Some(true) {
-                    return Json(found).into_response();
-                }
-                let mut annotation = found["box"].clone();
-                annotation["label"] = body.get("label").cloned().unwrap_or(json!(""));
-                if let Some(id) = body.get("id") {
-                    annotation["id"] = id.clone();
-                }
-                match state.create(annotation) {
-                    Ok(added) => Json(json!({ "located": found, "annotation": added })).into_response(),
-                    Err(problem) => error(StatusCode::BAD_REQUEST, problem),
-                }
-            }),
-        )
-        .with_state(state)
+pub async fn list_annotations(Extract(state): Extract<Arc<Annotations>>) -> Response {
+    Json(json!({ "annotations": state.list() })).into_response()
+}
+
+pub async fn add_annotation(Extract(state): Extract<Arc<Annotations>>, Body(body): Body) -> Response {
+    match state.create(body) {
+        Ok(annotation) => Json(annotation).into_response(),
+        Err(problem) => error(StatusCode::BAD_REQUEST, problem),
+    }
+}
+
+pub async fn clear_annotations(Extract(state): Extract<Arc<Annotations>>) -> Response {
+    Json(json!({ "removed": state.clear() })).into_response()
+}
+
+pub async fn patch_annotation(Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>, Body(body): Body) -> Response {
+    let mut body = body;
+    if let Some(new_id) = body.get("newId").cloned() {
+        body["id"] = new_id;
+    } else if let Some(object) = body.as_object_mut() {
+        object.remove("id");
+    }
+    let patch: Patch = match serde_json::from_value(body) {
+        Ok(patch) => patch,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
+    };
+    match state.update(&id, patch) {
+        Ok(annotation) => Json(annotation).into_response(),
+        Err(problem) => error(StatusCode::NOT_FOUND, problem),
+    }
+}
+
+pub async fn delete_annotation(Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>) -> Response {
+    match state.delete(&id) {
+        Ok(()) => Json(json!({ "ok": true, "removed": id })).into_response(),
+        Err(problem) => error(StatusCode::NOT_FOUND, problem),
+    }
+}
+
+/// A page says it's visible / the one the user is using (it answers the agent's captures).
+pub async fn report_page(Extract(state): Extract<Arc<Annotations>>, Path(page): Path<String>, Json(report): Json<PageReport>) -> Response {
+    let mut pages = state.pages.lock().unwrap();
+    let entry = pages.entry(page).or_insert(Page { visible: report.visible, last_active: now_ms() });
+    entry.visible = report.visible;
+    if report.active {
+        entry.last_active = now_ms();
+    }
+    Json(json!({ "ok": true })).into_response()
+}
+
+/// A page answering a capture request.
+pub async fn answer_capture(Extract(state): Extract<Arc<Annotations>>, Path(request): Path<String>, Json(body): Json<Value>) -> Response {
+    match state.pending.lock().unwrap().remove(&request) {
+        Some(sender) => {
+            let _ = sender.send(body);
+            Json(json!({ "ok": true })).into_response()
+        }
+        None => error(StatusCode::NOT_FOUND, "no such capture request (timed out?)"),
+    }
+}
+
+pub async fn view(Extract(state): Extract<Arc<Annotations>>) -> Response {
+    match state.ask_page("view", json!({})).await {
+        Ok(view) => Json(view).into_response(),
+        Err(problem) => error(StatusCode::SERVICE_UNAVAILABLE, problem),
+    }
+}
+
+pub async fn locate(Extract(state): Extract<Arc<Annotations>>, Body(body): Body) -> Response {
+    let bbox_ok = body["bbox"].as_array().is_some_and(|b| b.len() == 4 && b.iter().all(Value::is_number));
+    if !bbox_ok {
+        return error(StatusCode::BAD_REQUEST, "bbox: [x1, y1, x2, y2] in camera image pixels");
+    }
+    let found = match state.ask_page("locate", body.clone()).await {
+        Ok(found) => found,
+        Err(problem) => return error(StatusCode::UNPROCESSABLE_ENTITY, problem),
+    };
+    if body["add"].as_bool() != Some(true) {
+        return Json(found).into_response();
+    }
+    let mut annotation = found["box"].clone();
+    annotation["label"] = body.get("label").cloned().unwrap_or(json!(""));
+    if let Some(id) = body.get("id") {
+        annotation["id"] = id.clone();
+    }
+    match state.create(annotation) {
+        Ok(added) => Json(json!({ "located": found, "annotation": added })).into_response(),
+        Err(problem) => error(StatusCode::BAD_REQUEST, problem),
+    }
 }
 
 #[cfg(test)]
@@ -466,16 +414,6 @@ mod tests {
         assert!(annotations.list().is_empty());
     }
 
-    #[test]
-    fn manifest_has_a_view_and_crud() {
-        let manifest = manifest();
-        let endpoints = manifest["endpoints"].as_array().unwrap();
-        assert!(endpoints.iter().any(|e| e["role"] == "view" && e["path"] == "api/view"));
-        for method in ["GET", "POST", "PATCH", "DELETE"] {
-            assert!(endpoints.iter().any(|e| e["method"] == method && e["path"].as_str().unwrap().starts_with("api/annotations")), "{method}");
-        }
-    }
-
     #[tokio::test]
     async fn the_active_page_answers_captures() {
         let annotations = Arc::new(Annotations::default());
@@ -500,7 +438,7 @@ mod tests {
         let annotations = Arc::new(Annotations::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let app = router(annotations.clone());
+        let app = crate::api::routes().router.with_state(crate::api::Api::for_tests(annotations.clone()));
         tokio::spawn(async move { axum::serve(listener, app).await });
         let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/api/events/ws?page=p1")).await.unwrap();
         let mut next = async || loop {

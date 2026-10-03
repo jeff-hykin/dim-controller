@@ -64,34 +64,6 @@ async function sharedRecordings(): Promise<RecordingFile[] | null> {
     }
 }
 
-/**
- * Where the running dimos writes its jsonl logs, from Desktop: each run's log dir (`GET /dimos/runs`, every Desktop),
- * else the logs roots (`GET /dimos/paths`, newer Desktops; the backend then follows run dirs that appear in them).
- */
-async function dimosLogDirs(withRoots = true): Promise<{ log_dirs: string[]; log_roots: string[] }> {
-    const log_dirs: string[] = []
-    try {
-        const runs = await (await fetch(new URL("../../dimos/runs", location.href))).json()
-        for (const dir of [...(runs.runs ?? []).map((run: { log_dir?: string }) => run.log_dir), runs.launch?.logDir]) {
-            if (typeof dir === "string" && dir && !log_dirs.includes(dir)) {
-                log_dirs.push(dir)
-            }
-        }
-    } catch {
-        // not inside Desktop (dev server): no logs to record
-    }
-    if (log_dirs.length || !withRoots) {
-        return { log_dirs, log_roots: [] }
-    }
-    try {
-        const response = await fetch(new URL("../../dimos/paths", location.href))
-        const paths = response.ok ? await response.json() : {}
-        return { log_dirs, log_roots: (paths.logsDirs ?? []).filter((dir: unknown) => typeof dir === "string" && dir) }
-    } catch {
-        return { log_dirs, log_roots: [] }
-    }
-}
-
 async function call(path: string, init?: RequestInit) {
     const response = await fetch(base() + path, { headers: { "content-type": "application/json" }, ...init })
     if (response.status === 204) {
@@ -144,25 +116,13 @@ class RecorderClient {
         return () => this.#watchers--
     }
 
-    async start(keys: string[]) {
-        await call("/start", { method: "POST", body: JSON.stringify({ keys, ...(await dimosLogDirs()) }) })
+    /**
+     * Starts recording `keys`, or (null) every topic on the bus except rpc ones and the ones unticked in the panel,
+     * with new topics joining: the backend picks them, and the running dimos's logs (server/src/recorder.rs).
+     */
+    async start(keys: string[] | null) {
+        await call("/start", { method: "POST", body: JSON.stringify(keys ? { keys } : {}) })
         await this.refresh()
-        this.#followRuns()
-    }
-
-    /** While recording, runs that start later bring their log dirs (the backend ignores ones it has). */
-    async #followRuns() {
-        while (this.status.get().recording.active) {
-            await new Promise((resolve) => setTimeout(resolve, 10_000))
-            const dirs = await dimosLogDirs(false)
-            if (this.status.get().recording.active && dirs.log_dirs.length) {
-                await call("/logs", { method: "POST", body: JSON.stringify(dirs) }).catch(() => {})
-            }
-        }
-    }
-
-    async add(keys: string[]) {
-        await call("/add", { method: "POST", body: JSON.stringify({ keys }) })
     }
 
     async stop() {

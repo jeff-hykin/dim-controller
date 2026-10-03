@@ -11,6 +11,15 @@ dimos-desktop install https://github.com/jeff-hykin/dim-live-viewer --ref dimos-
 Then open **Live Viewer** from the rail while a blueprint (sim, replay or robot) runs on zenoh. Topics appear as they
 start flowing; nothing is configured by topic name.
 
+Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: recording, labels,
+annotations, the camera, driving, and every setting the panels change (layers on/off, layer styles, point style, fixed
+frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its description;
+that table is the served `/agent.json`, and `dimos.yaml`'s `agent:` repeats it (`deno task check-endpoints [--write]`,
+checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the app's data dir), so a change
+from the agent or another window shows up in every open viewer. The one exception is continuous driving from the keys
+and sticks, which publishes through the bridge at 20 Hz with the bridge's deadman; `POST api/drive` is the endpoint way
+to drive (a Twist for up to 10 s, then zeros; `dryRun` sends nothing).
+
 ## What it shows
 
 Every dimos topic is `dimos/<topic>/<message type>` on zenoh, so the key says how to draw it. Each message type has a
@@ -62,12 +71,13 @@ or up/down for a profile with a vertical axis), with FAST and STOP buttons.
 ## Recording
 
 The Record panel writes an mcap with the chosen topics (rpc topics are grouped and off by default; choices are
-remembered, and topics that appear mid-recording join it). Known types are written as ROS 2 CDR so Foxglove opens the
+remembered, and topics that appear mid-recording join it: the backend finds them, so `POST api/recorder/start` with no
+keys records the same set). Known types are written as ROS 2 CDR so Foxglove opens the
 file; images can be re-encoded (png / jpeg xl lossless, webp, jpeg); anything else is kept as raw LCM bytes with its
 type name. Files land in `~/.dimos/data/apps/<app>/recordings` (the app's `DIMOS_APP_DATA`); the panel lists them with
 size, age, download, copy path and delete.
 
-The running dimos's own logs go into the same file. When recording starts the page asks Desktop where they are
+The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
 (`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails
 every `*.jsonl` there, new lines only (plus new files, runs that start mid-recording, truncation). Each line becomes a
 `foxglove.Log` (JSON) on `/dimos/logs/<file stem>` (e.g. `/dimos/logs/main`), stamped with the line's own time, so
@@ -124,11 +134,12 @@ type; regenerate with `deno run -A tools/gen_lcm_schemas.ts <dimos_lcm/lcm_files
 
 ```sh
 cd frontend && npm install && npm run dev      # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
-npm run check && npm test                      # types; LCM decoder tests (deno)
-cd ../server && cargo test                     # recorder, incl. a zenoh round trip on loopback
+npm run typecheck && npm test                  # types; LCM decoder tests (deno)
+cd ../server && cargo test                     # every endpoint; the recorder and driving over zenoh on loopback
+deno task check-endpoints [--write]            # dimos.yaml's agent: = the served agent.json
 nix build .#dimosApp                           # what Desktop builds: bin/dimos-app-server serving the page
 ```
 
-`server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and the recorder API
-under `/apps/<name>/`, and talks zenoh itself only while recording. The page reaches Desktop's zenoh-web bridge at
+`server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and every endpoint
+under `/apps/<name>/`, and talks zenoh itself only to record, find topics and drive. The page reaches Desktop's zenoh-web bridge at
 `../../zenoh-web`; its client is vendored at the commit Desktop embeds (`frontend/src/vendor/zenoh_web`, 0.4.1).

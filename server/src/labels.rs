@@ -6,20 +6,18 @@
 //! - `/labels/scene`: `foxglove.SceneUpdate` (JSON), a sphere plus the text, so Foxglove's 3D panel shows them.
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use axum::extract::{Path, State as Extract};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get};
-use axum::{Json, Router};
+use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::annotations::Annotations;
+use crate::api::{Api, Body};
 use crate::logs::stamp;
 use crate::record::{now_nanos, Encoded, Recorder};
-use crate::recorder;
 
 pub const LABEL_TOPIC: &str = "/labels";
 pub const SCENE_TOPIC: &str = "/labels/scene";
@@ -155,51 +153,42 @@ pub fn write(recorder: &Recorder, label: &Label, action: &str) {
     );
 }
 
-#[derive(Clone)]
-struct Api {
-    recorder: Arc<recorder::State>,
-    annotations: Arc<Annotations>,
-}
-
-impl Api {
-    fn changed(&self) {
-        self.annotations.broadcast(json!({ "type": "labels", "labels": self.recorder.labels.list() }));
-    }
+fn changed(api: &Api) {
+    api.annotations.broadcast(json!({ "type": "labels", "labels": api.recorder.labels.list() }));
 }
 
 fn error(status: StatusCode, message: impl std::fmt::Display) -> Response {
     (status, Json(json!({ "error": message.to_string() }))).into_response()
 }
 
-pub fn router(recorder: Arc<recorder::State>, annotations: Arc<Annotations>) -> Router {
-    Router::new()
-        .route(
-            "/api/labels",
-            get(|Extract(api): Extract<Api>| async move { Json(json!({ "labels": api.recorder.labels.list() })) }).post(|Extract(api): Extract<Api>, Json(label): Json<Label>| async move {
-                match api.recorder.labels.create(label) {
-                    Ok(label) => {
-                        let recorded = api.recorder.record_label(&label, "add").await;
-                        api.changed();
-                        Json(json!({ "label": label, "recorded": recorded })).into_response()
-                    }
-                    Err(problem) => error(StatusCode::BAD_REQUEST, problem),
-                }
-            }),
-        )
-        .route(
-            "/api/labels/{id}",
-            delete(|Extract(api): Extract<Api>, Path(id): Path<String>| async move {
-                match api.recorder.labels.remove(&id) {
-                    Some(label) => {
-                        api.recorder.record_label(&label, "delete").await;
-                        api.changed();
-                        StatusCode::NO_CONTENT.into_response()
-                    }
-                    None => error(StatusCode::NOT_FOUND, format!("no label {id}")),
-                }
-            }),
-        )
-        .with_state(Api { recorder, annotations })
+pub async fn list(Extract(api): Extract<Api>) -> Response {
+    Json(json!({ "labels": api.recorder.labels.list() })).into_response()
+}
+
+pub async fn add(Extract(api): Extract<Api>, Body(body): Body) -> Response {
+    let label: Label = match serde_json::from_value(body) {
+        Ok(label) => label,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, format!("label: {problem}")),
+    };
+    match api.recorder.labels.create(label) {
+        Ok(label) => {
+            let recorded = api.recorder.record_label(&label, "add").await;
+            changed(&api);
+            Json(json!({ "label": label, "recorded": recorded })).into_response()
+        }
+        Err(problem) => error(StatusCode::BAD_REQUEST, problem),
+    }
+}
+
+pub async fn remove(Extract(api): Extract<Api>, Path(id): Path<String>) -> Response {
+    match api.recorder.labels.remove(&id) {
+        Some(label) => {
+            api.recorder.record_label(&label, "delete").await;
+            changed(&api);
+            Json(json!({ "ok": true, "removed": id })).into_response()
+        }
+        None => error(StatusCode::NOT_FOUND, format!("no label {id}")),
+    }
 }
 
 #[cfg(test)]

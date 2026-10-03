@@ -5,7 +5,7 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc --noEmit -p . && vite build",
-        "check": "tsc --noEmit -p .",
+        "typecheck": "tsc --noEmit -p .",
         "test": "deno test -A --no-check --no-lock test/"
     },
     "dependencies": {

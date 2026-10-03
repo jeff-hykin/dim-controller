@@ -23,6 +23,11 @@ export interface ViewSettings {
     showStats: boolean
 }
 
+/** The camera buttons go through the backend (POST api/camera), the same endpoint the agent uses. */
+export async function cameraAction(action: "recenter" | "topDown"): Promise<void> {
+    await fetch(new URL("api/camera", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) })
+}
+
 export class ViewerApp {
     readonly connection: Connection
     readonly tf = new TfTree()
@@ -56,6 +61,13 @@ export class ViewerApp {
         this.labels = new LocationLabels(this)
         this.agent = new AgentLink(this)
         this.#pollRobotInputs()
+        // another viewer (or the agent) switched the robot profile: start over on it
+        this.settings.subscribe(() => {
+            const wanted = this.settings.get().profile
+            if (wanted !== this.profile.name && profiles.some((profile) => profile.name === wanted)) {
+                location.reload()
+            }
+        })
     }
 
     #eachFrame() {
@@ -78,6 +90,16 @@ export class ViewerApp {
         const info = this.frameInfo.get()
         if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position) {
             this.frameInfo.set({ fixedFrame, robotFound: !!position })
+        }
+    }
+
+    /** The backend asked every viewer to move the camera (POST api/camera). */
+    applyCamera(event: { action: string; target?: number[] | null; distance?: number | null }) {
+        if (event.action === "recenter" || event.action === "topDown") {
+            this.recenter(event.action === "topDown")
+        } else if (event.action === "lookAt" && event.target?.length === 3) {
+            this.settings.update({ follow: false })
+            this.viewer.frame(new THREE.Vector3(event.target[0], event.target[1], event.target[2]), event.distance ?? 7)
         }
     }
 

@@ -10,7 +10,6 @@ import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
-import { followNewTopics } from "./ui/RecorderPanel.tsx"
 import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
 
@@ -30,7 +29,6 @@ export function App() {
 
     useEffect(() => {
         const created = new ViewerApp(host.current!)
-        followNewTopics(created)
         window.__lv = created
         setApp(created)
         // dimOS Desktop picks light/dark; dim-theme.js mirrors it onto body.dark and fires `dim-theme`

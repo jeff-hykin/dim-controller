@@ -6,6 +6,10 @@
         rust-overlay.url = "github:oxalica/rust-overlay";
         rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixConfig = {
+        extra-substituters = [ "https://dimos-desktop.cachix.org" ];
+        extra-trusted-public-keys = [ "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ=" ];
+    };
 
     outputs = { self, nixpkgs, rust-overlay }:
         let

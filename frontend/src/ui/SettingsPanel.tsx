@@ -1,6 +1,6 @@
 // View settings and the robot profile.
-import type { ViewerApp } from "../core/app.ts"
-import { useStore } from "../core/store.ts"
+import { cameraAction, type ViewerApp } from "../core/app.ts"
+import { useStore, saveSetting } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { Field, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
@@ -18,8 +18,8 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     className="dim-select"
                     value={app.profile.name}
                     onChange={(event) => {
-                        app.settings.update({ profile: event.target.value })
-                        location.reload()
+                        // the page restarts on the new profile (every open viewer does, app.ts)
+                        saveSetting("lv.view", { profile: event.target.value }).then(() => location.reload())
                     }}
                 >
                     {profiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name}</option>)}
@@ -41,8 +41,8 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <div className="button-row">
-                <button type="button" className="dim-btn sm icon" onClick={() => app.recenter(false)}><Icon name="target" size={16} /> Recenter</button>
-                <button type="button" className="dim-btn sm icon" onClick={() => app.recenter(true)}><Icon name="top" size={16} /> Top-down</button>
+                <button type="button" className="dim-btn sm icon" onClick={() => cameraAction("recenter")}><Icon name="target" size={16} /> Recenter</button>
+                <button type="button" className="dim-btn sm icon" onClick={() => cameraAction("topDown")}><Icon name="top" size={16} /> Top-down</button>
             </div>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom.</p>
         </div>
