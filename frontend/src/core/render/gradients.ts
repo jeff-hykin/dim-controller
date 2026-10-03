@@ -52,7 +52,9 @@ export function gradientTexture(name: string): THREE.DataTexture {
             data.set([r, g, b, 255], index * 4)
         }
         texture = new THREE.DataTexture(data, 256, 1)
-        texture.colorSpace = THREE.SRGBColorSpace
+        // sampled as the sRGB it is: the point shader writes it out unconverted (tagged sRGB, it came out linear: dark
+        // and oversaturated, a deep blue and a pure green for MemWorld's soft blue and mint)
+        texture.colorSpace = THREE.NoColorSpace
         texture.magFilter = THREE.LinearFilter
         texture.minFilter = THREE.LinearFilter
         texture.needsUpdate = true

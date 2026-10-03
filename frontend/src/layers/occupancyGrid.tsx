@@ -1,9 +1,9 @@
-// nav_msgs.OccupancyGrid (costmaps, 2D maps): one textured plane at the grid's origin; free = clear, unknown =
-// faint, occupied ramps to the cost color. The texture is rebuilt in place, never reallocated for a same-size grid.
+// nav_msgs.OccupancyGrid (costmaps, 2D maps): one textured plane at the grid's origin. A costmap is drawn like the
+// Map Builder's floor plan: a dark navy floor where it's free, costs as dimmer-to-brighter cyan, lethal cells as a bright
+// cyan rim around a dimmer body; unknown is clear. The texture is rebuilt in place, never reallocated for a same-size grid.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { placeInFixedFrame, poseMatrix, subscribeDecoded } from "../core/layers/helpers.ts"
-import { sampleGradient } from "../core/render/gradients.ts"
 import { useStore, type Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Slider } from "../ui/controls.tsx"
@@ -13,6 +13,15 @@ export interface GridSettings {
     style: "costmap" | "map"
     lift: number
 }
+
+// dim-map-builder's PLAN_STYLE (frontend/src/core/slice.ts)
+const PLAN_FLOOR = [21, 33, 50]
+const PLAN_WALL_BODY = [38, 78, 122]
+const PLAN_WALL_RIM = [130, 212, 255]
+/** a costmap's lethal value (dimos marks obstacles 100) */
+const LETHAL = 100
+
+const mix = (a: number[], b: number[], t: number) => a.map((value, index) => value + (b[index] - value) * t)
 
 class GridLayer {
     readonly root = new THREE.Group()
@@ -43,15 +52,16 @@ class GridLayer {
             const value = byte > 127 ? byte - 256 : byte
             let rgba: [number, number, number, number]
             if (value < 0) {
-                rgba = [110, 120, 135, 40]
+                rgba = style === "map" ? [110, 120, 135, 40] : [0, 0, 0, 0]
             } else if (style === "map") {
                 const shade = 235 - value * 2.2
                 rgba = value === 0 ? [235, 240, 245, 70] : [shade, shade, shade, 230]
             } else if (value === 0) {
-                rgba = [0, 0, 0, 0]
+                rgba = [...PLAN_FLOOR, 215] as typeof rgba
             } else {
-                const [r, g, b] = sampleGradient("plasma", value / 100)
-                rgba = [r, g, b, 90 + value * 1.6]
+                // a cost brightens from the floor through the wall body toward the rim (lethal is drawn per cell, below)
+                const t = Math.sqrt(Math.min(value, LETHAL - 1) / LETHAL)
+                rgba = [...(t < 0.6 ? mix(PLAN_FLOOR, PLAN_WALL_BODY, t / 0.6) : mix(PLAN_WALL_BODY, PLAN_WALL_RIM, (t - 0.6) / 0.4 * 0.7)), 235] as typeof rgba
             }
             this.#lut.set(rgba, byte * 4)
         }
@@ -77,7 +87,16 @@ class GridLayer {
         const pixels = this.#texture.image.data as Uint8Array
         const lut = this.#lut
         const bytes = new Uint8Array(data.buffer, data.byteOffset, width * height)
+        const costmap = this.settings.get().style === "costmap"
+        const lethal = (column: number, row: number) => column < 0 || row < 0 || column >= width || row >= height || bytes[row * width + column] === LETHAL
         for (let index = 0; index < width * height; index++) {
+            if (costmap && bytes[index] === LETHAL) {
+                // the floor plan's walls: a bright rim where a lethal cell borders anything else, a dimmer body inside
+                const column = index % width, row = (index - column) / width
+                const inside = lethal(column - 1, row) && lethal(column + 1, row) && lethal(column, row - 1) && lethal(column, row + 1)
+                pixels.set([...(inside ? PLAN_WALL_BODY : PLAN_WALL_RIM), 255], index * 4)
+                continue
+            }
             const at = bytes[index] * 4
             pixels[index * 4] = lut[at]
             pixels[index * 4 + 1] = lut[at + 1]
@@ -111,7 +130,7 @@ function GridSettingsEditor({ settings }: { settings: Store<GridSettings>; topic
     const value = useStore(settings)
     return (
         <>
-            <Field label="Style"><Select value={value.style} options={[["costmap", "costmap"], ["map", "map (gray)"]]} onChange={(style) => settings.update({ style: style as GridSettings["style"] })} /></Field>
+            <Field label="Style"><Select value={value.style} options={[["costmap", "costmap (floor plan)"], ["map", "map (gray)"]]} onChange={(style) => settings.update({ style: style as GridSettings["style"] })} /></Field>
             <Field label="Opacity"><Slider min={0.1} max={1} step={0.05} value={value.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => settings.update({ opacity })} /></Field>
         </>
     )

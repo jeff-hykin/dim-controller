@@ -210,7 +210,8 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
             uColorMode: { value: 0 },
             uAxis: { value: 2 },
             uRange: { value: new THREE.Vector2(0, 2) },
-            uSolid: { value: new THREE.Color(0xffffff) },
+            // colors stay sRGB end to end: this shader writes gl_FragColor as is, with no linear → sRGB step after it
+            uSolid: { value: new THREE.Color().setHex(0xffffff, THREE.NoColorSpace) },
             uSensor: { value: new THREE.Vector3() },
             uNow: { value: 0 },
             uWindow: { value: -1 },
@@ -219,7 +220,7 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
             uLightWorld: { value: new THREE.Vector3() },
             uKeep: { value: 1 },
             uFog: { value: new THREE.Vector2(10, 40) },
-            uBackground: { value: new THREE.Color(0x06090f) },
+            uBackground: { value: new THREE.Color().setHex(0x06090f, THREE.NoColorSpace) },
             uCubeShade: { value: 0 },
         },
         defines: {},
@@ -267,7 +268,7 @@ export function applyLook(material: THREE.ShaderMaterial, look: PointLook, range
     uniforms.uColorMode.value = COLOR[look.colorMode]
     uniforms.uAxis.value = look.axis
     uniforms.uRange.value.set(look.rangeMin ?? range[0], look.rangeMax ?? range[1])
-    uniforms.uSolid.value.set(look.solid)
+    uniforms.uSolid.value.setStyle(look.solid, THREE.NoColorSpace)
     uniforms.uOpacity.value = look.opacity
     uniforms.uGradient.value = gradientTexture(look.gradient)
     const splat = look.style === "splat"
