@@ -195,7 +195,7 @@ impl Annotations {
 
     /// Asks the active page to do something only it can (render, read the camera, locate) and waits for its answer.
     pub async fn ask_page(&self, kind: &str, args: Value) -> Result<Value, String> {
-        let page = self.active_page().ok_or("no Live Viewer page is open (open_app the Live Viewer first)")?;
+        let page = self.active_page().ok_or("no Controller page is open (open_app the Controller first)")?;
         let request = format!("r{}", self.next.fetch_add(1, Ordering::Relaxed));
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().unwrap().insert(request.clone(), sender);
@@ -207,7 +207,7 @@ impl Annotations {
                 Some(error) => Err(error.to_string()),
                 None => Ok(value),
             },
-            _ => Err("the Live Viewer page didn't answer (is its tab open?)".into()),
+            _ => Err("the Controller page didn't answer (is its tab open?)".into()),
         }
     }
 }

@@ -349,7 +349,7 @@ pub fn default_name() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|age| age.as_secs())
         .unwrap_or(0);
-    format!("live_viewer_{seconds}.mcap")
+    format!("controller_{seconds}.mcap")
 }
 
 pub fn now_nanos() -> u64 {

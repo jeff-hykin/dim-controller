@@ -90,7 +90,7 @@
 }
 
 body.science.dark {
-    /* ── neutrals (dark · MemWorld HUD, matching dim-live-viewer) ──
+    /* ── neutrals (dark · MemWorld HUD, matching dim-controller) ──
        Near-black navy page, slightly lifted panels, cool steel hairlines. */
     color-scheme: dark;
     --bg: #06090f;

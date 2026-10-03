@@ -1,24 +1,30 @@
-# dim-live-viewer
+# dim-controller
 
-A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for a running dimOS stack: a low-latency 3D view
-placed by TF, live cameras, driving (keyboard, or sticks on a phone) and an mcap recorder. It replaces web_ctrl and is
-meant to be **forked per robot** (see [Fork this for your robot](#fork-this-for-your-robot)).
+A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving a running dimOS robot while watching
+it: a low-latency 3D view placed by TF (point clouds, costmap, pose, planned path), live cameras, driving (keyboard, or
+sticks on a phone, armed and with a deadman) and an mcap recorder. It is the one canonical controller: it replaces
+web_ctrl, the Live Viewer (its old name), `dimos-controller` and `dim-app-minimal-kb-control` (Teleop), and is meant to
+be **forked per robot** (see [Fork this for your robot](#fork-this-for-your-robot)).
 
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-live-viewer --ref dimos-desktop2
+dimos-desktop install https://github.com/jeff-hykin/dim-controller
 ```
 
-Then open **Live Viewer** from the rail while a blueprint (sim, replay or robot) runs on zenoh. Topics appear as they
+Then open **Controller** from the rail while a blueprint (sim, replay or robot) runs on zenoh. Topics appear as they
 start flowing; nothing is configured by topic name.
 
-Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: recording, labels,
-annotations, the camera, driving, and every setting the panels change (layers on/off, layer styles, point style, fixed
-frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its description;
-that table is the served `/agent.json`, and `dimos.yaml`'s `agent:` repeats it (`deno task check-endpoints [--write]`,
-checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the app's data dir), so a change
-from the agent or another window shows up in every open viewer. The one exception is continuous driving from the keys
-and sticks, which publishes through the bridge at 20 Hz with the bridge's deadman; `POST api/drive` is the endpoint way
-to drive (a Twist for up to 10 s, then zeros; `dryRun` sends nothing).
+Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: arming, driving,
+recording, labels, annotations, the camera, and every setting the panels change (layers on/off, layer styles, point
+style, fixed frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its
+description; that table is the served `/agent.json`, and `dimos.yaml`'s `agent:` repeats it (`deno task
+check-endpoints [--write]`, checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the
+app's data dir), so a change from the agent or another window shows up in every open page. The one exception is
+continuous driving from the keys and sticks, which publishes through the bridge at 20 Hz with the bridge's deadman;
+`POST api/drive` is the endpoint way to drive (a Twist for up to 10 s, then zeros; `dryRun` sends nothing).
+
+**Renamed from dim-live-viewer.** GitHub redirects the old URL. An install under the new name starts from the old
+install's settings (`settings.json` is copied from `~/.dimos/data/apps/dim-live-viewer/`), and recordings keep going to
+Desktop's `live-viewer` recordings folder if it exists (else `controller`). Setting keys keep their `lv.` prefix.
 
 ## What it shows
 
@@ -57,16 +63,27 @@ detection overlay. A panel's ⤢ makes it fullscreen and turns the 3D view into 
 
 ## Driving
 
-Driving is **off until armed** (the ARM button). Then W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift
-doubles linear speed and halves turning, Space stops. Linear and angular speeds are in the Drive panel. Commands go
+Driving is **off until armed** (the ARM button, or `POST api/drive/arm`). Arming is held by the backend: one switch for
+every open page and the agent, shown on each, and a restart comes up disarmed. Escape or hiding the page disarms, and
+disarming stops the robot. Armed, W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
+and halves turning, Space stops (the agent's command too). Linear and angular speeds are in the Drive panel. Commands go
 straight to `dimos/<topic>/geometry_msgs.Twist` through Desktop's bridge with a deadman: if the page goes quiet or
 disconnects, the bridge sends a zero Twist. Nothing is sent while nobody steers (a release is followed by a second of
 zeros, then silence), so a parked browser never drowns out other teleop. The topic picker lists the Twist inputs of the
 running blueprint (from Desktop's `/dimos/` API) and any Twist on the bridge; the default is the profile's first one
 present, else `tele_cmd_vel`, else `cmd_vel`.
 
+The agent drives with `POST api/drive` (refused while disarmed, except `dryRun`); the drive HUD shows its command, and
+"dry run · nothing sent" for a dry run.
+
 On a phone the panels become a bottom sheet and driving moves to on-screen sticks (left: drive and turn; right: strafe,
 or up/down for a profile with a vertical axis), with FAST and STOP buttons.
+
+## Costmap
+
+`nav_msgs.OccupancyGrid` topics (e.g. `global_costmap`) draw as a plane under the robot, with its pose and the planned
+path; Settings → Top-down (or `POST api/camera {action: "topDown"}`) gives the flat map view the old Controller
+had in its map panel.
 
 ## Recording
 
@@ -74,8 +91,9 @@ The Record panel writes an mcap with the chosen topics (rpc topics are grouped a
 remembered, and topics that appear mid-recording join it: the backend finds them, so `POST api/recorder/start` with no
 keys records the same set). Known types are written as ROS 2 CDR so Foxglove opens the
 file; images can be re-encoded (png / jpeg xl lossless, webp, jpeg); anything else is kept as raw LCM bytes with its
-type name. Files land in `~/.dimos/data/apps/<app>/recordings` (the app's `DIMOS_APP_DATA`); the panel lists them with
-size, age, download, copy path and delete.
+type name. Files land in Desktop's shared recordings folder, under `controller/` (`live-viewer/` if that exists from
+before the rename), else in the app's `DIMOS_APP_DATA/recordings`; the panel lists them with size, age, download, copy
+path and delete.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
 (`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails

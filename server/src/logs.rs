@@ -434,7 +434,7 @@ mod tests {
     }
 
     fn scratch(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("live_viewer_logs_{label}_{}", now_nanos()));
+        let dir = std::env::temp_dir().join(format!("controller_logs_{label}_{}", now_nanos()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

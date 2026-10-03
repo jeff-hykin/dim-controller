@@ -25,7 +25,7 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
     return (
         <header className="topbar">
             <img className="brand" src="./icon.svg" alt="" />
-            <span className="title">Live Viewer</span>
+            <span className="title">Controller</span>
             <span className={`dim-badge dim-mono conn-pill ${live ? "ok" : connection.state === "degraded" ? "warn" : ""}`} title={connection.error ?? ""}>
                 <span className="dot" />
                 {live ? `${connection.topics.length} topics` : connection.state === "lost" ? "no bridge" : connection.state}

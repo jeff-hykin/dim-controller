@@ -1,5 +1,5 @@
 {
-    description = "dim-live-viewer: live 3D view, driving and recording for a running dimOS stack, as a dimOS Desktop app";
+    description = "dim-controller: drive a running dimOS robot with its live 3D view, cameras and recording, as a dimOS Desktop app";
 
     inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,10 +23,10 @@
 
                     # the page: React + Vite (type-checked first), from package-lock.json
                     frontend = pkgs.buildNpmPackage {
-                        pname = "dim-live-viewer-frontend";
+                        pname = "dim-controller-frontend";
                         version = "0.1.0";
                         src = ./frontend;
-                        npmDepsHash = "sha256-nMfPTXcTe9isOLJdYf7KVJLNOjWpVJ5UMabV+vjydvA=";
+                        npmDepsHash = "sha256-WYspSBdYS0dfOrO1GfsTTCJOP1r3bAe2OsRHN20bs4E=";
                         installPhase = ''
                             cp -r dist $out
                         '';
@@ -35,7 +35,7 @@
                     # the backend: serves the page and records topics to mcap (independent of the page, so a page
                     # change doesn't rebuild it)
                     server = rustPlatform.buildRustPackage {
-                        pname = "dim-live-viewer-server";
+                        pname = "dim-controller-server";
                         version = "0.1.0";
                         src = ./server;
                         cargoLock.lockFile = ./server/Cargo.lock;
@@ -50,7 +50,7 @@
                             rustCross = rust.override { targets = [ target ]; };
                         in
                         (pkgs.makeRustPlatform { cargo = rustCross; rustc = rustCross; }).buildRustPackage {
-                            pname = "dim-live-viewer-server-${arch}-linux";
+                            pname = "dim-controller-server-${arch}-linux";
                             version = "0.1.0";
                             src = ./server;
                             cargoLock.lockFile = ./server/Cargo.lock;
@@ -67,9 +67,9 @@
                     # the same wrapper as dimosApp, but its shell is the target's (a cache.nixos.org download); the frontend is plain JS
                     linuxApp = arch:
                         let linux = nixpkgs.legacyPackages."${arch}-linux"; in
-                        pkgs.runCommand "dim-live-viewer-${arch}-linux" { } ''
+                        pkgs.runCommand "dim-controller-${arch}-linux" { } ''
                             mkdir -p $out/bin
-                            printf '#!%s\nexport LIVE_VIEWER_FRONTEND="''${LIVE_VIEWER_FRONTEND:-%s}"\nexec %s "$@"\n' \
+                            printf '#!%s\nexport CONTROLLER_FRONTEND="''${CONTROLLER_FRONTEND:-%s}"\nexec %s "$@"\n' \
                                 ${linux.runtimeShell} ${frontend} ${crossServer arch}/bin/dimos-app-server > $out/bin/dimos-app-server
                             chmod +x $out/bin/dimos-app-server
                             cp ${./icon.svg} $out/icon.svg
@@ -77,9 +77,9 @@
                 in {
                     inherit frontend server;
                     # what Desktop builds: bin/dimos-app-server, which serves everything under /apps/<name>/
-                    dimosApp = pkgs.runCommand "dim-live-viewer" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
+                    dimosApp = pkgs.runCommand "dim-controller" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
                         mkdir -p $out/bin
-                        makeWrapper ${server}/bin/dimos-app-server $out/bin/dimos-app-server --set-default LIVE_VIEWER_FRONTEND ${frontend}
+                        makeWrapper ${server}/bin/dimos-app-server $out/bin/dimos-app-server --set-default CONTROLLER_FRONTEND ${frontend}
                         cp ${./icon.svg} $out/icon.svg
                     '';
                     default = self.packages.${pkgs.system}.dimosApp;

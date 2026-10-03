@@ -1,4 +1,4 @@
-//! Live Viewer's `dimos-app-server` (dimOS Desktop app contract, docs/apps.md in dimos-desktop): serves the built
+//! Controller's `dimos-app-server` (dimOS Desktop app contract, docs/apps.md in dimos-desktop): serves the built
 //! page and every action as an HTTP endpoint (api.rs, listed at /agent.json): an mcap recorder that subscribes to
 //! dimos topics over zenoh while a recording runs, location labels, live annotations, the agent's view of the page,
 //! the page's settings, the camera and driving.
@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
-#[command(about = "Live Viewer backend: the page plus an mcap recorder")]
+#[command(about = "Controller backend: the page, driving, and an mcap recorder")]
 pub struct Args {
     /// serve HTTP on this unix socket (Desktop passes it)
     #[arg(long, env = "DIMOS_APP_SOCKET")]
@@ -44,34 +44,61 @@ pub struct Args {
     #[arg(long, env = "DIMOS_PYTHON", default_value = "")]
     dimos_python: String,
     /// the built page (vite's dist); the nix wrapper sets it
-    #[arg(long, env = "LIVE_VIEWER_FRONTEND")]
+    #[arg(long, env = "CONTROLLER_FRONTEND")]
     frontend: Option<PathBuf>,
-    /// where recordings go [default: Desktop's shared folder $DIMOS_RECORDINGS_DIR/live-viewer, else $DIMOS_APP_DATA/recordings]
-    #[arg(long, env = "LIVE_VIEWER_RECORD_DIR")]
+    /// where recordings go [default: Desktop's shared folder $DIMOS_RECORDINGS_DIR/controller (or its live-viewer
+    /// folder, if this app made one before it was renamed), else $DIMOS_APP_DATA/recordings]
+    #[arg(long, env = "CONTROLLER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
     /// print the endpoints (agent.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
     #[arg(long)]
     agent_json: bool,
 }
 
+/// The app's name before it was renamed: its data dir and recordings folder are still used (see `default_record_dir`,
+/// `settings_file`), so nothing a user made is lost.
+const OLD_APP_NAME: &str = "dim-live-viewer";
+
 /// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
-/// app's data dir, never the app's own (git) checkout.
+/// app's data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
 fn default_record_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("DIMOS_RECORDINGS_DIR") {
         if !dir.is_empty() {
-            return PathBuf::from(dir).join("live-viewer");
+            let old = PathBuf::from(&dir).join("live-viewer");
+            return if old.is_dir() { old } else { PathBuf::from(dir).join("controller") };
         }
     }
-    if let Ok(dir) = std::env::var("DIMOS_APP_DATA") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join("recordings");
-        }
+    if let Some(data) = app_data() {
+        let old = data.parent().map(|apps| apps.join(OLD_APP_NAME).join("recordings")).filter(|old| old.is_dir());
+        return match old {
+            Some(old) if !data.join("recordings").is_dir() => old,
+            _ => data.join("recordings"),
+        };
     }
     let home = std::env::var("DIMOS_HOME").map(PathBuf::from).unwrap_or_else(|_| {
         PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
     });
-    let app = std::env::var("DIMOS_APP_NAME").unwrap_or_else(|_| "dim-live-viewer".into());
+    let app = std::env::var("DIMOS_APP_NAME").unwrap_or_else(|_| "dim-controller".into());
     home.join("data").join(app).join("recordings")
+}
+
+fn app_data() -> Option<PathBuf> {
+    std::env::var("DIMOS_APP_DATA").ok().filter(|dir| !dir.is_empty()).map(PathBuf::from)
+}
+
+/// `settings.json` in the app's data dir. Installed under its new name, the app starts from the settings it had under
+/// the old one (a copy: the old install, if still there, keeps its own).
+fn settings_file() -> Option<PathBuf> {
+    let data = app_data()?;
+    let file = data.join("settings.json");
+    let old = data.parent().map(|apps| apps.join(OLD_APP_NAME).join("settings.json"));
+    if let Some(old) = old.filter(|old| !file.exists() && old.is_file() && *old != file) {
+        let _ = std::fs::create_dir_all(&data);
+        if std::fs::copy(&old, &file).is_ok() {
+            eprintln!("controller: settings carried over from {}", old.display());
+        }
+    }
+    Some(file)
 }
 
 #[tokio::main]
@@ -83,9 +110,9 @@ async fn main() -> Result<()> {
     }
     let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
     let frontend = args.frontend.clone().unwrap_or_else(|| PathBuf::from("frontend/dist"));
-    eprintln!("live viewer: page {}, recordings {}", frontend.display(), record_dir.display());
+    eprintln!("controller: page {}, recordings {}", frontend.display(), record_dir.display());
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
-    let settings_file = std::env::var("DIMOS_APP_DATA").ok().filter(|dir| !dir.is_empty()).map(|dir| PathBuf::from(dir).join("settings.json"));
+    let settings_file = settings_file();
     let api = api::Api {
         recorder: state.clone(),
         annotations: Arc::default(),
@@ -106,7 +133,7 @@ async fn main() -> Result<()> {
     };
     if let Some(port) = args.port {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.with_context(|| format!("bind :{port}"))?;
-        eprintln!("live viewer: http://127.0.0.1:{port}/");
+        eprintln!("controller: http://127.0.0.1:{port}/");
         axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
     } else {
         let socket = args.socket.clone().context("--socket or --port is required")?;

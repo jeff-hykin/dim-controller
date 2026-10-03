@@ -1,5 +1,5 @@
 {
-    "name": "dim-live-viewer",
+    "name": "dim-controller",
     "private": true,
     "type": "module",
     "scripts": {

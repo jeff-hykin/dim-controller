@@ -24,7 +24,7 @@ pub const SCENE_TOPIC: &str = "/labels/scene";
 const SCENE_SCHEMA: &[u8] = include_bytes!("schemas/foxglove.SceneUpdate.json");
 const LABEL_SCHEMA: &[u8] = br#"{
   "title": "dimos.LocationLabel",
-  "description": "A text label at a pose, made in dim-live-viewer by right-clicking the 3D view. action is add or delete (the id says which).",
+  "description": "A text label at a pose, made in the Controller (dim-controller) by right-clicking the 3D view. action is add or delete (the id says which).",
   "type": "object",
   "properties": {
     "timestamp": { "type": "object", "properties": { "sec": { "type": "integer" }, "nsec": { "type": "integer" } }, "description": "when it was made" },
