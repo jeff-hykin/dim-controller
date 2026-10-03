@@ -80,7 +80,7 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
             {status.unavailable && <p className="problem">{status.unavailable}</p>}
             <button
                 type="button"
-                className={`record-button ${active ? "recording" : ""}`}
+                className={`dim-btn lg record-button ${active ? "danger recording" : ""}`}
                 disabled={!!status.unavailable || (!active && !selected.length)}
                 onClick={() => run(active ? recorder.stop() : recorder.start(selected.map((topic) => topic.key)))}
             >
@@ -104,9 +104,9 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
                 <Select value={status.settings.compression} options={[["none", "uncompressed"], ["lz4", "lz4"], ["zstd", "zstd"]]} onChange={(compression) => run(recorder.settings({ compression: compression as never }))} />
             </Field>
             <Field label="New topics"><Toggle value={recordNew} onChange={(value) => options.update({ recordNew: value })} label="join a running recording" /></Field>
-            <Field label="Folder"><input className="text" defaultValue={status.directory} key={status.directory} disabled={active} onBlur={(event) => event.target.value !== status.directory && run(recorder.settings({ directory: event.target.value }))} /></Field>
+            <Field label="Folder"><input className="dim-input" defaultValue={status.directory} key={status.directory} disabled={active} onBlur={(event) => event.target.value !== status.directory && run(recorder.settings({ directory: event.target.value }))} /></Field>
 
-            <h3>Topics · {selected.length} of {topics.length}</h3>
+            <h3 className="dim-label">Topics · {selected.length} of {topics.length}</h3>
             <div className="record-topics">
                 {plain.map((topic) => <TopicRow key={topic.key} topic={topic} chosen={chosen} />)}
                 {rpc.length > 0 && (
@@ -130,18 +130,18 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
                 )}
             </div>
 
-            <h3>Recordings</h3>
+            <h3 className="dim-label">Recordings</h3>
             {!status.files.length && <p className="empty">none yet</p>}
             <ul className="files">
                 {status.files.map((file) => (
                     <li key={file.name} className="file">
                         <span className="file-name" title={file.path}>{file.name}</span>
                         <span className="file-meta">{megabytes(file.bytes)} · {age(file.seconds_old)}</span>
-                        <a className="icon-button" href={recorder.downloadUrl(file)} download={file.name.split("/").pop()} title="Download"><Icon name="download" size={16} /></a>
-                        <button type="button" className="icon-button" title="Copy path" onClick={() => navigator.clipboard?.writeText(file.path)}><Icon name="copy" size={16} /></button>
+                        <a className="dim-btn icon icon-button" href={recorder.downloadUrl(file)} download={file.name.split("/").pop()} title="Download"><Icon name="download" size={16} /></a>
+                        <button type="button" className="dim-btn icon icon-button" title="Copy path" onClick={() => navigator.clipboard?.writeText(file.path)}><Icon name="copy" size={16} /></button>
                         <button
                             type="button"
-                            className={`icon-button ${confirm === file.name ? "danger" : ""}`}
+                            className={`dim-btn icon icon-button ${confirm === file.name ? "danger" : ""}`}
                             title={confirm === file.name ? "Click again to delete" : "Delete"}
                             onClick={() => {
                                 if (confirm === file.name) {

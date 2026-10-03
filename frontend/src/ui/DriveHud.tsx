@@ -15,7 +15,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
 
     const arm = (
-        <button type="button" className={`arm-button ${state.armed ? "armed" : ""}`} onClick={() => drive.setArmed(!state.armed)} title={state.armed ? "Disarm: stop sending commands" : "Arm: keys and sticks drive the robot"}>
+        <button type="button" className={`dim-btn lg arm-button ${state.armed ? "danger armed" : ""}`} onClick={() => drive.setArmed(!state.armed)} title={state.armed ? "Disarm: stop sending commands" : "Arm: keys and sticks drive the robot"}>
             {state.armed ? "ARMED" : "ARM"}
         </button>
     )
@@ -28,8 +28,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     {arm}
                     {state.armed && (
                         <>
-                            <button type="button" className={`boost-button ${state.boost ? "on" : ""}`} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST" : "fast"}</button>
-                            <button type="button" className="stop-button" onClick={() => drive.stop()}>STOP</button>
+                            <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST" : "fast"}</button>
+                            <button type="button" className="dim-btn danger lg stop-button" onClick={() => drive.stop()}>STOP</button>
                         </>
                     )}
                 </div>
@@ -45,7 +45,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         return key ? <span className={`key ${lit(axis, sign) ? "down" : ""}`}>{key}</span> : <span className="key empty" />
     }
     return (
-        <div className={`drive-hud ${state.armed ? "armed" : ""}`}>
+        <div className={`dim-panel glass drive-hud ${state.armed ? "armed" : ""}`}>
             {arm}
             <div className="keys" aria-label="drive keys">
                 <div>{usesStrafe ? cell("strafe", 1) : usesVertical ? cell("vertical", -1) : <span className="key empty" />}{cell("forward", 1)}{usesStrafe ? cell("strafe", -1) : usesVertical ? cell("vertical", 1) : <span className="key empty" />}</div>

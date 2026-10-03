@@ -23,6 +23,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             </div>
             <Field label="Topic" hint="geometry_msgs.Twist commands go to dimos/<topic>/geometry_msgs.Twist">
                 <select
+                    className="dim-select"
                     value={settings.topic || ""}
                     onChange={(event) => drive.settings.update({ topic: event.target.value })}
                 >
@@ -33,7 +34,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             </Field>
             <Field label="Other">
                 <input
-                    className="text"
+                    className="dim-input"
                     placeholder="/my_cmd_vel"
                     value={custom}
                     onChange={(event) => setCustom(event.target.value)}
@@ -53,7 +54,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             </p>
             {app.profile.controls.length > 0 && (
                 <section className="controls">
-                    <h3>{app.profile.name}</h3>
+                    <h3 className="dim-label">{app.profile.name}</h3>
                     {app.profile.controls.map((control) =>
                         control.kind === "slider"
                             ? (
@@ -61,7 +62,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                                     <Slider min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
                                 </Field>
                             )
-                            : <button key={control.id} type="button" className="button" disabled={!state.armed} onClick={() => drive.pressButton(control.id)}>{control.label}</button>
+                            : <button key={control.id} type="button" className="dim-btn sm" disabled={!state.armed} onClick={() => drive.pressButton(control.id)}>{control.label}</button>
                     )}
                 </section>
             )}

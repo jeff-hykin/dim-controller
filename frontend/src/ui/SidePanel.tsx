@@ -13,10 +13,10 @@ const TITLES: Record<Tab, string> = { layers: "Layers", drive: "Drive", record: 
 
 export function SidePanel({ app, tab, onClose, mobile }: { app: ViewerApp; tab: Tab; onTab: (tab: Tab) => void; onClose: () => void; mobile: boolean }) {
     return (
-        <aside className={`side-panel ${mobile ? "sheet" : ""}`} data-tab={tab}>
+        <aside className={`dim-panel glass side-panel ${mobile ? "sheet" : ""}`} data-tab={tab}>
             <div className="panel-head">
-                <h2>{TITLES[tab]}</h2>
-                <button type="button" className="icon-button" title="Close" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
+                <h2 className="dim-card-title">{TITLES[tab]}</h2>
+                <button type="button" className="dim-btn icon icon-button" title="Close" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
             </div>
             <div className="panel-body">
                 {tab === "layers" && <LayersPanel app={app} />}

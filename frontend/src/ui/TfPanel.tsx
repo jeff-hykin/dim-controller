@@ -36,7 +36,7 @@ export function TfPanel({ app }: { app: ViewerApp }) {
     return (
         <div className="tf-panel">
             <Field label="Fixed frame" hint="everything is drawn relative to this frame">
-                <select value={view.fixedFrame} onChange={(event) => app.settings.update({ fixedFrame: event.target.value })}>
+                <select className="dim-select" value={view.fixedFrame} onChange={(event) => app.settings.update({ fixedFrame: event.target.value })}>
                     <option value="">auto ({frameInfo.fixedFrame})</option>
                     {snapshot.frames.map((frame) => <option key={frame} value={frame}>{frame}</option>)}
                 </select>

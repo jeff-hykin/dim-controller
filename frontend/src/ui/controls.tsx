@@ -12,7 +12,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 
 export function Select({ value, options, onChange }: { value: string; options: [string, string][]; onChange: (value: string) => void }) {
     return (
-        <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <select className="dim-select" value={value} onChange={(event) => onChange(event.target.value)}>
             {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
     )
@@ -21,7 +21,7 @@ export function Select({ value, options, onChange }: { value: string; options: [
 export function Slider({ value, min, max, step, onChange, format }: { value: number; min: number; max: number; step: number; onChange: (value: number) => void; format?: (value: number) => string }) {
     return (
         <span className="slider">
-            <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+            <input type="range" className="dim-range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
             <span className="slider-value">{format ? format(value) : value}</span>
         </span>
     )
@@ -29,10 +29,11 @@ export function Slider({ value, min, max, step, onChange, format }: { value: num
 
 export function Toggle({ value, onChange, label }: { value: boolean; onChange: (value: boolean) => void; label?: string }) {
     return (
-        <button type="button" className={`toggle ${value ? "on" : ""}`} aria-pressed={value} onClick={() => onChange(!value)}>
-            <span className="toggle-knob" />
+        <label className="dim-switch toggle">
+            <input type="checkbox" checked={value} onChange={(event) => onChange(event.target.checked)} />
+            <span className="track" />
             {label && <span className="toggle-label">{label}</span>}
-        </button>
+        </label>
     )
 }
 
@@ -40,7 +41,7 @@ export function NumberInput({ value, onChange, step = 0.1, placeholder }: { valu
     return (
         <input
             type="number"
-            className="number"
+            className="dim-input number"
             step={step}
             placeholder={placeholder}
             value={value ?? ""}
@@ -51,7 +52,7 @@ export function NumberInput({ value, onChange, step = 0.1, placeholder }: { valu
 
 export function IconButton({ title, onClick, active, children, className = "" }: { title: string; onClick: () => void; active?: boolean; children: ReactNode; className?: string }) {
     return (
-        <button type="button" className={`icon-button ${active ? "active" : ""} ${className}`} title={title} aria-label={title} onClick={onClick}>
+        <button type="button" className={`dim-btn icon icon-button ${active ? "on" : ""} ${className}`} title={title} aria-label={title} onClick={onClick}>
             {children}
         </button>
     )

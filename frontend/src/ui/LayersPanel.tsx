@@ -5,6 +5,7 @@ import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { useStore } from "../core/store.ts"
 import { Toggle } from "./controls.tsx"
+import { Icon } from "./icons.tsx"
 
 function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     const [open, setOpen] = useState(false)
@@ -16,7 +17,7 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
                 <button type="button" className="layer-name" onClick={() => setOpen(!open)} disabled={!Settings} title={entry.topic.key}>
                     <span className="topic-name">{entry.topic.name}</span>
                     <span className="topic-type">{entry.topic.type.split(".")[1]}</span>
-                    {Settings && <span className={`chevron ${open ? "open" : ""}`}>›</span>}
+                    {Settings && <span className={`chevron ${open ? "open" : ""}`}><Icon name="chevron-right" size={14} /></span>}
                 </button>
             </div>
             {entry.enabled && (entry.status.problem || entry.status.info) && (
@@ -45,7 +46,7 @@ export function LayersPanel({ app }: { app: ViewerApp }) {
             {!list.length && <p className="empty">Waiting for topics… start a blueprint (or a replay) and they appear here.</p>}
             {[...groups].map(([label, entries]) => (
                 <section key={label} className="layer-group">
-                    <h3>{label}</h3>
+                    <h3 className="dim-label">{label}</h3>
                     {entries.map((entry) => <LayerRow key={entry.topic.key} app={app} entry={entry} />)}
                 </section>
             ))}

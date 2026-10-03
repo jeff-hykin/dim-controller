@@ -85,7 +85,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
                     onMain={() => layout.update({ main: main === panel.id ? null : panel.id })}
                 />
             ))}
-            <button type="button" className="add-camera" title="Add a camera panel" onClick={add}>
+            <button type="button" className="dim-btn icon add-camera" title="Add a camera panel" onClick={add}>
                 <Icon name="camera" size={16} />
                 <Icon name="plus" size={12} />
             </button>
@@ -230,30 +230,30 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         : {}
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     return (
-        <div ref={element} className={`camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
+        <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
             <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain}>
-                <select value={panel.key} onChange={(event) => onChange({ key: event.target.value })} aria-label="Camera topic">
+                <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value })} aria-label="Camera topic">
                     {!topic && <option value={panel.key}>{panel.key ? "(gone) " + panel.key : "pick a camera"}</option>}
                     {topics.filter(isImage).map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
                 </select>
                 {overlays.length > 0 && (
-                    <select value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
+                    <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
                         <option value="">no overlay</option>
                         {overlays.map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
                     </select>
                 )}
                 {depth && (
                     <>
-                        <select value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
+                        <select className="dim-select" value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
                             {DEPTH_COLORMAPS.map((name) => <option key={name} value={name}>{name}</option>)}
                         </select>
-                        <input className="number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
-                        <input className="number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
+                        <input className="dim-input number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
+                        <input className="dim-input number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
                     </>
                 )}
                 <span className="camera-info">{size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : "…"}</span>
-                <button type="button" className="icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
-                <button type="button" className="icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
+                <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
+                <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
             </div>
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
                 {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}

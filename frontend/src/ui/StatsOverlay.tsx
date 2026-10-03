@@ -11,7 +11,7 @@ export function StatsOverlay({ app }: { app: ViewerApp }) {
     }
     const ms = (value: number | null) => value === null ? "–" : `${value.toFixed(1)} ms`
     return (
-        <div className="stats-overlay" data-testid="stats">
+        <div className="dim-panel glass dim-mono stats-overlay" data-testid="stats">
             <div>{stats.fps} fps · {stats.frameMs.toFixed(2)} ms/frame CPU</div>
             <div>latency p50 {ms(stats.latencyP50)} · p95 {ms(stats.latencyP95)}</div>
             <div>arrival→frame {ms(stats.arrivalToFrameMs)} · rtt {ms(connection.rttMs)}</div>
