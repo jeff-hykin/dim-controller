@@ -3,8 +3,9 @@ import * as THREE from "three"
 
 /** Stops as [position 0..1, "#rrggbb"]; piecewise-linear in sRGB. */
 const RAMPS: Record<string, [number, string][]> = {
-    // MemWorld's height ramp (memory_world/replay_serving.py HEIGHT_COLOR_STOPS): purple, blue, cyan, mint
-    memworld: [[0, "#6e1eaa"], [1 / 3, "#285aeb"], [2 / 3, "#28c8e6"], [1, "#96f096"]],
+    // MemWorld's height ramp (memory_world/replay_serving.py HEIGHT_COLOR_STOPS: #6e1eaa #285aeb #28c8e6 #96f096),
+    // purple, blue, cyan, mint, with 13% more saturation
+    memworld: [[0, "#6f15b3"], [1 / 3, "#1b54f8"], [2 / 3, "#1cd0f2"], [1, "#90f690"]],
     // Turbo (Google's improved rainbow): the best general height ramp; every band reads apart
     // the floor is usually the lowest band, so the ramp starts at turbo's blue rather than its near-black
     turbo: [[0, "#3e5fd8"], [0.2, "#4675ed"], [0.3, "#39a2fc"], [0.4, "#1bcfd4"], [0.5, "#24eca6"], [0.6, "#61fc6c"], [0.7, "#a4fc3b"], [0.8, "#d1e834"], [0.9, "#f3c63a"], [1, "#fe9b2d"]],

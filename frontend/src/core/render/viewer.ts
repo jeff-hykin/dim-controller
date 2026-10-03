@@ -6,6 +6,7 @@ import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js"
 import { Store } from "../store.ts"
 import { focusDistance } from "./pointMaterial.ts"
 import { FRAME_BUDGET_MS, splatFallback } from "./rendering.ts"
+import { SmoothFollow } from "./follow.ts"
 
 export interface RenderStats {
     fps: number
@@ -28,6 +29,9 @@ export interface FrameInfo {
 }
 
 export type FrameListener = (frame: FrameInfo) => void
+
+/** The canvas renders at the screen's resolution, up to 2× (beyond that the extra pixels cost more than they show). */
+const pixelRatio = () => Math.min(2, devicePixelRatio || 1)
 
 export class Viewer {
     readonly renderer: THREE.WebGLRenderer
@@ -57,16 +61,18 @@ export class Viewer {
     #lastDeclutter = 0
     #slowSeconds = 0
     #bridgeNow: () => number
+    #follow = new SmoothFollow()
     #lastFollow = new THREE.Vector3()
     #following = false
     #followDelta = new THREE.Vector3()
+    #lastFrame = 0
 
     constructor(host: HTMLElement, bridgeNow: () => number) {
         this.#host = host
         this.#bridgeNow = bridgeNow
         // no MSAA (as MemWorld): it nearly doubled the cost of blended splats at 2880×1800
         this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" })
-        this.renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+        this.renderer.setPixelRatio(pixelRatio())
         this.renderer.setClearColor(0x000000, 0)
         host.appendChild(this.renderer.domElement)
         this.labels = new CSS2DRenderer()
@@ -90,6 +96,7 @@ export class Viewer {
         this.scene.add(this.#grid)
 
         new ResizeObserver(() => this.#resize()).observe(host)
+        this.#watchPixelRatio()
         this.#resize()
         requestAnimationFrame(this.#loop)
     }
@@ -219,6 +226,7 @@ export class Viewer {
         this.controls.target.copy(target)
         this.camera.position.copy(target).addScaledVector(direction, distance)
         this.#following = false
+        this.#follow.reset()
         this.requestRender()
     }
 
@@ -226,7 +234,21 @@ export class Viewer {
         this.controls.target.copy(target)
         this.camera.position.set(target.x, target.y - distance * 0.01, target.z + distance)
         this.#following = false
+        this.#follow.reset()
         this.requestRender()
+    }
+
+    /**
+     * devicePixelRatio changes when the window moves between a Retina and a 1× display or the page is zoomed; a ratio
+     * read once at startup leaves the canvas at the old resolution (blurry, pixelated) until a reload.
+     */
+    #watchPixelRatio() {
+        const query = matchMedia(`(resolution: ${devicePixelRatio}dppx)`)
+        query.addEventListener("change", () => {
+            this.renderer.setPixelRatio(pixelRatio())
+            this.#resize()
+            this.#watchPixelRatio()
+        }, { once: true })
     }
 
     #resize() {
@@ -243,20 +265,25 @@ export class Viewer {
 
     #loop = (now: number) => {
         requestAnimationFrame(this.#loop)
-        // following moves camera and target together, so the user's angle and zoom stay put
+        // following moves camera and target together, so the user's angle and zoom stay put; the followed point glides
+        // between poses (follow.ts) rather than jumping with each one
+        const dt = this.#lastFrame ? (now - this.#lastFrame) / 1000 : 0
+        this.#lastFrame = now
         if (this.followTarget) {
+            const [x, y, z] = this.#follow.step([this.followTarget.x, this.followTarget.y, this.followTarget.z], dt)
             if (this.#following) {
-                const delta = this.#followDelta.subVectors(this.followTarget, this.#lastFollow)
+                const delta = this.#followDelta.set(x, y, z).sub(this.#lastFollow)
                 if (delta.lengthSq() > 1e-10) {
                     this.camera.position.add(delta)
                     this.controls.target.add(delta)
                     this.#dirty = true
                 }
             }
-            this.#lastFollow.copy(this.followTarget)
+            this.#lastFollow.set(x, y, z)
             this.#following = true
         } else {
             this.#following = false
+            this.#follow.reset()
         }
         focusDistance.value = this.camera.position.distanceTo(this.controls.target)
         if (this.controls.update()) {
