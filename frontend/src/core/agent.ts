@@ -9,6 +9,7 @@ import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
 import { appEvents } from "./events.js"
+import type { LocationLabel } from "./labels.ts"
 
 export interface Annotation {
     id: string
@@ -73,10 +74,13 @@ export class AgentLink {
     }
 
     #listen() {
-        const stop = appEvents((event: { type: string; annotations?: Annotation[]; request?: string; kind?: string; args?: unknown }) => {
+        const stop = appEvents((event: { type: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown }) => {
             if (event.type === "annotations" && event.annotations) {
                 this.#annotations = event.annotations
                 this.#rebuild()
+            } else if (event.type === "labels" && event.labels) {
+                // location labels ride the same stream (one socket per page)
+                this.app.labels.apply(event.labels)
             } else if (event.type === "capture" && event.request) {
                 this.#answer(event.request, event.kind ?? "", event.args)
             }

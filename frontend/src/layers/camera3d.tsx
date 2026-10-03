@@ -58,6 +58,8 @@ class Camera3dLayer {
 
     constructor(readonly context: LayerContext, readonly topic: Topic, readonly settings: Store<Camera3dSettings>) {
         this.#content.matrixAutoUpdate = false
+        // a floating camera picture is not a place: right-click labels go through it
+        this.#content.userData.noPick = true
         this.root.add(this.#content)
         this.#frustum = new FatLines(context.viewer.resolution, { width: 1.5, color: 0xffd166 })
         this.#source = context.video.acquire(topic)

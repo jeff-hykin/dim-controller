@@ -28,9 +28,26 @@ const QUEUE_DEPTH: usize = 256;
 
 struct Sample {
     topic: String,
-    msg_type: Option<String>,
-    payload: Vec<u8>,
+    body: Body,
     log_time: u64,
+}
+
+enum Body {
+    /// a dimos wire message: transcoded to CDR when its type is known, else kept as LCM
+    Wire { msg_type: Option<String>, payload: Vec<u8> },
+    /// already encoded by the caller (the JSON log and label channels)
+    Encoded(Encoded),
+}
+
+/// A message the caller encoded itself, with the schema its channel is declared with.
+pub struct Encoded {
+    pub schema_name: &'static str,
+    /// e.g. "jsonschema"
+    pub schema_encoding: &'static str,
+    pub schema: &'static [u8],
+    /// e.g. "json"
+    pub message_encoding: &'static str,
+    pub data: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -115,11 +132,21 @@ impl Recorder {
         };
         let sample = Sample {
             topic: topic.to_string(),
-            msg_type: msg_type.map(str::to_string),
-            payload: payload.to_vec(),
+            body: Body::Wire { msg_type: msg_type.map(str::to_string), payload: payload.to_vec() },
             log_time: now_nanos(),
         };
         if let Err(TrySendError::Full(_)) = sender.try_send(sample) {
+            self.counters.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Writes an already-encoded message at `log_time` (ns since the epoch). It waits for room in the queue
+    /// instead of shedding: these are logs and labels, rare next to sensor data and not worth losing.
+    pub fn write_encoded(&self, topic: &str, encoded: Encoded, log_time: u64) {
+        let Some(sender) = self.sender.lock().unwrap().clone() else {
+            return;
+        };
+        if sender.send(Sample { topic: topic.to_string(), body: Body::Encoded(encoded), log_time }).is_err() {
             self.counters.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -172,34 +199,38 @@ fn drain(
 ) -> Result<()> {
     let mut channels: HashMap<String, (u16, u32)> = HashMap::new();
     for sample in receiver {
-        let encoded = sample
-            .msg_type
-            .as_deref()
-            .and_then(|msg_type| transcode(msg_type, &sample.payload, image_format));
-
-        let channel_id = match channels.get(&sample.topic) {
-            Some((id, _)) => *id,
-            None => {
-                let id = match &encoded {
-                    Some(encoded) => {
-                        let schema_id = writer.add_schema(
-                            &encoded.schema_name,
-                            "ros2msg",
-                            encoded.schema_text.as_bytes(),
-                        )?;
-                        writer.add_channel(schema_id, &sample.topic, "cdr", &BTreeMap::new())?
+        let (channel_id, data) = match sample.body {
+            Body::Encoded(encoded) => {
+                let id = match channels.get(&sample.topic) {
+                    Some((id, _)) => *id,
+                    None => {
+                        let schema_id = writer.add_schema(encoded.schema_name, encoded.schema_encoding, encoded.schema)?;
+                        let id = writer.add_channel(schema_id, &sample.topic, encoded.message_encoding, &BTreeMap::new())?;
+                        channels.insert(sample.topic.clone(), (id, 0));
+                        id
                     }
-                    // Schema id 0 means "no schema", which is how an
-                    // untranscodable type gets stored rather than dropped.
-                    None => writer.add_channel(
-                        0,
-                        &sample.topic,
-                        "lcm",
-                        &lcm_metadata(sample.msg_type.as_deref()),
-                    )?,
                 };
-                channels.insert(sample.topic.clone(), (id, 0));
-                id
+                (id, encoded.data)
+            }
+            Body::Wire { msg_type, payload } => {
+                let encoded = msg_type.as_deref().and_then(|msg_type| transcode(msg_type, &payload, image_format));
+                let id = match channels.get(&sample.topic) {
+                    Some((id, _)) => *id,
+                    None => {
+                        let id = match &encoded {
+                            Some(encoded) => {
+                                let schema_id = writer.add_schema(&encoded.schema_name, "ros2msg", encoded.schema_text.as_bytes())?;
+                                writer.add_channel(schema_id, &sample.topic, "cdr", &BTreeMap::new())?
+                            }
+                            // Schema id 0 means "no schema", which is how an
+                            // untranscodable type gets stored rather than dropped.
+                            None => writer.add_channel(0, &sample.topic, "lcm", &lcm_metadata(msg_type.as_deref()))?,
+                        };
+                        channels.insert(sample.topic.clone(), (id, 0));
+                        id
+                    }
+                };
+                (id, encoded.map(|encoded| encoded.data).unwrap_or(payload))
             }
         };
 
@@ -209,7 +240,6 @@ fn drain(
             slot.1
         };
 
-        let data = encoded.map(|encoded| encoded.data).unwrap_or(sample.payload);
         writer.write_to_known_channel(
             &mcap::records::MessageHeader {
                 channel_id,
@@ -322,7 +352,7 @@ pub fn default_name() -> String {
     format!("live_viewer_{seconds}.mcap")
 }
 
-fn now_nanos() -> u64 {
+pub fn now_nanos() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|age| age.as_nanos() as u64)

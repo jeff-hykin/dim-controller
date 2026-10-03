@@ -22,6 +22,8 @@ export interface RecordingFile {
 export interface RecorderStatus {
     recording: RecordingStatus
     keys: string[]
+    /** dimos log dirs being tailed into the recording, and the lines written so far */
+    logs: { dirs: string[]; lines: number }
     files: RecordingFile[]
     settings: { compression: "none" | "lz4" | "zstd"; image_format: "raw" | "jpeg" | "png" | "webp" | "jpegxl" }
     directory: string
@@ -62,6 +64,34 @@ async function sharedRecordings(): Promise<RecordingFile[] | null> {
     }
 }
 
+/**
+ * Where the running dimos writes its jsonl logs, from Desktop: each run's log dir (`GET /dimos/runs`, every Desktop),
+ * else the logs roots (`GET /dimos/paths`, newer Desktops; the backend then follows run dirs that appear in them).
+ */
+async function dimosLogDirs(): Promise<{ log_dirs: string[]; log_roots: string[] }> {
+    const log_dirs: string[] = []
+    try {
+        const runs = await (await fetch(new URL("../../dimos/runs", location.href))).json()
+        for (const dir of [...(runs.runs ?? []).map((run: { log_dir?: string }) => run.log_dir), runs.launch?.logDir]) {
+            if (typeof dir === "string" && dir && !log_dirs.includes(dir)) {
+                log_dirs.push(dir)
+            }
+        }
+    } catch {
+        // not inside Desktop (dev server): no logs to record
+    }
+    if (log_dirs.length) {
+        return { log_dirs, log_roots: [] }
+    }
+    try {
+        const response = await fetch(new URL("../../dimos/paths", location.href))
+        const paths = response.ok ? await response.json() : {}
+        return { log_dirs, log_roots: (paths.logsDirs ?? []).filter((dir: unknown) => typeof dir === "string" && dir) }
+    } catch {
+        return { log_dirs, log_roots: [] }
+    }
+}
+
 async function call(path: string, init?: RequestInit) {
     const response = await fetch(base() + path, { headers: { "content-type": "application/json" }, ...init })
     if (response.status === 204) {
@@ -78,6 +108,7 @@ class RecorderClient {
     readonly status = new Store<RecorderStatus>({
         recording: { active: false, path: null, messages: 0, bytes: 0, dropped: 0, seconds: 0 },
         keys: [],
+        logs: { dirs: [], lines: 0 },
         files: [],
         settings: { compression: "none", image_format: "raw" },
         directory: "",
@@ -114,8 +145,20 @@ class RecorderClient {
     }
 
     async start(keys: string[]) {
-        await call("/start", { method: "POST", body: JSON.stringify({ keys }) })
+        await call("/start", { method: "POST", body: JSON.stringify({ keys, ...(await dimosLogDirs()) }) })
         await this.refresh()
+        this.#followRuns()
+    }
+
+    /** While recording, runs that start later bring their log dirs (the backend ignores ones it has). */
+    async #followRuns() {
+        while (this.status.get().recording.active) {
+            await new Promise((resolve) => setTimeout(resolve, 10_000))
+            const dirs = await dimosLogDirs()
+            if (this.status.get().recording.active && dirs.log_dirs.length) {
+                await call("/logs", { method: "POST", body: JSON.stringify(dirs) }).catch(() => {})
+            }
+        }
     }
 
     async add(keys: string[]) {

@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::image::ImageFormat;
+use crate::labels::{self, Labels};
+use crate::logs::LogTailer;
 use crate::record::{self, Compression, Recorder};
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug, Default)]
@@ -28,6 +30,26 @@ struct Active {
     recorder: Arc<Recorder>,
     subscribers: Vec<zenoh::pubsub::Subscriber<()>>,
     keys: BTreeSet<String>,
+    logs: LogTailer,
+}
+
+/// Where dimos's jsonl logs are: run log dirs, and logs roots holding one dir per run (logs.rs).
+#[derive(Deserialize, Default, Debug)]
+pub struct LogDirs {
+    #[serde(default)]
+    pub log_dirs: Vec<String>,
+    #[serde(default)]
+    pub log_roots: Vec<String>,
+}
+
+impl LogDirs {
+    fn paths(list: &[String]) -> Vec<PathBuf> {
+        list.iter().map(|dir| dir.trim()).filter(|dir| !dir.is_empty()).map(PathBuf::from).collect()
+    }
+
+    fn watch(&self, tailer: &LogTailer) {
+        tailer.watch(&Self::paths(&self.log_dirs), &Self::paths(&self.log_roots));
+    }
 }
 
 pub struct State {
@@ -36,6 +58,8 @@ pub struct State {
     zenoh_connect: String,
     session: AsyncMutex<Option<zenoh::Session>>,
     active: AsyncMutex<Option<Active>>,
+    /// the session's location labels (labels.rs); written into recordings
+    pub labels: Labels,
 }
 
 /// `dimos/<topic>/<pkg.Type>` → ("/<topic>", "pkg.Type"); anything else is not a dimos channel.
@@ -57,6 +81,7 @@ impl State {
             zenoh_connect,
             session: AsyncMutex::new(None),
             active: AsyncMutex::new(None),
+            labels: Labels::default(),
         }
     }
 
@@ -88,7 +113,7 @@ impl State {
             .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))
     }
 
-    pub async fn start(&self, keys: Vec<String>, name: Option<String>) -> anyhow::Result<record::RecordingStatus> {
+    pub async fn start(&self, keys: Vec<String>, name: Option<String>, logs: LogDirs) -> anyhow::Result<record::RecordingStatus> {
         let mut active = self.active.lock().await;
         if active.is_some() {
             anyhow::bail!("already recording");
@@ -97,7 +122,13 @@ impl State {
         let path = record::resolve(&directory, &name.unwrap_or_else(record::default_name))?;
         let settings = *self.settings.lock().unwrap();
         let recorder = Arc::new(Recorder::start(&path, settings.compression, settings.image_format)?);
-        let mut started = Active { recorder: recorder.clone(), subscribers: Vec::new(), keys: BTreeSet::new() };
+        // the labels made so far are part of the picture: they open the recording
+        for label in self.labels.list() {
+            labels::write(&recorder, &label, "add");
+        }
+        let tailer = LogTailer::start(recorder.clone());
+        logs.watch(&tailer);
+        let mut started = Active { recorder: recorder.clone(), subscribers: Vec::new(), keys: BTreeSet::new(), logs: tailer };
         for key in keys {
             if started.keys.insert(key.clone()) {
                 started.subscribers.push(self.subscribe(&recorder, &key).await?);
@@ -124,6 +155,27 @@ impl State {
         Ok(added)
     }
 
+    /// Log dirs found mid-recording (a run that started after it) join it.
+    pub async fn add_logs(&self, logs: LogDirs) -> anyhow::Result<Vec<String>> {
+        let active = self.active.lock().await;
+        let Some(active) = active.as_ref() else {
+            anyhow::bail!("not recording");
+        };
+        logs.watch(&active.logs);
+        Ok(active.logs.dirs())
+    }
+
+    /// Writes a label change into the recording if one is running; says whether it did.
+    pub async fn record_label(&self, label: &labels::Label, action: &str) -> bool {
+        match self.active.lock().await.as_ref() {
+            Some(active) => {
+                labels::write(&active.recorder, label, action);
+                true
+            }
+            None => false,
+        }
+    }
+
     pub async fn stop(&self) -> anyhow::Result<record::RecordingStatus> {
         let Some(active) = self.active.lock().await.take() else {
             anyhow::bail!("not recording");
@@ -132,8 +184,13 @@ impl State {
         for subscriber in active.subscribers {
             let _ = subscriber.undeclare().await;
         }
-        let recorder = active.recorder;
-        tokio::task::spawn_blocking(move || recorder.finish()).await?
+        let (recorder, logs) = (active.recorder, active.logs);
+        tokio::task::spawn_blocking(move || {
+            // the log tail's last pass writes into the recorder, so it stops first
+            logs.stop();
+            recorder.finish()
+        })
+        .await?
     }
 
     async fn status(&self) -> Status {
@@ -142,6 +199,7 @@ impl State {
         Status {
             recording: active.as_ref().map(|active| active.recorder.status()).unwrap_or_else(record::idle_status),
             keys: active.as_ref().map(|active| active.keys.iter().cloned().collect()).unwrap_or_default(),
+            logs: active.as_ref().map(|active| LogStatus { dirs: active.logs.dirs(), lines: active.logs.lines() }).unwrap_or_default(),
             files: record::list(&directory),
             settings: *self.settings.lock().unwrap(),
             directory: directory.display().to_string(),
@@ -153,15 +211,25 @@ impl State {
 struct Status {
     recording: record::RecordingStatus,
     keys: Vec<String>,
+    /// the log dirs being tailed and the lines written so far (while recording)
+    logs: LogStatus,
     files: Vec<record::RecordingFile>,
     settings: Settings,
     directory: String,
+}
+
+#[derive(Serialize, Default)]
+struct LogStatus {
+    dirs: Vec<String>,
+    lines: u64,
 }
 
 #[derive(Deserialize)]
 struct StartBody {
     keys: Vec<String>,
     name: Option<String>,
+    #[serde(flatten)]
+    logs: LogDirs,
 }
 
 #[derive(Deserialize)]
@@ -186,7 +254,7 @@ pub fn router(state: Arc<State>) -> Router {
         .route(
             "/api/recorder/start",
             post(|Extract(state): Extract<Arc<State>>, Json(body): Json<StartBody>| async move {
-                match state.start(body.keys, body.name).await {
+                match state.start(body.keys, body.name, body.logs).await {
                     Ok(status) => Json(status).into_response(),
                     Err(problem) => error(StatusCode::CONFLICT, problem),
                 }
@@ -197,6 +265,15 @@ pub fn router(state: Arc<State>) -> Router {
             post(|Extract(state): Extract<Arc<State>>, Json(body): Json<AddBody>| async move {
                 match state.add(body.keys).await {
                     Ok(added) => Json(serde_json::json!({ "added": added })).into_response(),
+                    Err(problem) => error(StatusCode::CONFLICT, problem),
+                }
+            }),
+        )
+        .route(
+            "/api/recorder/logs",
+            post(|Extract(state): Extract<Arc<State>>, Json(body): Json<LogDirs>| async move {
+                match state.add_logs(body).await {
+                    Ok(dirs) => Json(serde_json::json!({ "dirs": dirs })).into_response(),
                     Err(problem) => error(StatusCode::CONFLICT, problem),
                 }
             }),
@@ -349,6 +426,64 @@ mod tests {
         let topics: Vec<String> = mcap::MessageStream::new(&bytes).unwrap().map(|message| message.unwrap().channel.topic.clone()).collect();
         assert_eq!(topics, vec!["/test_cmd"; 5]);
         robot.close().await.unwrap();
+    }
+
+    /// Through the HTTP API: a label made before the recording, one during it, one deleted, and dimos log lines written
+    /// during it all land in the mcap on their own channels.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_recording_holds_the_logs_and_the_labels() {
+        let dir = temp_dir("logs_labels");
+        let run = dir.join("run");
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(run.join("main.jsonl"), "{\"event\": \"old\", \"level\": \"info\"}\n").unwrap();
+        let state = Arc::new(State::new(dir.clone(), String::new()));
+        let annotations = Arc::new(crate::annotations::Annotations::default());
+        let app = router(state.clone()).merge(crate::labels::router(state.clone(), annotations));
+        let label = |text: &str| format!(r#"{{"label":"{text}","frame_id":"world","position":[1,2,0]}}"#);
+        let (status, body) = call(&app, "POST", "/api/labels", &label("before")).await;
+        assert_eq!((status, &body["recorded"]), (StatusCode::OK, &serde_json::json!(false)));
+        let start = serde_json::json!({ "keys": [], "name": "full.mcap", "log_dirs": [run.display().to_string()] }).to_string();
+        let (status, body) = call(&app, "POST", "/api/recorder/start", &start).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let (_, body) = call(&app, "POST", "/api/labels", &label("during")).await;
+        assert_eq!(body["recorded"], true);
+        let id = body["label"]["id"].as_str().unwrap().to_string();
+        let (status, _) = call(&app, "DELETE", &format!("/api/labels/{id}"), "").await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new().append(true).open(run.join("main.jsonl")).unwrap();
+            writeln!(file, r#"{{"event": "went wrong", "level": "error", "logger": "dimos/x.py", "timestamp": "2026-10-03T08:00:00Z", "lineno": 3}}"#).unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let (_, body) = call(&app, "GET", "/api/recorder", "").await;
+        assert_eq!(body["logs"]["lines"], 1, "{body}");
+        let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let bytes = std::fs::read(dir.join("full.mcap")).unwrap();
+        let mut seen: Vec<(String, String, String, serde_json::Value)> = Vec::new();
+        for message in mcap::MessageStream::new(&bytes).unwrap() {
+            let message = message.unwrap();
+            let schema = message.channel.schema.as_ref().map(|schema| schema.name.clone()).unwrap_or_default();
+            seen.push((message.channel.topic.clone(), schema, message.channel.message_encoding.clone(), serde_json::from_slice(&message.data).unwrap()));
+        }
+        let on = |topic: &str| seen.iter().filter(|seen| seen.0 == topic).collect::<Vec<_>>();
+        let logs = on("/dimos/logs/main");
+        assert_eq!(logs.len(), 1);
+        assert_eq!((logs[0].1.as_str(), logs[0].2.as_str()), ("foxglove.Log", "json"));
+        assert_eq!(logs[0].3["message"], "went wrong");
+        assert_eq!(logs[0].3["level"], 4);
+        let labels: Vec<(String, String)> = on("/labels").iter().map(|seen| (seen.3["label"].as_str().unwrap().to_string(), seen.3["action"].as_str().unwrap().to_string())).collect();
+        assert_eq!(labels, vec![("before".into(), "add".into()), ("during".into(), "add".into()), ("during".into(), "delete".into())]);
+        assert!(on("/labels").iter().all(|seen| seen.1 == "dimos.LocationLabel" && seen.3["frame_id"] == "world"));
+        let scene = on("/labels/scene");
+        assert_eq!(scene.len(), 3);
+        assert_eq!(scene[0].1, "foxglove.SceneUpdate");
+        assert_eq!(scene[2].3["deletions"][0]["id"], id.as_str());
+        // the log line keeps its own time, which is before this recording: mcap's summary still covers it
+        let summary = mcap::Summary::read(&bytes).unwrap().unwrap();
+        assert_eq!(summary.stats.unwrap().message_count, 7);
     }
 
     #[tokio::test]

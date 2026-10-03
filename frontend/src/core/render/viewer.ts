@@ -146,6 +146,70 @@ export class Viewer {
         return () => this.#listeners.delete(listener)
     }
 
+    /**
+     * The point in the scene (the fixed frame) under a screen point (client px): the nearest drawn cloud point within a
+     * few pixels of the ray or the nearest mesh hit (a map plane, a marker), else where the ray meets the ground (z = 0).
+     * Null when the ray misses everything and points away from the ground.
+     */
+    pick(clientX: number, clientY: number): { point: THREE.Vector3; on: "points" | "mesh" | "ground" } | null {
+        const rect = this.renderer.domElement.getBoundingClientRect()
+        const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+        const raycaster = new THREE.Raycaster()
+        raycaster.setFromCamera(ndc, this.camera)
+        const { origin, direction } = raycaster.ray
+        // a cloud point counts within PICK_PX pixels of the ray: that's a cone of this slope
+        const PICK_PX = 6
+        const slope = (PICK_PX * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * 2) / Math.max(1, rect.height)
+        type Hit = { distance: number; point: THREE.Vector3; on: "points" | "mesh" }
+        // `as`: assigned inside visit(), which TS's narrowing can't see
+        let best = null as Hit | null
+        const meshes: THREE.Object3D[] = []
+        const point = new THREE.Vector3()
+        const offset = new THREE.Vector3()
+        const visit = (object: THREE.Object3D) => {
+            if (!object.visible || object.userData.noPick) {
+                return
+            }
+            if ((object as THREE.Points).isPoints) {
+                const geometry = (object as THREE.Points).geometry
+                const position = geometry.getAttribute("position") as THREE.BufferAttribute | undefined
+                if (position) {
+                    const end = Math.min(position.count, geometry.drawRange.start + geometry.drawRange.count)
+                    const array = position.array as ArrayLike<number>
+                    const world = object.matrixWorld
+                    for (let index = geometry.drawRange.start; index < end; index++) {
+                        point.set(array[index * 3], array[index * 3 + 1], array[index * 3 + 2]).applyMatrix4(world)
+                        offset.subVectors(point, origin)
+                        const along = offset.dot(direction)
+                        if (along <= this.camera.near || (best && along >= best.distance)) {
+                            continue
+                        }
+                        const away = offset.addScaledVector(direction, -along).length()
+                        if (away <= along * slope) {
+                            best = { distance: along, point: point.clone(), on: "points" }
+                        }
+                    }
+                }
+            } else if ((object as THREE.Mesh).isMesh) {
+                meshes.push(object)
+            }
+            for (const child of object.children) {
+                visit(child)
+            }
+        }
+        this.scene.updateMatrixWorld()
+        visit(this.scene)
+        const hit = raycaster.intersectObjects(meshes, false)[0]
+        if (hit && (!best || hit.distance < best.distance)) {
+            best = { distance: hit.distance, point: hit.point.clone(), on: "mesh" }
+        }
+        if (best) {
+            return { point: best.point, on: best.on }
+        }
+        const ground = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3())
+        return ground ? { point: ground, on: "ground" } : null
+    }
+
     /** Looks at `target` from the current direction, `distance` away. */
     frame(target: THREE.Vector3, distance: number) {
         const direction = this.camera.position.clone().sub(this.controls.target).normalize()

@@ -97,6 +97,11 @@ impl Annotations {
         self.items.lock().unwrap().values().cloned().collect()
     }
 
+    /// Sends an event to every open page.
+    pub fn broadcast(&self, event: Value) {
+        let _ = self.events.send(event);
+    }
+
     fn changed(&self) {
         let _ = self.events.send(json!({ "type": "annotations", "annotations": self.list() }));
     }
@@ -257,7 +262,12 @@ pub fn manifest() -> Value {
                 "label": { "type": "string" }, "note": { "type": "string" }, "center": vec3("new center"), "size": vec3("new size"),
                 "yaw": { "type": "number" }, "color": { "type": "string" }, "newId": { "type": "string", "description": "rename to this id" } } },
             { "method": "DELETE", "path": "api/annotations/{id}", "description": "Remove an annotation by id.", "params": { "id": { "type": "string", "required": true } } },
-            { "method": "DELETE", "path": "api/annotations", "description": "Remove every annotation." }
+            { "method": "DELETE", "path": "api/annotations", "description": "Remove every annotation." },
+            { "method": "GET", "path": "api/labels", "role": "context", "description": "Location labels the user (or you) pinned in the map: id, label, frame_id, position, orientation, created (ns)." },
+            { "method": "POST", "path": "api/labels", "description": "Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running it is written into it on /labels.", "params": {
+                "label": { "type": "string", "required": true }, "frame_id": { "type": "string", "required": true, "description": "the frame of position, e.g. world" },
+                "position": vec3("[x, y, z] meters in frame_id") } },
+            { "method": "DELETE", "path": "api/labels/{id}", "description": "Remove a location label.", "params": { "id": { "type": "string", "required": true } } }
         ]
     })
 }

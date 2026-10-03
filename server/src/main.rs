@@ -5,6 +5,8 @@
 mod annotations;
 mod cdr;
 mod image;
+mod labels;
+mod logs;
 mod msgs;
 mod record;
 mod recorder;
@@ -71,7 +73,9 @@ async fn main() -> Result<()> {
     eprintln!("live viewer: page {}, recordings {}", frontend.display(), record_dir.display());
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
     let annotations = Arc::new(annotations::Annotations::default());
-    let app = recorder::router(state.clone()).merge(annotations::router(annotations)).fallback_service(
+    let app = recorder::router(state.clone())
+        .merge(labels::router(state.clone(), annotations.clone()))
+        .merge(annotations::router(annotations)).fallback_service(
         tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))),
     );
     // Desktop stops an app server with SIGTERM to its process group

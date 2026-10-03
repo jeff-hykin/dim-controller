@@ -89,7 +89,7 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
             </button>
             {active && (
                 <p className="hint">
-                    {status.recording.messages.toLocaleString()} messages{status.recording.dropped ? ` · ${status.recording.dropped} dropped (disk too slow)` : ""} · {status.recording.path}
+                    {status.recording.messages.toLocaleString()} messages{status.recording.dropped ? ` · ${status.recording.dropped} dropped (disk too slow)` : ""} · {status.logs.dirs.length ? `${status.logs.lines.toLocaleString()} dimos log lines` : "no dimos run logs found"} · {status.recording.path}
                 </p>
             )}
             {error && <p className="problem">{error}</p>}

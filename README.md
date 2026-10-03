@@ -67,6 +67,21 @@ file; images can be re-encoded (png / jpeg xl lossless, webp, jpeg); anything el
 type name. Files land in `~/.dimos/data/apps/<app>/recordings` (the app's `DIMOS_APP_DATA`); the panel lists them with
 size, age, download, copy path and delete.
 
+The running dimos's own logs go into the same file. When recording starts the page asks Desktop where they are
+(`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails
+every `*.jsonl` there, new lines only (plus new files, runs that start mid-recording, truncation). Each line becomes a
+`foxglove.Log` (JSON) on `/dimos/logs/<file stem>` (e.g. `/dimos/logs/main`), stamped with the line's own time, so
+Foxglove's Log panel shows it; the original record is kept whole in its `fields` key (and the file in `source`).
+
+## Location labels
+
+Right-click the 3D view → **Label this location…** pins a text label at the clicked point (the nearest cloud point
+under the cursor, else a mesh such as the map, else the ground plane), as a position in the fixed frame. Labels last for
+the session, show in every open viewer, and are removed from the same menu. While a recording runs, every add and
+remove (and the labels already made when it starts) is written to `/labels` as `dimos.LocationLabel` (JSON:
+`timestamp`, `frame_id`, `id`, `label`, `action` add/delete, `pose` with position and orientation) and to
+`/labels/scene` as a `foxglove.SceneUpdate` so Foxglove's 3D panel shows them.
+
 ## Fork this for your robot
 
 Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`: which frame is the robot, which

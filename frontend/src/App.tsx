@@ -12,6 +12,7 @@ import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { followNewTopics } from "./ui/RecorderPanel.tsx"
 import { Icon } from "./ui/icons.tsx"
+import { SceneMenu } from "./ui/SceneMenu.tsx"
 
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
 
@@ -64,6 +65,7 @@ export function App() {
                     <CameraPanels app={app} layout={cameraLayout} mobile={view.mobile} />
                     <DriveHud app={app} mobile={view.mobile} />
                     <StatsOverlay app={app} />
+                    <SceneMenu app={app} />
                 </>
             )}
         </div>
