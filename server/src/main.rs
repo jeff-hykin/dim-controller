@@ -101,6 +101,16 @@ fn settings_file() -> Option<PathBuf> {
     Some(file)
 }
 
+/// The page itself is always revalidated: it names the hashed assets of its build, and the nix store's 1970 mtimes
+/// otherwise let a browser keep an old page (and the old app) for good after an update.
+async fn revalidate_html(mut response: axum::response::Response) -> axum::response::Response {
+    let html = response.headers().get(axum::http::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.starts_with("text/html"));
+    if html {
+        response.headers_mut().insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("no-cache"));
+    }
+    response
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -120,9 +130,11 @@ async fn main() -> Result<()> {
         drive: Arc::default(),
         desktop_url: Arc::new(args.desktop_url.clone()),
     };
-    let app = api::routes().router.with_state(api).fallback_service(
-        tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))),
-    );
+    let app = api::routes()
+        .router
+        .with_state(api)
+        .fallback_service(tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))))
+        .layer(axum::middleware::map_response(revalidate_html));
     // Desktop stops an app server with SIGTERM to its process group
     let shutdown = async {
         let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGTERM handler");
