@@ -4,7 +4,8 @@ import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js"
 import { Store } from "../store.ts"
-import { focusDistance } from "./pointMaterial.ts"
+import { focusDistance, splatBackground } from "./pointMaterial.ts"
+import { themeColors } from "../../dim-app/theme.js"
 import { FRAME_BUDGET_MS, splatFallback } from "./rendering.ts"
 import { SmoothFollow } from "./follow.ts"
 
@@ -102,7 +103,9 @@ export class Viewer {
     }
 
     #makeGrid(dark: boolean): THREE.GridHelper {
-        const grid = dark ? new THREE.GridHelper(200, 200, 0x2a3a4e, 0x1f2a3a) : new THREE.GridHelper(200, 200, 0x97a4b0, 0xc4ccd4)
+        // the theme's --scene-grid-major / --scene-grid (Portal: violet-black lines on the void; Research: warm hairlines on paper)
+        const colors = themeColors()
+        const grid = new THREE.GridHelper(200, 200, new THREE.Color(colors.sceneGridMajor || (dark ? "#2a2734" : "#c8c6bb")), new THREE.Color(colors.sceneGrid || (dark ? "#1a1822" : "#dcdad0")))
         grid.rotation.x = Math.PI / 2
         const material = grid.material as THREE.Material
         material.transparent = true
@@ -118,7 +121,9 @@ export class Viewer {
         this.#grid = this.#makeGrid(dark)
         this.scene.add(this.#grid)
         // light: the far grid fades into the page; dark: no fog, like MemWorld (scene.js)
-        this.scene.fog = dark ? null : new THREE.Fog(0xe9edf1, 40, 110)
+        const background = themeColors().sceneBg || (dark ? "#05070d" : "#f5f4ef")
+        this.scene.fog = dark ? null : new THREE.Fog(new THREE.Color(background), 40, 110)
+        splatBackground.setStyle(background, THREE.NoColorSpace)
         this.requestRender()
     }
 

@@ -1,5 +1,5 @@
 /* Layout: the scene (or a camera) fills the window; everything else floats over it. Components and colors come from
-   theme.css (the shared dimOS Science theme, vendored verbatim): this file only places and sizes them. */
+   dim-app/theme.css (dim-app's Portal / Research palettes, vendored verbatim): this file only places and sizes them. */
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
 body.science { background: var(--bg); font-size: 13px; line-height: 1.45; overscroll-behavior: none; }
@@ -16,8 +16,8 @@ h3.dim-label { display: block; margin: 14px 0 6px; }
 
 /* ── the 3D view: fullscreen, or a picture-in-picture while a camera is main ── */
 .scene-slot { position: absolute; inset: 0; z-index: 0;
-    background: radial-gradient(120% 90% at 50% 0%, var(--card), color-mix(in oklch, var(--bg) 92%, var(--fg))); }
-body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, var(--card), var(--bg) 60%); }
+    background: radial-gradient(120% 90% at 50% 0%, var(--card), var(--scene-bg) 70%); }
+body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--card) 70%, var(--scene-bg)), var(--scene-bg) 60%); }
 .scene { position: absolute; inset: 0; touch-action: none; }
 .scene canvas { display: block; }
 .label-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -209,3 +209,6 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, var(--ca
 .scene-menu-edit { display: flex; gap: 6px; padding: 4px; }
 .scene-menu-edit .dim-input { flex: 1; }
 .scene-note { position: fixed; z-index: 30; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 8px 14px; font-size: 12px; box-shadow: var(--shadow-lg); }
+
+/* the Portal / Research switch in the top bar; on a phone the tabs need the room */
+.mobile .theme-toggle { display: none; }

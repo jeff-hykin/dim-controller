@@ -1,6 +1,7 @@
 // The page's side of the agent link (server/src/annotations.rs): draws the live annotations every open viewer shares,
 // and answers capture requests only the page can: its rendered 3D view, the robot camera's latest frame, and
 // locating an object in 3D from a box around it in that frame (lidar points inside the box, else the floor).
+import { themeColors } from "../dim-app/theme.js"
 import * as THREE from "three"
 import { decode, headerFrameId } from "./lcm/lcm.ts"
 import { LabelPool } from "./render/labels.ts"
@@ -336,7 +337,7 @@ export class AgentLink {
         canvas.width = Math.round(gl.width * scale)
         canvas.height = Math.round(gl.height * scale)
         const context = canvas.getContext("2d")!
-        context.fillStyle = document.body.classList.contains("dark") ? "#06090f" : "#f4f6f8"
+        context.fillStyle = themeColors().sceneBg || (document.body.classList.contains("dark") ? "#05070d" : "#f5f4ef")
         context.fillRect(0, 0, canvas.width, canvas.height)
         context.drawImage(gl, 0, 0, canvas.width, canvas.height)
         context.font = "bold 14px sans-serif"

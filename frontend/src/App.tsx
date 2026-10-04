@@ -31,7 +31,7 @@ export function App() {
         const created = new ViewerApp(host.current!)
         window.__lv = created
         setApp(created)
-        // dimOS Desktop picks light/dark; dim-theme.js mirrors it onto body.dark and fires `dim-theme`
+        // theme.js picks Portal (dark) / Research (light), sets body.dark and fires `dim-theme`
         const theme = () => {
             const dark = document.body.classList.contains("dark")
             document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(document.body).getPropertyValue("--bg").trim())

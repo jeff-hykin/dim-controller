@@ -4,6 +4,7 @@ import * as THREE from "three"
 import { Connection } from "./transport.ts"
 import { TfTree } from "./tf.ts"
 import { feedTf } from "./tfFeed.ts"
+import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "./render/viewer.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
@@ -57,6 +58,7 @@ export class ViewerApp {
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
         feedTf(this.connection, this.tf, this.viewer)
+        feedBattery(this.connection, () => this.profile.name)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.viewer.onFrame(() => this.#eachFrame())
         this.connection.start()

@@ -9,6 +9,9 @@ import * as THREE from "three"
 import { gradientTexture } from "./gradients.ts"
 import { rendering } from "./rendering.ts"
 
+/** What glow splats fade into: the page behind the canvas (Viewer.setTheme keeps it on the theme's --scene-bg). Shared by every material. */
+export const splatBackground = new THREE.Color().setHex(0x05070d, THREE.NoColorSpace)
+
 /**
  * The point styles. Each is a shader path selected by `uStyle` (and a `#define` when its shading differs). Adding a style (EDL, splats, AO, ...) = one entry here + its branch in the shaders below; the settings
  * editor lists whatever is here.
@@ -220,7 +223,7 @@ export function makePointMaterial(pixelsPerMeter: { value: number }): THREE.Shad
             uLightWorld: { value: new THREE.Vector3() },
             uKeep: { value: 1 },
             uFog: { value: new THREE.Vector2(10, 40) },
-            uBackground: { value: new THREE.Color().setHex(0x06090f, THREE.NoColorSpace) },
+            uBackground: { value: splatBackground },
             uCubeShade: { value: 0 },
         },
         defines: {},

@@ -4,6 +4,7 @@ import { useStore } from "../core/store.ts"
 import { recorder } from "../core/recorder.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
+import { ThemeToggle } from "./ThemeToggle.tsx"
 import type { Tab } from "./SidePanel.tsx"
 
 const TABS: { tab: Tab; icon: string; label: string }[] = [
@@ -41,6 +42,7 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
             )}
             {drive.armed && <span className="dim-badge solid danger">ARMED</span>}
             <span className="spacer" />
+            <ThemeToggle className="theme-toggle" />
             <nav className="dim-tabs tabs">
                 {TABS.map((item) => (
                     <button type="button" key={item.tab} className={`dim-tab tab ${tab === item.tab ? "active" : ""}`} aria-selected={tab === item.tab} title={item.label} aria-label={item.label} onClick={() => onTab(item.tab)}>
