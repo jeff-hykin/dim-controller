@@ -78,6 +78,7 @@ export class Viewer {
         host.appendChild(this.renderer.domElement)
         this.labels = new CSS2DRenderer()
         this.labels.domElement.className = "label-layer"
+        this.labels.domElement.dataset.sceneLabels = "" // labels pinned to 3D points: they leave the screen with them
         host.appendChild(this.labels.domElement)
 
         this.camera.up.set(0, 0, 1)
