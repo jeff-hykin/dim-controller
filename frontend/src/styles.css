@@ -57,7 +57,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 4px 14px; }
 .panel-head h2 { margin: 0; }
 .panel-head .icon-button { width: 28px; height: 28px; padding: 0; }
-.panel-body { overflow: auto; padding: 4px 14px 14px; flex: 1; -webkit-overflow-scrolling: touch; }
+.panel-body { overflow: auto; padding: 4px 14px 14px; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
 
 .field { display: flex; align-items: center; gap: 10px; padding: 4px 0; min-height: 30px; }
 .field-label { width: 78px; flex: none; color: var(--muted-fg); font-size: 11px; }
