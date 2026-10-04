@@ -40,7 +40,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
     padding: 0 10px 0 14px; padding-top: env(safe-area-inset-top);
     background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
 .topbar .brand { width: 22px; height: 22px; }
-.topbar .title { font-weight: 650; letter-spacing: 0.02em; white-space: nowrap; }
+.topbar .title { white-space: nowrap; }
 .topbar .spacer { flex: 1; }
 .topbar .dim-badge { white-space: nowrap; }
 .pill-extra { color: var(--warn); }
@@ -71,7 +71,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .toggle-label { font-size: 12px; }
 .segmented .dim-tab { padding: 5px 10px; }
 .gradients { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 5px; margin: 4px 0 4px 88px; }
-.gradient-swatch { height: 14px; border-radius: 3px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.gradient-swatch { height: 14px; border-radius: 4px; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .gradient-swatch.on { border-color: var(--fg); }
 .range-inputs { display: flex; gap: 6px; }
 .button-row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
@@ -97,7 +97,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 
 /* drive */
 .arm-row { padding: 8px 10px; border-radius: var(--radius); background: var(--secondary); margin-bottom: 8px; }
-.arm-row.armed { background: color-mix(in oklch, var(--danger) 22%, var(--card)); }
+.arm-row.armed { background: color-mix(in srgb, var(--danger) 22%, transparent); }
 .controls { margin-top: 6px; }
 .twist-readout { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted-fg); margin-top: 10px; }
 
@@ -188,7 +188,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .style-card.on { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
 .style-name { font-size: 12px; font-weight: 650; grid-column: 2; }
 .style-about { font-size: 10px; color: var(--muted-fg); grid-column: 1 / 3; margin-top: 3px; line-height: 1.3; }
-.style-swatch { grid-row: 1; width: 18px; height: 18px; border-radius: 3px; align-self: center;
+.style-swatch { grid-row: 1; width: 18px; height: 18px; border-radius: 4px; align-self: center;
     background: linear-gradient(135deg, #6e1eaa, #285aeb 40%, #28c8e6 70%, #96f096); }
 .swatch-splat { border-radius: 50%; filter: blur(2px); }
 .swatch-disc { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #96f096, #28c8e6 45%, #285aeb 75%, #6e1eaa); }

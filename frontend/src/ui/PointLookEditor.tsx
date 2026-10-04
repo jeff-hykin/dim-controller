@@ -31,7 +31,7 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                     <>
                         <div className="gradients">
                             {GRADIENTS.map((name) => (
-                                <button type="button" key={name} title={name} className={`gradient-swatch ${look.gradient === name ? "on" : ""}`} style={{ background: gradientCss(name) }} onClick={() => set({ gradient: name })} />
+                                <button type="button" key={name} title={name} data-canvas-preview className={`gradient-swatch ${look.gradient === name ? "on" : ""}`} style={{ background: gradientCss(name) }} onClick={() => set({ gradient: name })} />
                             ))}
                         </div>
                         {look.colorMode === "height" && (

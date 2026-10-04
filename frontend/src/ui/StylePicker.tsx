@@ -11,7 +11,7 @@ export function StylePicker({ value, onChange, withDefault }: { value: PointStyl
         <span className="style-picker" role="radiogroup">
             {options.map(([style, label, about]) => (
                 <button type="button" role="radio" aria-checked={value === style} key={style} className={`dim-panel style-card ${value === style ? "on" : ""}`} onClick={() => onChange(style)} title={about}>
-                    <span className={`style-swatch swatch-${style}`} />
+                    <span className={`style-swatch swatch-${style}`} data-canvas-preview />
                     <span className="style-name">{label}</span>
                     <span className="style-about">{about}</span>
                 </button>

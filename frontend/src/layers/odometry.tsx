@@ -146,7 +146,7 @@ registerLayer<PoseSettings>({
     label: "Pose + trail",
     types: ["nav_msgs.Odometry", "geometry_msgs.PoseStamped", "geometry_msgs.PoseWithCovarianceStamped"],
     // magenta: no point-cloud gradient uses it, so the path reads over any map
-    defaults: () => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: "#ff2bd6", width: 4, axesSize: 0.6, onTop: true }),
+    defaults: () => ({ trail: true, trailLength: 20000, jumpMeters: 2.5, color: "#7cc8ec", width: 4, axesSize: 0.6, onTop: true }),
     create: (context, topic, settings) => new PoseLayer(context, topic, settings),
     Settings: PoseSettingsEditor,
 })
