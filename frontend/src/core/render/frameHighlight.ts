@@ -8,9 +8,9 @@ import type { TfTree } from "../tf.ts"
 import { Store } from "../store.ts"
 
 /** axes length (m) and line widths (CSS px) of the highlight */
-const AXES_METERS = 0.7
-const AXES_PX = 6
-const HALO_PX = 16
+const AXES_METERS = 1.2
+const AXES_PX = 7
+const HALO_PX = 22
 
 export class FrameHighlight {
     /** the frame shown, and whether it could be placed (null = none) */
@@ -21,7 +21,8 @@ export class FrameHighlight {
     #group = new THREE.Group()
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree) {
-        this.#halo = new FatLines(viewer.resolution, { width: HALO_PX, color: 0xffffff, opacity: 0.35, capacity: 3 })
+        // the glow: the same axes, wide and faint, behind them
+        this.#halo = new FatLines(viewer.resolution, { width: HALO_PX, vertexColors: true, opacity: 0.3, capacity: 3 })
         this.#axes = new FatLines(viewer.resolution, { width: AXES_PX, vertexColors: true, capacity: 3 })
         for (const lines of [this.#halo, this.#axes]) {
             // drawn last and through everything, so it's never hidden inside a point cloud
@@ -57,7 +58,7 @@ export class FrameHighlight {
             axes.forEach((axis, index) => {
                 tip.copy(axis).multiplyScalar(AXES_METERS).applyMatrix4(matrix)
                 this.#axes.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z, colors[index])
-                this.#halo.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z)
+                this.#halo.push(origin.x, origin.y, origin.z, tip.x, tip.y, tip.z, colors[index])
             })
             this.#label.place(frame, origin)
         }

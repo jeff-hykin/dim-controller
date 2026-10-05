@@ -65,7 +65,7 @@ export function App() {
                 {view.mainCamera && (
                     <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => {
                         chooseLayout()
-                        cameraLayout.update({ main: null, auto: false })
+                        cameraLayout.update({ main: null, auto: false, autoPanel: null })
                     }}><Icon name="expand" size={15} /></button>
                 )}
             </div>

@@ -33,6 +33,8 @@ export interface CameraLayout {
     seeded?: boolean
     /** the camera is main because nothing draws in 3D (no point cloud): a cloud showing up gives the view back */
     auto?: boolean
+    /** the panel that was opened for that (closed again with it) */
+    autoPanel?: number | null
 }
 
 /** a lidar / point cloud: what makes the 3D view worth the screen */
@@ -82,7 +84,8 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         const current = layout.get()
         if (clouds) {
             if (current.auto) {
-                layout.update({ main: null, auto: false })
+                const panels = current.autoPanel ? current.panels.filter((panel) => panel.id !== current.autoPanel) : current.panels
+                layout.update({ main: null, auto: false, autoPanel: null, panels })
             }
             return
         }
@@ -103,7 +106,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
             const first = pickDefault(app, latest)
             if (first) {
                 const id = Math.max(0, ...now.panels.map((panel) => panel.id)) + 1
-                layout.update({ seeded: true, auto: true, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+                layout.update({ seeded: true, auto: true, autoPanel: id, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
             }
         }, SETTLE_MS)
         return () => clearTimeout(timer)
@@ -117,7 +120,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         if (wasMain) {
             chooseLayout()
         }
-        layout.update({ panels: current.panels.filter((panel) => panel.id !== id), main: wasMain ? null : current.main, auto: wasMain ? false : current.auto })
+        layout.update({ panels: current.panels.filter((panel) => panel.id !== id), main: wasMain ? null : current.main, auto: wasMain ? false : current.auto, autoPanel: current.autoPanel === id ? null : current.autoPanel })
     }
     const add = () => {
         const used = new Set(panels.map((panel) => panel.key))
@@ -141,7 +144,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
                     onClose={() => close(panel.id)}
                     onMain={() => {
                         chooseLayout()
-                        layout.update({ main: main === panel.id ? null : panel.id, auto: false })
+                        layout.update({ main: main === panel.id ? null : panel.id, auto: false, autoPanel: null })
                     }}
                 />
             ))}
