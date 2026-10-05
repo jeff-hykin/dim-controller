@@ -31,7 +31,7 @@ pub struct Api {
     pub annotations: Arc<Annotations>,
     pub settings: Arc<Settings>,
     pub drive: Arc<Drive>,
-    /// Desktop's own HTTP API (`--desktop-url`): the running dimos's log dirs
+    /// Desktop's own HTTP API (DIMOS_APP's `desktopUrl`): the running dimos's log dirs
     pub desktop_url: Arc<String>,
 }
 

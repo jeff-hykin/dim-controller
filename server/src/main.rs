@@ -7,6 +7,7 @@ mod annotations;
 mod api;
 mod cdr;
 mod desktop;
+mod dimos_app;
 mod drive;
 mod image;
 mod labels;
@@ -26,7 +27,8 @@ use clap::Parser;
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Controller backend: the page, driving, and an mcap recorder")]
 pub struct Args {
-    /// serve HTTP on this unix socket (Desktop passes it)
+    /// serve HTTP on this unix socket (Desktop passes it in DIMOS_APP; these flags and env vars are the older
+    /// Desktops' way, and DIMOS_APP wins over them)
     #[arg(long, env = "DIMOS_APP_SOCKET")]
     socket: Option<PathBuf>,
     /// serve HTTP on this TCP port instead (development)
@@ -62,11 +64,9 @@ const OLD_APP_NAME: &str = "dim-live-viewer";
 /// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
 /// app's data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
 fn default_record_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("DIMOS_RECORDINGS_DIR") {
-        if !dir.is_empty() {
-            let old = PathBuf::from(&dir).join("live-viewer");
-            return if old.is_dir() { old } else { PathBuf::from(dir).join("controller") };
-        }
+    if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref(), "DIMOS_RECORDINGS_DIR") {
+        let old = PathBuf::from(&dir).join("live-viewer");
+        return if old.is_dir() { old } else { PathBuf::from(dir).join("controller") };
     }
     if let Some(data) = app_data() {
         let old = data.parent().map(|apps| apps.join(OLD_APP_NAME).join("recordings")).filter(|old| old.is_dir());
@@ -78,12 +78,12 @@ fn default_record_dir() -> PathBuf {
     let home = std::env::var("DIMOS_HOME").map(PathBuf::from).unwrap_or_else(|_| {
         PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
     });
-    let app = std::env::var("DIMOS_APP_NAME").unwrap_or_else(|_| "dim-controller".into());
+    let app = dimos_app::field(|app| app.name.as_ref(), "DIMOS_APP_NAME").unwrap_or_else(|| "dim-controller".into());
     home.join("data").join(app).join("recordings")
 }
 
 fn app_data() -> Option<PathBuf> {
-    std::env::var("DIMOS_APP_DATA").ok().filter(|dir| !dir.is_empty()).map(PathBuf::from)
+    dimos_app::field(|app| app.data_dir.as_ref(), "DIMOS_APP_DATA").map(PathBuf::from)
 }
 
 /// `settings.json` in the app's data dir. Installed under its new name, the app starts from the settings it had under
@@ -113,7 +113,22 @@ async fn revalidate_html(mut response: axum::response::Response) -> axum::respon
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if let Some(app) = dimos_app::get() {
+        let set = |to: &mut String, from: &Option<String>| {
+            if let Some(value) = from {
+                *to = value.clone();
+            }
+        };
+        if let Some(socket) = &app.socket {
+            args.socket = Some(PathBuf::from(socket));
+        }
+        set(&mut args.desktop_url, &app.desktop_url);
+        set(&mut args.zenoh_web_url, &app.zenoh_web_url);
+        set(&mut args.zenoh_connect, &app.zenoh_connect);
+        set(&mut args.dimos_dir, &app.dimos_dir);
+        set(&mut args.dimos_python, &app.dimos_python);
+    }
     if args.agent_json {
         println!("{}", serde_json::to_string_pretty(&api::routes().manifest(api::DESCRIPTION))?);
         return Ok(());

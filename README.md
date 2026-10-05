@@ -92,7 +92,7 @@ remembered, and topics that appear mid-recording join it: the backend finds them
 keys records the same set). Known types are written as ROS 2 CDR so Foxglove opens the
 file; images can be re-encoded (png / jpeg xl lossless, webp, jpeg); anything else is kept as raw LCM bytes with its
 type name. Files land in Desktop's shared recordings folder, under `controller/` (`live-viewer/` if that exists from
-before the rename), else in the app's `DIMOS_APP_DATA/recordings`; the panel lists them with size, age, download, copy
+before the rename), else in `recordings` in its data dir (`dataDir`); the panel lists them with size, age, download, copy
 path and delete.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
