@@ -49,7 +49,7 @@ export function ArmHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
             )}
             <div className="hud-readout" data-testid="arm-hud-readout">
                 {armed
-                    ? <>{activity || "armed · hold a key or a jog button"}<br /><span className="dim">→ {[state.topics.eeTwist, state.topics.jointCommand, ...state.topics.grippers].filter(Boolean).join(", ") || "no arm inputs running"}</span></>
+                    ? <>{activity || "armed · hold a key or a jog button"}<br /><span className="dim" title={[state.topics.eeTwist, state.topics.jointCommand, ...state.topics.grippers].filter(Boolean).join(", ")}>{state.topics.jointCommand || state.topics.eeTwist || state.topics.grippers.length ? `sent ${state.sent}` : "no arm inputs running"}</span></>
                     : <span className="dim">disarmed · nothing is sent</span>}
             </div>
         </div>
