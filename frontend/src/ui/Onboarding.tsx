@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { emptyState, type EmptyStateOptions } from "../dim-app/desktop.js"
+import { takesVelocity } from "../core/cmdvel.ts"
 
 const LAUNCH_DRIVABLE = { kind: "blueprint" as const, stream: "cmd_vel" }
 const REPLAY_HINT = "No robot? Turn on replay in the Launcher to drive a recorded one."
@@ -29,7 +30,6 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     const connection = useStore(app.connection.status)
     const [dismissed, setDismissed] = useState<string | null>(null)
     const runningKey = runs.running.join(",")
-    const twistOnBridge = connection.topics.some((topic) => topic.type === "geometry_msgs.Twist")
 
     if (connection.state === "lost") {
         return {
@@ -90,15 +90,16 @@ export function useOnboarding(app: ViewerApp): Onboarding {
         }
     }
     const names = runs.running.join(", ")
-    if (runs.driveInputs.length === 0 && !twistOnBridge && dismissed !== runningKey) {
+    // no module of the running blueprints takes a velocity command (an input named *cmd_vel*): driving moves nothing
+    if (takesVelocity(runs.blueprints) === false && dismissed !== runningKey) {
         return {
             blocksDriving: true,
             message: {
                 testId: "onboard-no-cmd-vel",
                 tone: "warn",
                 label: "Nothing to drive",
-                title: `${names} is running, but it has no cmd_vel topic, so there's nothing to drive`,
-                body: "You can still look at its topics here. To drive, launch a blueprint that takes cmd_vel.",
+                title: `${names} has no cmd_vel input, so driving won't do anything`,
+                body: "None of its modules takes velocity commands (an input like cmd_vel or tele_cmd_vel). You can still look at its topics here. To drive, launch a blueprint that takes cmd_vel.",
                 actions: [
                     { label: "Open the Launcher", app: "launcher", params: LAUNCH_DRIVABLE },
                     { label: "Just view", onClick: () => setDismissed(runningKey), primary: false },

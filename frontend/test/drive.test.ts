@@ -40,7 +40,7 @@ Deno.test("armed: forward at the linear speed, shift doubles linear and halves t
     localStorage.clear()
     const { connection, puts, deadmen } = fakeBridge()
     const drive = new Drive(connection, go2)
-    drive.setCandidates(["/cmd_vel"])
+    drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
     drive.setArmed(true)
     drive.setAxes("keys", { forward: 1, turn: 1 })
     await wait(150)
@@ -64,19 +64,24 @@ Deno.test("armed: forward at the linear speed, shift doubles linear and halves t
     drive.dispose()
 })
 
-Deno.test("the topic: tele_cmd_vel when the robot reads it, a read topic over one only written, a chosen one wins", () => {
+Deno.test("auto drives every entry point, each with its own deadman; a list in the settings wins", async () => {
     localStorage.clear()
-    const { connection } = fakeBridge()
+    const { connection, puts, deadmen } = fakeBridge()
     const drive = new Drive(connection, go2)
-    drive.setCandidates(["/cmd_vel", "/tele_cmd_vel"])
-    assertEquals(drive.state.get().topic, "/tele_cmd_vel")
-    // go2-basic: the web vis module writes tele_cmd_vel but nothing reads it; the robot reads cmd_vel
-    drive.setCandidates(["/cmd_vel"], ["/tele_cmd_vel"])
-    assertEquals(drive.state.get().topic, "/cmd_vel")
-    drive.setCandidates([], ["/robot1/cmd_vel"])
-    assertEquals(drive.state.get().topic, "/robot1/cmd_vel")
-    drive.settings.update({ topic: "/mine" })
+    // no metadata: the standard set
+    assertEquals(drive.state.get().topics.map((topic) => topic.topic), ["/cmd_vel", "/tele_cmd_vel"])
+    drive.setArmed(true)
+    drive.setAxes("keys", { forward: 1 })
+    await wait(150)
+    assertEquals(new Set(puts.map((put) => put.key)), new Set(["dimos/cmd_vel/geometry_msgs.Twist", "dimos/tele_cmd_vel/geometry_msgs.Twist"]))
+    assertEquals(deadmen.sort(), ["dimos/cmd_vel/geometry_msgs.Twist", "dimos/tele_cmd_vel/geometry_msgs.Twist"])
+    drive.settings.update({ topics: ["/mine"] })
     assertEquals(drive.state.get().topic, "/mine")
+    puts.length = 0
+    await wait(150)
+    // the topics left behind get one zero (their stop), then only the new one moves
+    assertEquals(new Set(puts.filter((put) => put.twist.linear.x !== 0).map((put) => put.key)), new Set(["dimos/mine/geometry_msgs.Twist"]))
+    assertEquals(puts.filter((put) => put.key !== "dimos/mine/geometry_msgs.Twist").every((put) => put.twist.linear.x === 0), true)
     drive.dispose()
 })
 
@@ -95,7 +100,7 @@ Deno.test("arming comes from the backend's drive events (another page, the agent
     localStorage.clear()
     const { connection, puts } = fakeBridge()
     const drive = new Drive(connection, go2)
-    drive.setCandidates(["/cmd_vel"])
+    drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
     drive.applyEvent({ armed: true, armedBy: "agent", command: null })
     assertEquals([drive.state.get().armed, drive.state.get().armedBy], [true, "agent"])
     drive.setAxes("keys", { forward: 1 })

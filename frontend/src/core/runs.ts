@@ -1,8 +1,9 @@
 // What's running, for the first-run messages and the drive topic: Desktop's GET /dimos/runs (+ each running
-// blueprint's Twist inputs), refreshed live on Desktop's zenoh `runs` and the dimos server's `launch` events, and again
+// blueprint's modules and streams), refreshed live on Desktop's zenoh `runs` and the dimos server's `launch` events, and again
 // after the zenoh-web connection comes back (docs/events.md: snapshot + live). GET /dimos/info says if dimOS is there.
 import { getZenoh } from "../dim-app/zenoh.js"
 import { Store } from "./store.ts"
+import type { Module } from "./cmdvel.ts"
 
 export interface RunState {
     /** false until the first answer (or when there's no Desktop dimos API here: dev server, remote robot) */
@@ -15,20 +16,20 @@ export interface RunState {
     running: string[]
     /** a blueprint the Launcher is starting, or null */
     starting: string | null
-    /** Twist topics the running blueprints take as input, e.g. /cmd_vel */
-    driveInputs: string[]
+    /** each running blueprint's modules and their streams (Desktop's /dimos/blueprints/<name>); null = unknown */
+    blueprints: Record<string, Module[] | null>
 }
 
 type Runs = { launch?: { blueprint?: string; phase?: string } | null; runs?: { blueprint: string }[] }
-type Blueprint = { modules?: { streams?: { name: string; type?: string; direction?: string }[] }[] }
+type Blueprint = { modules?: Module[] }
 
 const desktopUrl = (path: string) => new URL(`../../${path}`, location.href)
 
 export class RunWatch {
-    readonly state = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, driveInputs: [] })
+    readonly state = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
     #pending: Promise<void> | null = null
     #again = false
-    #blueprints = new Map<string, string[]>()
+    #blueprints = new Map<string, Module[]>()
 
     start() {
         const zenoh = getZenoh()
@@ -56,22 +57,19 @@ export class RunWatch {
         return this.#pending
     }
 
-    async #inputsOf(name: string): Promise<string[]> {
+    async #modulesOf(name: string): Promise<Module[]> {
         const cached = this.#blueprints.get(name)
         if (cached) {
             return cached
         }
-        const blueprint: Blueprint = await (await fetch(desktopUrl(`dimos/blueprints/${encodeURIComponent(name)}`))).json()
-        const inputs: string[] = []
-        for (const module of blueprint.modules ?? []) {
-            for (const stream of module.streams ?? []) {
-                if (/Twist$/.test(stream.type ?? "") && stream.direction !== "out") {
-                    inputs.push("/" + String(stream.name).replace(/^\/+/, ""))
-                }
-            }
+        const response = await fetch(desktopUrl(`dimos/blueprints/${encodeURIComponent(name)}`))
+        if (!response.ok) {
+            throw new Error(String(response.status))
         }
-        this.#blueprints.set(name, inputs)
-        return inputs
+        const blueprint: Blueprint = await response.json()
+        const modules = blueprint.modules ?? []
+        this.#blueprints.set(name, modules)
+        return modules
     }
 
     async #load() {
@@ -94,15 +92,15 @@ export class RunWatch {
                 running.add(runs.launch.blueprint)
             }
             const starting = phase === "starting" ? runs.launch?.blueprint ?? null : null
-            const inputs: string[] = []
+            const blueprints: Record<string, Module[] | null> = {}
             for (const name of running) {
                 try {
-                    inputs.push(...await this.#inputsOf(name))
+                    blueprints[name] = await this.#modulesOf(name)
                 } catch {
-                    // its metadata isn't available: the bridge's Twist topics still count
+                    blueprints[name] = null // its metadata isn't available: auto falls back to the standard topics
                 }
             }
-            this.state.set({ known: true, desktop: true, dimosInstalled, running: [...running], starting, driveInputs: [...new Set(inputs)] })
+            this.state.set({ known: true, desktop: true, dimosInstalled, running: [...running], starting, blueprints })
         } catch {
             // no Desktop dimos API here (dev server, remote robot): the profile's list and the bridge are enough
             this.state.update({ known: true, desktop: false, dimosInstalled })

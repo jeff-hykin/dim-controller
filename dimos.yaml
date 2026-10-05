@@ -64,9 +64,9 @@ agent:
             description: >-
                 Every page setting by key: lv.view {profile, fixedFrame ("" = auto), follow, showStats}; lv.rendering.v2
                 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that
-                layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topic};
-                lv.record.topics {<topic key>: record or not}; lv.record.options {recordNew}; lv.cameras (the camera
-                panels).
+                layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto,
+                else the output topics, one per entry, "/name" or "/name TwistStamped"}; lv.record.topics {<topic key>:
+                record or not}; lv.record.options {recordNew}; lv.cameras (the camera panels).
         -
             method: PATCH
             path: api/settings

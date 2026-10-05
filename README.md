@@ -67,11 +67,33 @@ Driving is **off until armed** (the ARM button, or `POST api/drive/arm`). Arming
 every open page and the agent, shown on each, and a restart comes up disarmed. Escape or hiding the page disarms, and
 disarming stops the robot. Armed, W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
 and halves turning, Space stops (the agent's command too). Linear and angular speeds are in the Drive panel. Commands go
-straight to `dimos/<topic>/geometry_msgs.Twist` through Desktop's bridge with a deadman: if the page goes quiet or
-disconnects, the bridge sends a zero Twist. Nothing is sent while nobody steers (a release is followed by a second of
-zeros, then silence), so a parked browser never drowns out other teleop. The topic picker lists the Twist inputs of the
-running blueprint (from Desktop's `/dimos/` API) and any Twist on the bridge; the default is the profile's first one
-present, else `tele_cmd_vel`, else `cmd_vel`.
+straight to the output topics through Desktop's bridge, each with its own deadman: if the page goes quiet or
+disconnects, the bridge sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
+of zeros, then silence), so a parked browser never drowns out other teleop.
+
+### Driving: which topics
+
+The Drive panel's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or
+`/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](frontend/src/core/cmdvel.ts)):
+
+- A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
+  whose type is Twist or TwistStamped. The running blueprints' modules come from Desktop's `/dimos/blueprints/<name>`.
+- Every module with velocity inputs gets **one** topic, its entry point, so two topics never feed the same module:
+  - an input that a velocity-consuming module of the same blueprint outputs is internal and skipped (a teleop mux such
+    as MovementManager outputs `cmd_vel` to the robot; publishing there too would bypass it);
+  - of the rest, `tele_*` first, then exactly `cmd_vel`, then any other, a planner's `nav_*` last;
+  - each in its own type (TwistStamped gets a header, frame `base_link`).
+- With no metadata (outside Desktop, or a blueprint Desktop can't describe) it's the standard set: `/cmd_vel` and
+  `/tele_cmd_vel` as Twist (`dimos/cmd_vel` is the same zenoh key as `/cmd_vel`, so it's one topic).
+- Topics with the same zenoh key are published once.
+
+E.g. `unitree-go2-basic` → `/cmd_vel` (GO2Connection's); `unitree-go2` → `/tele_cmd_vel` (MovementManager's: it
+already forwards to the robot's `cmd_vel` and mixes in the planner's `nav_cmd_vel`).
+
+When every running blueprint is known and none has a velocity input, the Controller says so ("… has no cmd_vel input,
+so driving won't do anything") with a button to the Launcher filtered to blueprints with a `cmd_vel` stream; "Just
+view" hides it until what's running changes. It follows Desktop's `runs` / `launch` events, so it updates as runs
+start and stop. The agent's `POST api/drive` still sends to one topic (its `topic`, else the first of the list).
 
 The agent drives with `POST api/drive` (refused while disarmed, except `dryRun`); the drive HUD shows its command, and
 "dry run · nothing sent" for a dry run.

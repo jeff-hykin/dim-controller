@@ -124,6 +124,6 @@ export class ViewerApp {
 
     #updateDriveCandidates() {
         const onBridge = this.connection.status.get().topics.filter((topic) => topic.type === "geometry_msgs.Twist").map((topic) => topic.name)
-        this.drive.setCandidates(this.runs.state.get().driveInputs, onBridge)
+        this.drive.setRunning(this.runs.state.get().blueprints, onBridge)
     }
 }

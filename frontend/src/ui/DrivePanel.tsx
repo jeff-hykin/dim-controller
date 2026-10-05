@@ -1,5 +1,4 @@
-// Drive settings: arm, which Twist topic, speeds, and the profile's extra controls.
-import { useState } from "react"
+// Drive settings: arm, which Twist topics (auto or a list), speeds, and the profile's extra controls.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { Field, Slider, Toggle } from "./controls.tsx"
@@ -10,7 +9,6 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     const settings = useStore(drive.settings)
     const values = useStore(drive.controlValues)
     useStore(app.connection.status)
-    const [custom, setCustom] = useState("")
     const candidates = drive.candidates()
     const usesVertical = Object.values(app.profile.drive.keys).some((action) => "axis" in action && action.axis === "vertical")
     const keyNames = Object.entries(app.profile.drive.keys)
@@ -21,31 +19,35 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             <div className={`arm-row ${state.armed ? "armed" : ""}`}>
                 <Toggle value={state.armed} onChange={(armed) => drive.setArmed(armed)} label={state.armed ? "Armed: keys and sticks move the robot" : "Disarmed: nothing is sent"} />
             </div>
-            <Field label="Topic" hint="geometry_msgs.Twist commands go to dimos/<topic>/geometry_msgs.Twist">
-                <select
-                    className="dim-select"
-                    value={settings.topic || ""}
-                    onChange={(event) => drive.settings.update({ topic: event.target.value })}
-                >
-                    <option value="">auto ({state.topic})</option>
-                    {candidates.map((topic) => <option key={topic} value={topic}>{topic}</option>)}
-                    {settings.topic && !candidates.includes(settings.topic) && <option value={settings.topic}>{settings.topic}</option>}
-                </select>
+            <Field
+                label="Topics"
+                hint="Auto: each running blueprint's cmd_vel entry point (one per module that takes velocity commands, never a mux's own output), else /cmd_vel and /tele_cmd_vel. One topic per line; add TwistStamped after a name for a stamped one."
+            >
+                <label className="dim-check">
+                    <input
+                        type="checkbox"
+                        checked={!(settings.topics?.length)}
+                        onChange={(event) => drive.settings.update({ topics: event.target.checked ? [] : drive.autoTopics().map((topic) => topic.topic) })}
+                    />
+                    <span className="box" />
+                    <span>auto</span>
+                </label>
+                {settings.topics?.length
+                    ? (
+                        <textarea
+                            className="dim-textarea"
+                            data-testid="drive-topics"
+                            rows={Math.max(2, settings.topics.length + 1)}
+                            defaultValue={settings.topics.join("\n")}
+                            onBlur={(event) => drive.settings.update({ topics: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) })}
+                        />
+                    )
+                    : null}
+                <div className="hint" data-testid="drive-topics-resolved">→ {state.topic || "nothing"}</div>
             </Field>
-            <Field label="Other">
-                <input
-                    className="dim-input"
-                    placeholder="/my_cmd_vel"
-                    value={custom}
-                    onChange={(event) => setCustom(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === "Enter" && custom.trim()) {
-                            drive.settings.update({ topic: "/" + custom.trim().replace(/^\/+/, "") })
-                            setCustom("")
-                        }
-                    }}
-                />
-            </Field>
+            {candidates.length > 0 && settings.topics?.length
+                ? <p className="hint">Seen: {candidates.join(", ")}</p>
+                : null}
             <Field label="Linear"><Slider min={0.05} max={3} step={0.05} value={settings.linear} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(linear) => drive.settings.update({ linear })} /></Field>
             <Field label="Angular"><Slider min={0.05} max={3} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => drive.settings.update({ angular })} /></Field>
             {usesVertical && <Field label="Vertical"><Slider min={0.05} max={2} step={0.05} value={settings.vertical} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}

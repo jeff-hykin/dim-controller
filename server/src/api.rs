@@ -108,7 +108,7 @@ pub fn routes() -> Routes<Api> {
         .role("view")
         .endpoint("POST", "api/camera", "Move the 3D camera in every open page: action=recenter (on the robot), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance).", json!({ "action": required(s("recenter | topDown | lookAt")), "target": vec3("lookAt: the point, world frame"), "distance": n("lookAt: meters from the target") }), camera)
         // settings: everything the page's panels change
-        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile, fixedFrame (\"\" = auto), follow, showStats}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topic}; lv.record.topics {<topic key>: record or not}; lv.record.options {recordNew}; lv.cameras (the camera panels).", json!({}), get_settings)
+        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile, fixedFrame (\"\" = auto), follow, showStats}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.record.topics {<topic key>: record or not}; lv.record.options {recordNew}; lv.cameras (the camera panels).", json!({}), get_settings)
         .endpoint("PATCH", "api/settings", "Change a page setting (merged into the key's object; a null field is removed); every open page applies it at once. E.g. {key: \"lv.layers.enabled\", value: {\"dimos/lidar/sensor_msgs.PointCloud2\": false}} hides a layer; {key: \"lv.view\", value: {follow: false}}. Keys: see GET api/settings.", json!({ "key": required(s("e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>")), "value": required(json!({ "type": "object", "description": "the fields to set" })) }), patch_settings)
         // recording
         .endpoint("GET", "api/recorder", "The recorder: whether it's recording (messages, bytes, dropped, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, and the image/compression settings.", json!({}), recorder::status)
@@ -204,14 +204,18 @@ async fn patch_settings(Extract(api): Extract<Api>, Body(body): Body) -> Respons
     Json(json!({ "key": key, "value": value })).into_response()
 }
 
-/// The drive topic when none is given: the drive panel's choice, else a Twist on the bus (tele_cmd_vel first).
+/// The drive topic when none is given: the drive panel's list (its first; the older single `topic` too), else a Twist
+/// on the bus (tele_cmd_vel first).
 async fn default_topic(api: &Api) -> String {
     let profile = api.settings.get("lv.view")["profile"]
         .as_str()
         .unwrap_or_default()
         .to_string();
-    let chosen = api.settings.get(&format!("lv.drive.{profile}"))["topic"]
+    let drive = api.settings.get(&format!("lv.drive.{profile}"));
+    let chosen = drive["topics"][0]
         .as_str()
+        .or_else(|| drive["topic"].as_str())
+        .and_then(|topic| topic.split_whitespace().next())
         .unwrap_or_default()
         .to_string();
     if !chosen.is_empty() {

@@ -1,5 +1,5 @@
 // Driving: keys, sticks and buttons push axes; while drive is ARMED and something is held, a Twist goes out at
-// publishHz straight through the bridge. Nothing is published while disarmed or idle: a release sends a second of
+// publishHz straight through the bridge, on every output topic (auto: core/cmdvel.ts; each with its own deadman). Nothing is published while disarmed or idle: a release sends a second of
 // zeros so the stop is heard, then the topic goes quiet. While moving the bridge holds a zero Twist as a deadman
 // and publishes it if this page goes silent for deadmanMs or disconnects (port of web_ctrl's drive loop).
 // Arming is the backend's (POST api/drive/arm), one switch for every page and the agent; its `drive` events carry it
@@ -7,17 +7,19 @@
 import { encode } from "./lcm/lcm.ts"
 import { persistentStore, Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
+import { autoTopics, type DriveTopic, type Module, parseTopics, TWIST, TWIST_STAMPED, zenohKey } from "./cmdvel.ts"
 import { type Axes, type Axis, defaultTwist, type RobotProfile, type Twist } from "../profile/types.ts"
 
-const TWIST = "geometry_msgs.Twist"
-const ZERO = encode(TWIST, {})
+const zeroOf = (type: string) => encode(type, {})
 
 export interface DriveSettings {
     linear: number
     angular: number
     vertical: number
-    /** "" = the profile's pick from what's on the bridge */
-    topic: string
+    /** the output topics, one per line ("/my_cmd_vel", or "/my_cmd_vel TwistStamped"); [] = auto (core/cmdvel.ts) */
+    topics: string[]
+    /** before 2026-10-05: one topic ("" = auto); read once into `topics` */
+    topic?: string
 }
 
 export interface DriveState {
@@ -26,7 +28,9 @@ export interface DriveState {
     boost: boolean
     /** what was last sent (or would be) */
     twist: Twist
-    /** the topic actually used */
+    /** the topics actually published to (auto, or the settings') */
+    topics: DriveTopic[]
+    /** the same, for showing: "/cmd_vel, /tele_cmd_vel" */
     topic: string
     publishing: boolean
     sent: number
@@ -57,65 +61,58 @@ export interface DriveEvent {
 const zeroAxes = (): Axes => ({ forward: 0, strafe: 0, turn: 0, vertical: 0 })
 
 export class Drive {
-    readonly state = new Store<DriveState>({ armed: false, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topic: "", publishing: false, sent: 0, error: null, armedBy: null, command: null })
+    readonly state = new Store<DriveState>({ armed: false, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, armedBy: null, command: null })
     readonly settings: Store<DriveSettings>
     readonly controlValues = new Store<Record<string, number>>({})
     /** axis contributions by source (keys, stick, pad), summed and clamped */
     #sources = new Map<string, Partial<Axes>>()
-    #publisher: Publisher | null = null
-    #publisherKey = ""
-    #deadmanArmed = false
+    /** one publisher per output topic (zenoh key), each with its own deadman */
+    #publishers = new Map<string, { publisher: Publisher; deadman: boolean }>()
     #stopFlush = 0
     #timer: ReturnType<typeof setInterval>
     #commandTimer: ReturnType<typeof setTimeout> | undefined
     #controlPublishers = new Map<string, Publisher>()
-    /** Twist topics the running blueprint reads (from Desktop's /dimos/ API) */
-    #inputs: string[] = []
+    /** the running blueprints' modules (null = unknown), from Desktop's /dimos/ API */
+    #blueprints: Record<string, Module[] | null> = {}
     /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
     #onBridge: string[] = []
 
     constructor(readonly connection: Connection, readonly profile: RobotProfile) {
         const { speeds } = profile.drive
-        this.settings = persistentStore(`lv.drive.${profile.name}`, { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topic: "" })
+        this.settings = persistentStore<DriveSettings>(`lv.drive.${profile.name}`, { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topics: [] })
+        const old = this.settings.get().topic
+        if (old && !this.settings.get().topics?.length) {
+            this.settings.update({ topics: [old], topic: "" })
+        }
         this.controlValues.set(Object.fromEntries(profile.controls.filter((control) => control.kind === "slider").map((control) => [control.id, control.kind === "slider" ? control.initial : 0])))
         this.#timer = setInterval(() => this.#tick(), 1000 / profile.drive.publishHz)
-        this.settings.subscribe(() => this.#refreshTopic())
+        this.settings.subscribe(() => this.#refreshTopics())
+        this.#refreshTopics()
     }
 
-    /** What the picker lists: the robot's Twist inputs, Twist topics on the bridge, the profile's. */
-    setCandidates(inputs: string[], onBridge: string[] = []) {
-        this.#inputs = inputs
+    /** What's running (Desktop's metadata) and the Twist topics on the bridge; auto follows them. */
+    setRunning(blueprints: Record<string, Module[] | null>, onBridge: string[] = []) {
+        this.#blueprints = blueprints
         this.#onBridge = onBridge
-        this.#refreshTopic()
+        this.#refreshTopics()
     }
 
+    /** What auto resolves to now. */
+    autoTopics(): DriveTopic[] {
+        return autoTopics(this.#blueprints)
+    }
+
+    /** Topics worth suggesting: auto's, the bridge's Twist topics, the profile's. */
     candidates(): string[] {
-        return [...new Set([...this.#inputs, ...this.#onBridge, ...this.profile.drive.cmdVelTopics])]
+        return [...new Set([...this.autoTopics().map((topic) => topic.topic), ...this.#onBridge, ...this.profile.drive.cmdVelTopics])]
     }
 
-    /**
-     * The chosen topic, else from what the robot reads (if known), else from what's on the bridge: the profile's
-     * first preference there, else one ending tele_cmd_vel, else cmd_vel. A topic only someone writes and nothing
-     * reads would move nothing, so the robot's inputs come first.
-     */
-    #pickTopic(): string {
-        const chosen = this.settings.get().topic
-        if (chosen) {
-            return chosen
-        }
-        const pick = (topics: string[]) => {
-            const live = new Set(topics)
-            return this.profile.drive.cmdVelTopics.find((topic) => live.has(topic))
-                ?? topics.find((topic) => /tele_cmd_vel$/.test(topic))
-                ?? topics.find((topic) => /cmd_vel$/.test(topic))
-        }
-        return pick(this.#inputs) ?? pick(this.#onBridge) ?? this.profile.drive.cmdVelTopics[0] ?? "/cmd_vel"
-    }
-
-    #refreshTopic() {
-        const topic = this.#pickTopic()
+    #refreshTopics() {
+        const chosen = this.settings.get().topics ?? []
+        const topics = chosen.length ? parseTopics(chosen, this.#blueprints) : this.autoTopics()
+        const topic = topics.map((each) => each.topic + (each.type === TWIST_STAMPED ? " (stamped)" : "")).join(", ")
         if (topic !== this.state.get().topic) {
-            this.state.update({ topic })
+            this.state.update({ topics, topic })
         }
     }
 
@@ -151,10 +148,7 @@ export class Drive {
         if (!armed) {
             this.#sources.clear()
             this.#recompute()
-            this.#deadmanArmed = false
-            this.#publisher?.close()
-            this.#publisher = null
-            this.#publisherKey = ""
+            this.#closeAll()
         }
         if (armed !== this.state.get().armed || armedBy !== this.state.get().armedBy) {
             this.state.update({ armed, armedBy, error: null })
@@ -207,26 +201,38 @@ export class Drive {
         this.state.update({ axes, twist })
     }
 
-    #publisherFor(key: string): Publisher | null {
+    #closeAll() {
+        for (const { publisher } of this.#publishers.values()) {
+            publisher.close()
+        }
+        this.#publishers.clear()
+    }
+
+    /** The publishers for the current topics; a topic that went away gets its stop first, then closes. */
+    #publishersFor(topics: DriveTopic[]): { topic: DriveTopic; key: string; entry: { publisher: Publisher; deadman: boolean } }[] | null {
         const client = this.connection.client
         if (!client || client.state === "lost") {
             return null
         }
-        const usable = this.#publisher && !["tripped", "closed", "rejected"].includes(this.#publisher.state)
-        if (usable && this.#publisherKey === key) {
-            return this.#publisher
-        }
-        if (usable) {
-            // the topic changed mid-drive: the old one gets its stop first
-            if (this.#deadmanArmed) {
-                this.#publisher!.put(ZERO)
+        const wanted = new Map(topics.map((topic) => [zenohKey(topic.topic, topic.type), topic]))
+        for (const [key, entry] of this.#publishers) {
+            const usable = !["tripped", "closed", "rejected"].includes(entry.publisher.state)
+            if (!wanted.has(key) || !usable) {
+                if (usable && entry.deadman) {
+                    entry.publisher.put(zeroOf(wanted.get(key)?.type ?? (key.endsWith(TWIST_STAMPED) ? TWIST_STAMPED : TWIST)))
+                }
+                entry.publisher.close()
+                this.#publishers.delete(key)
             }
-            this.#publisher!.close()
         }
-        this.#publisher = client.publisher(key, { priority: Priority.REAL_TIME, latencyLimit: this.profile.drive.deadmanMs })
-        this.#publisherKey = key
-        this.#deadmanArmed = false
-        return this.#publisher
+        return [...wanted].map(([key, topic]) => {
+            let entry = this.#publishers.get(key)
+            if (!entry) {
+                entry = { publisher: client.publisher(key, { priority: Priority.REAL_TIME, latencyLimit: this.profile.drive.deadmanMs }), deadman: false }
+                this.#publishers.set(key, entry)
+            }
+            return { topic, key, entry }
+        })
     }
 
     #tick() {
@@ -244,35 +250,41 @@ export class Drive {
         } else if (this.#stopFlush > 0) {
             this.#stopFlush--
         } else {
-            if (this.#deadmanArmed) {
-                this.#deadmanArmed = false
-                this.#publisher?.clearDeadman().catch(() => {})
+            for (const entry of this.#publishers.values()) {
+                if (entry.deadman) {
+                    entry.deadman = false
+                    entry.publisher.clearDeadman().catch(() => {})
+                }
             }
             if (state.publishing) {
                 this.state.update({ publishing: false })
             }
             return
         }
-        const publisher = this.#publisherFor(dimosKey(state.topic, TWIST))
-        if (!publisher) {
+        const targets = this.#publishersFor(state.topics)
+        if (!targets) {
             this.state.update({ error: "not connected to the bridge" })
             return
         }
-        try {
-            if (moving && !this.#deadmanArmed) {
-                this.#deadmanArmed = true
-                publisher.setDeadman(ZERO).catch((error) => {
-                    this.#deadmanArmed = false
-                    this.state.update({ error: `deadman: ${error}` })
-                })
+        const plain = { linear: xyz(twist.linear), angular: xyz(twist.angular) }
+        let error: string | null = null
+        for (const { topic, entry } of targets) {
+            try {
+                if (moving && !entry.deadman) {
+                    entry.deadman = true
+                    entry.publisher.setDeadman(zeroOf(topic.type)).catch((caught) => {
+                        entry.deadman = false
+                        this.state.update({ error: `deadman: ${caught}` })
+                    })
+                }
+                entry.publisher.put(encode(topic.type, topic.type === TWIST_STAMPED ? { header: { stamp: stampNow(), frame_id: "base_link" }, twist: plain } : plain))
+            } catch (caught) {
+                // tripped since the last tick; the next one makes a fresh publisher
+                entry.deadman = false
+                error = String(caught)
             }
-            publisher.put(encode(TWIST, { linear: xyz(twist.linear), angular: xyz(twist.angular) }))
-            this.state.update({ publishing: true, sent: state.sent + 1, error: null })
-        } catch (error) {
-            // tripped since the last tick; the next one makes a fresh publisher
-            this.#deadmanArmed = false
-            this.state.update({ error: String(error) })
         }
+        this.state.update({ publishing: true, sent: state.sent + 1, error })
     }
 
     /** Sets a profile slider (or steps it) and publishes its message, if armed. */
@@ -318,9 +330,14 @@ export class Drive {
     dispose() {
         clearInterval(this.#timer)
         clearTimeout(this.#commandTimer)
-        this.#publisher?.close()
+        this.#closeAll()
         this.#controlPublishers.forEach((publisher) => publisher.close())
     }
 }
 
 const xyz = ([x, y, z]: [number, number, number]) => ({ x, y, z })
+
+const stampNow = () => {
+    const now = Date.now()
+    return { sec: Math.floor(now / 1000), nsec: (now % 1000) * 1_000_000 }
+}
