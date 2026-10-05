@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
-import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic } from "../core/recordFormat.ts"
+import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, TOP_STREAMS } from "../core/recordFormat.ts"
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
@@ -41,6 +41,8 @@ export function RecordControl({ app }: { app: ViewerApp }) {
         ? (pending.action === "start" ? "Starting…" : "Stopping…")
         : active
         ? `Stop recording (${formatClock(status.recording.seconds)}, ${formatBytes(status.recording.bytes)}, ${status.keys.length} streams)`
+        : status.options.recordNew
+        ? `Record every stream${topics.length - selected.length ? ` but ${topics.length - selected.length} turned off` : ""}; new ones join`
         : `Record ${selected.length} streams`
 
     return (
@@ -51,7 +53,8 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                 aria-pressed={active}
                 title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
                 aria-label={label}
-                disabled={busy || !!status.unavailable || (!active && !selected.length)}
+                // with new streams joining, a recording can start before anything is on the bus: they join as they appear
+                disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
                 onClick={toggle}
             >
                 <span className="record-dot" />
@@ -134,7 +137,23 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
         }
     }
     const rateOf = new Map(streams.list.map((stream) => [stream.key, stream]))
-    const top = biggestStreams(streams.list)
+    // the biggest streams, ranked once and then held in place while this is open, so a switch doesn't move under the
+    // pointer as rates change (new ones fill free places; the numbers stay live)
+    const [topKeys, setTopKeys] = useState<string[]>([])
+    useEffect(() => {
+        if (streams.seconds < 2) {
+            return
+        }
+        const ranked = biggestStreams(streams.list).map((stream) => stream.key).filter((key) => !topKeys.includes(key))
+        if (topKeys.length < TOP_STREAMS && ranked.length) {
+            setTopKeys([...topKeys, ...ranked].slice(0, TOP_STREAMS))
+        }
+    }, [streams, topKeys])
+    const top = topKeys.map((key) => {
+        const stream = streams.list.find((other) => other.key === key)
+        const topic = topics.find((other) => other.key === key)
+        return stream ?? { key, topic: topic?.name ?? key, type: topic?.type ?? "", bytesPerSecond: 0, messagesPerSecond: 0, recorded: true, maxRate: null }
+    })
     const recordedRate = streams.list.filter((stream) => isRecorded(stream.key, chosen)).reduce((sum, stream) => sum + stream.bytesPerSecond, 0)
     const known = new Set(topics.map((topic) => topic.key))
     // every stream: the bridge's topics plus anything the meter heard that the bridge hasn't announced
@@ -216,7 +235,7 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
                         <span className="stream-rate dim-mono">{formatRate(stream.bytesPerSecond)}</span>
                     </div>
                 ))}
-                {!top.length && <p className="empty">{streams.error ? `can't measure: ${streams.error}` : streams.seconds < 3 ? "measuring…" : "nothing is sending"}</p>}
+                {!top.length && <p className="empty">{streams.error ? `can't measure: ${streams.error}` : streams.seconds < 2 ? "measuring…" : "nothing is sending"}</p>}
             </div>
             <p className="hint" data-testid="record-summary">
                 Recording {recordedCount} of {all.length} streams{recordedRate > 0 ? ` · about ${formatRate(recordedRate)}` : ""}
