@@ -167,7 +167,7 @@ h3.dim-label.first { margin-top: 4px; }
 .camera-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: move; flex: none;
     background: color-mix(in srgb, var(--card) 88%, transparent); border-bottom: 1px solid var(--border); }
 .camera-panel { container-type: inline-size; }
-.camera-head .dim-select { width: auto; flex: 0 1 auto; min-width: 0; padding: 2px 26px 2px 6px; font-size: 11px; max-width: 60%;
+.camera-head .dim-select { width: auto; flex: 0 1 auto; min-width: 0; padding: 2px 32px 2px 6px; font-size: 11px; max-width: 60%;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background-position: right 13px center, right 8px center; }
 .camera-head .dim-btn.icon.icon-button { width: 24px; height: 24px; }
 .camera-info { flex: 1 1 0; min-width: 0; font: 10px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
