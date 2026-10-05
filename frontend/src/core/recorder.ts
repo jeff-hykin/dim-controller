@@ -7,7 +7,35 @@ export interface RecordingStatus {
     messages: number
     bytes: number
     dropped: number
+    /** left out by a stream's max rate */
+    skipped: number
     seconds: number
+}
+
+export type ImageFormat = "raw" | "jpeg" | "png" | "webp" | "jpegxl"
+export type Compression = "none" | "lz4" | "zstd"
+
+/** The recorder's saved options (the lv.record.options setting, server/src/recorder.rs `Options`). */
+export interface RecorderOptions {
+    recordNew: boolean
+    compression: Compression
+    image_format: ImageFormat
+    /** "" = the default folder */
+    directory: string
+    logs: boolean
+    /** topic key → max messages per second */
+    rates: Record<string, number>
+}
+
+/** One stream on the bus as the backend's meter measures it (GET api/recorder/streams). */
+export interface StreamRate {
+    key: string
+    topic: string
+    type: string
+    bytesPerSecond: number
+    messagesPerSecond: number
+    recorded: boolean
+    maxRate: number | null
 }
 
 export interface RecordingFile {
@@ -25,8 +53,14 @@ export interface RecorderStatus {
     /** dimos log dirs being tailed into the recording, and the lines written so far */
     logs: { dirs: string[]; lines: number }
     files: RecordingFile[]
-    settings: { compression: "none" | "lz4" | "zstd"; image_format: "raw" | "jpeg" | "png" | "webp" | "jpegxl" }
+    settings: { compression: Compression; image_format: ImageFormat }
+    /** where the next recording goes */
     directory: string
+    /** where it goes when no folder is chosen */
+    default_directory: string
+    /** Desktop's shared recordings folder (what the Recordings app lists), when Desktop said */
+    recordings_root: string | null
+    options: RecorderOptions
     /** null = the backend answered; else why it didn't */
     unavailable: string | null
 }
@@ -76,17 +110,27 @@ async function call(path: string, init?: RequestInit) {
     return body
 }
 
+export const DEFAULT_OPTIONS: RecorderOptions = { recordNew: true, compression: "none", image_format: "raw", directory: "", logs: true, rates: {} }
+
 class RecorderClient {
     readonly status = new Store<RecorderStatus>({
-        recording: { active: false, path: null, messages: 0, bytes: 0, dropped: 0, seconds: 0 },
+        recording: { active: false, path: null, messages: 0, bytes: 0, dropped: 0, skipped: 0, seconds: 0 },
         keys: [],
         logs: { dirs: [], lines: 0 },
         files: [],
         settings: { compression: "none", image_format: "raw" },
         directory: "",
+        default_directory: "",
+        recordings_root: null,
+        options: DEFAULT_OPTIONS,
         unavailable: "connecting…",
     })
+    /** a start or stop on its way (the button waits on it, so a double click can't start two) */
+    readonly pending = new Store<{ action: "start" | "stop" | null }>({ action: null })
+    /** each stream's live bytes/s, while the options popover is open (`watchStreams`) */
+    readonly streams = new Store<{ list: StreamRate[]; seconds: number; error: string | null }>({ list: [], seconds: 0, error: null })
     #watchers = 0
+    #streamWatchers = 0
 
     constructor() {
         this.#poll()
@@ -121,17 +165,51 @@ class RecorderClient {
      * with new topics joining: the backend picks them, and the running dimos's logs (server/src/recorder.rs).
      */
     async start(keys: string[] | null) {
-        await call("/start", { method: "POST", body: JSON.stringify(keys ? { keys } : {}) })
-        await this.refresh()
+        await this.#act("start", () => call("/start", { method: "POST", body: JSON.stringify(keys ? { keys } : {}) }))
     }
 
     async stop() {
-        await call("/stop", { method: "POST" })
-        await this.refresh()
+        await this.#act("stop", () => call("/stop", { method: "POST" }))
     }
 
-    async settings(patch: Partial<RecorderStatus["settings"]> & { directory?: string }) {
+    /** One start or stop at a time; whatever happens the status is read again (another page may have started one). */
+    async #act(action: "start" | "stop", work: () => Promise<unknown>) {
+        if (this.pending.get().action) {
+            return
+        }
+        this.pending.set({ action })
+        try {
+            await work()
+        } finally {
+            await this.refresh()
+            this.pending.set({ action: null })
+        }
+    }
+
+    /** Changes saved options (PUT api/recorder/settings); the format and folder can't change while recording. */
+    async settings(patch: Partial<Omit<RecorderOptions, "rates">> & { rates?: Record<string, number | null> }) {
         this.status.set({ ...(await call("/settings", { method: "PUT", body: JSON.stringify(patch) })), unavailable: null })
+    }
+
+    /** The options popover asks for live stream rates (every 1.5 s) while it's open. */
+    watchStreams(): () => void {
+        this.#streamWatchers++
+        if (this.#streamWatchers === 1) {
+            this.#pollStreams()
+        }
+        return () => this.#streamWatchers--
+    }
+
+    async #pollStreams() {
+        while (this.#streamWatchers > 0) {
+            try {
+                const body = await call("/streams")
+                this.streams.set({ list: body.streams, seconds: body.seconds, error: null })
+            } catch (error) {
+                this.streams.update({ error: String((error as Error).message ?? error) })
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+        }
     }
 
     async remove(file: RecordingFile) {

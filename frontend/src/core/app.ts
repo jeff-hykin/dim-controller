@@ -6,6 +6,7 @@ import { TfTree } from "./tf.ts"
 import { feedTf } from "./tfFeed.ts"
 import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "./render/viewer.ts"
+import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
@@ -25,15 +26,12 @@ export interface ViewSettings {
     showStats: boolean
 }
 
-/** The camera buttons go through the backend (POST api/camera), the same endpoint the agent uses. */
-export async function cameraAction(action: "recenter" | "topDown"): Promise<void> {
-    await fetch(new URL("api/camera", location.href), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) })
-}
-
 export class ViewerApp {
     readonly connection: Connection
     readonly tf = new TfTree()
     readonly viewer: Viewer
+    /** the TF frame picked out in the view (the TF panel's hovered row) */
+    readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
     readonly settings = persistentStore<ViewSettings>("lv.view", { profile: profiles[0].name, fixedFrame: "", follow: true, showStats: false })
@@ -57,6 +55,7 @@ export class ViewerApp {
         this.profile = profiles.find((profile) => profile.name === this.settings.get().profile) ?? profiles[0]
         this.connection = new Connection(this.profile.drive.deadmanMs)
         this.viewer = new Viewer(host, () => this.connection.bridgeNow())
+        this.highlight = new FrameHighlight(this.viewer, this.tf)
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
@@ -102,23 +101,56 @@ export class ViewerApp {
         }
     }
 
-    /** The backend asked every viewer to move the camera (POST api/camera). */
+    /** The backend asked every viewer to move the camera (POST api/camera, the agent's way; the page's own buttons call recenter / topDown directly). */
     applyCamera(event: { action: string; target?: number[] | null; distance?: number | null }) {
-        if (event.action === "recenter" || event.action === "topDown") {
-            this.recenter(event.action === "topDown")
+        if (event.action === "recenter") {
+            this.recenter()
+        } else if (event.action === "topDown") {
+            this.topDown()
         } else if (event.action === "lookAt" && event.target?.length === 3) {
             this.settings.update({ follow: false })
             this.viewer.frame(new THREE.Vector3(event.target[0], event.target[1], event.target[2]), event.distance ?? 7)
         }
     }
 
-    /** Recenter on the robot (or the origin). */
-    recenter(topDown = false) {
-        const target = this.#robotPosition?.clone() ?? new THREE.Vector3()
-        if (topDown) {
-            this.viewer.topDown(target, 14)
+    /** Frames the robot (7 m away), or without one the data that's drawn, or else the origin. */
+    recenter() {
+        if (this.#robotPosition) {
+            this.viewer.frame(this.#robotPosition.clone(), 7)
+            return
+        }
+        const bounds = this.viewer.dataBounds()
+        if (bounds) {
+            const size = bounds.getSize(new THREE.Vector3())
+            this.viewer.frame(bounds.getCenter(new THREE.Vector3()), THREE.MathUtils.clamp(Math.max(size.x, size.y, size.z) * 1.2, 4, 300))
+            return
+        }
+        this.viewer.frame(new THREE.Vector3(), 7)
+    }
+
+    /**
+     * Straight down on the area around the robot (the data within 15 m of it, at least 12 m and at most 30 m across),
+     * or without one on all the data that's drawn.
+     */
+    topDown() {
+        const bounds = this.viewer.dataBounds()
+        const robot = this.#robotPosition?.clone() ?? null
+        if (robot) {
+            let extent = 20
+            if (bounds) {
+                const near = bounds.clone().intersect(new THREE.Box3().setFromCenterAndSize(robot, new THREE.Vector3(30, 30, 1e6)))
+                if (!near.isEmpty()) {
+                    const size = near.getSize(new THREE.Vector3())
+                    extent = THREE.MathUtils.clamp(Math.max(size.x, size.y), 12, 30)
+                }
+            }
+            this.viewer.topDown(robot, extent)
+        } else if (bounds) {
+            const size = bounds.getSize(new THREE.Vector3())
+            const center = bounds.getCenter(new THREE.Vector3())
+            this.viewer.topDown(center.setZ(bounds.min.z), THREE.MathUtils.clamp(Math.max(size.x, size.y), 6, 400))
         } else {
-            this.viewer.frame(target, 7)
+            this.viewer.topDown(new THREE.Vector3(), 20)
         }
     }
 

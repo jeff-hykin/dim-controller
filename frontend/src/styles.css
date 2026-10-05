@@ -27,6 +27,11 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 }
 .mobile.camera-main .scene-slot { width: 42vw; height: 30vw; bottom: calc(176px + env(safe-area-inset-bottom) + var(--dim-inset-bottom)); right: 10px; }
 .pip-expand { position: absolute; top: 6px; right: 6px; z-index: 2; }
+/* recenter / top-down, over the view's bottom-right corner (above the add-camera button) */
+.view-controls { position: absolute; right: 12px; bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 6px; }
+.view-control { width: 36px; height: 36px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
+.mobile .view-controls { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: 8px; }
+.scene-label.frame-highlight { font-size: 12.5px; font-weight: 700; color: var(--primary-fg); background: var(--primary); border-left-color: var(--fg); z-index: 2; }
 
 .scene-label { font: 600 11px/1.2 var(--sans); color: var(--fg); padding: 2px 6px; border-radius: 4px; white-space: nowrap;
     background: color-mix(in srgb, var(--card) 80%, transparent); border-left: 3px solid var(--label-color, var(--primary));
@@ -101,22 +106,55 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .controls { margin-top: 6px; }
 .twist-readout { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted-fg); margin-top: 10px; }
 
-/* recorder */
-.record-button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 8px; }
-.record-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--danger); }
-.record-button.recording .record-dot { background: var(--danger-fg); border-radius: 2px; }
-.record-topics { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 6px; }
-.record-topic { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; }
-.record-topic .topic-name { flex: 1; }
-.rpc-group { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 4px; }
-.files { list-style: none; margin: 0; padding: 0; }
-.file { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); }
-.file-name { flex: 1; font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-meta { font-size: 11px; color: var(--muted-fg); white-space: nowrap; }
+/* recorder: the top bar's Record button and "…", and the options popover (ui/RecordControl.tsx) */
+.record-control { display: flex; align-items: center; gap: 4px; position: relative; }
+.record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.record-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); flex: none; }
+.record-toggle.recording .record-dot { background: var(--danger-fg); border-radius: 2px; animation: blink 1s infinite; }
+.record-live { font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.record-more { width: 30px; height: 30px; padding: 0; }
+.record-error { cursor: help; }
+.record-options { position: fixed; top: calc(56px + env(safe-area-inset-top)); right: 10px; width: 380px; z-index: 20; display: flex; flex-direction: column;
+    max-height: calc(100vh - 70px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
+.record-options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.record-options-head h2 { margin: 0; }
+.record-now { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; margin: 4px 0; border: 1px solid var(--danger); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--danger) 10%, transparent); font-size: 12px; }
+.record-now .dim-badge { align-self: flex-start; }
+.record-now .hint, .record-now .problem { margin: 0; }
+.record-path { font: 10.5px var(--mono); overflow-wrap: anywhere; }
+.record-folder { display: flex; gap: 6px; }
+.record-folder .dim-input { flex: 1; font-size: 11.5px; }
+.warn-text { color: var(--warn); }
+.top-streams { display: flex; flex-direction: column; gap: 2px; }
+.stream-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.stream-row .topic-name { flex: 1; min-width: 0; }
+.stream-rate { font-size: 11px; color: var(--muted-fg); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.advanced-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 8px; padding: 4px 0; border: 0; background: none;
+    font: 600 12px var(--sans); color: var(--muted-fg); cursor: pointer; }
+.advanced-toggle svg { transition: transform 0.15s; }
+.advanced-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.advanced-toggle:hover { color: var(--fg); }
+.record-advanced { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
+.all-streams-head { display: flex; align-items: baseline; justify-content: space-between; margin: 12px 0 6px; }
+.record-topics { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 6px; }
+.record-topic { display: grid; grid-template-columns: 18px minmax(0, 1fr) 64px 56px; align-items: center; gap: 6px; padding: 2px 0; }
+.record-topic.legend { font-size: 10px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.record-topic.off .topic-name { color: var(--muted-fg); text-decoration: line-through; }
+.record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
+.record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
+.mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(50px + env(safe-area-inset-top)); }
+.mobile .record-label, .mobile .record-extra { display: none; }
+.mobile .record-toggle { padding: 6px 8px; }
+
+/* settings: Drive is its first section */
+h3.dim-label.first { margin-top: 4px; }
+.settings-section { padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 
 /* tf */
 .tf-tree { font: 11.5px var(--mono); margin-top: 8px; }
-.tf-frame { display: flex; justify-content: space-between; padding: 1px 0; }
+.tf-frame { display: flex; justify-content: space-between; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; cursor: default; }
+.tf-frame:hover, .tf-frame.highlighted { background: color-mix(in srgb, var(--primary) 16%, transparent); }
 .tf-frame.stale { color: var(--warn); }
 .tf-age { color: var(--muted-fg); }
 

@@ -5,13 +5,14 @@ import { ViewerApp } from "./core/app.ts"
 import { persistentStore, useStore } from "./core/store.ts"
 import { TopBar } from "./ui/TopBar.tsx"
 import { SidePanel, type Tab } from "./ui/SidePanel.tsx"
-import { CameraPanels, type CameraLayout } from "./ui/CameraPanels.tsx"
+import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
+import { ViewControls } from "./ui/ViewControls.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
@@ -53,8 +54,12 @@ export function App() {
         <div className={`app ${view.mobile ? "mobile" : "desktop"} ${view.mainCamera ? "camera-main" : "scene-main"}`}>
             <div className="scene-slot">
                 <div ref={host} className="scene" />
+                {app && !view.mainCamera && <ViewControls app={app} />}
                 {view.mainCamera && (
-                    <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => cameraLayout.update({ main: null })}><Icon name="expand" size={15} /></button>
+                    <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => {
+                        chooseLayout()
+                        cameraLayout.update({ main: null, auto: false })
+                    }}><Icon name="expand" size={15} /></button>
                 )}
             </div>
             {app && (

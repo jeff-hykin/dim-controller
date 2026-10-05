@@ -1,17 +1,16 @@
 // Connection state, live numbers, and the panel tabs.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { recorder } from "../core/recorder.ts"
+import { RecordControl } from "./RecordControl.tsx"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
 import { ThemeToggle } from "./ThemeToggle.tsx"
 import type { Tab } from "./SidePanel.tsx"
 
+// driving's settings are Settings' first section; recording is the Record button and its "…" options (RecordControl)
 const TABS: { tab: Tab; icon: string; label: string }[] = [
-    { tab: "layers", icon: "layers", label: "Layers" },
-    { tab: "drive", icon: "drive", label: "Drive" },
-    { tab: "record", icon: "record", label: "Record" },
     { tab: "tf", icon: "tree", label: "TF" },
+    { tab: "layers", icon: "layers", label: "Layers" },
     { tab: "settings", icon: "settings", label: "Settings" },
 ]
 
@@ -19,7 +18,6 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
     const connection = useStore(app.connection.status)
     const stats = useStore(app.viewer.stats)
     const tf = useStore(app.tf.summary)
-    const recording = useStore(recorder.status).recording.active
     const drive = useStore(app.drive.state)
     const fallback = useStore(splatFallback)
     const live = connection.state === "connected"
@@ -42,13 +40,13 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
             )}
             {drive.armed && <span className="dim-badge solid danger">ARMED</span>}
             <span className="spacer" />
+            <RecordControl app={app} />
             <ThemeToggle className="theme-toggle" />
             <nav className="dim-tabs tabs">
                 {TABS.map((item) => (
                     <button type="button" key={item.tab} className={`dim-tab tab ${tab === item.tab ? "active" : ""}`} aria-selected={tab === item.tab} title={item.label} aria-label={item.label} onClick={() => onTab(item.tab)}>
                         <Icon name={item.icon} />
                         <span className="tab-label">{item.label}</span>
-                        {item.tab === "record" && recording && <span className="dim-badge danger tab-badge rec"><span className="dot" /></span>}
                         {item.tab === "tf" && tf.problems > 0 && <span className="dim-badge warn tab-badge">{tf.problems}</span>}
                     </button>
                 ))}

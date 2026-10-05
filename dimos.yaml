@@ -66,7 +66,8 @@ agent:
                 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that
                 layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto,
                 else the output topics, one per entry, "/name" or "/name TwistStamped"}; lv.record.topics {<topic key>:
-                record or not}; lv.record.options {recordNew}; lv.cameras (the camera panels).
+                record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory ("" =
+                default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).
         -
             method: PATCH
             path: api/settings
@@ -87,15 +88,17 @@ agent:
             method: GET
             path: api/recorder
             description: >-
-                The recorder: whether it's recording (messages, bytes, dropped, seconds, path), the keys and log dirs
-                being recorded, the files in the recordings folder, and the image/compression settings.
+                The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path),
+                the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default
+                one, and Desktop's shared recordings folder) and its options (lv.record.options).
         -
             method: POST
             path: api/recorder/start
             description: >-
-                Start recording to mcap. Without keys: every topic on the bus except rpc topics and the ones unticked in
-                the recorder panel, and topics that appear later join (unless recordNew is off); the running dimos's
-                jsonl logs go in too. Location labels are written into it.
+                Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder
+                (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's
+                jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Location labels
+                are written into it.
             params:
                 keys:
                     description: 'dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above'
@@ -138,18 +141,35 @@ agent:
             method: PUT
             path: api/recorder/settings
             description: >-
-                Recording settings (not while recording): image_format (raw | png | jpegxl | webp | jpeg), compression
-                (none | lz4 | zstd), directory.
+                Recording options, saved (lv.record.options): image_format (raw | png | jpegxl | webp | jpeg),
+                compression (none | lz4 | zstd) and directory ("" = the default) not while recording; recordNew, logs
+                and rates (a stream's max messages per second, 0 = every message) any time.
             params:
                 compression:
                     description: none | lz4 | zstd
                     type: string
                 directory:
-                    description: where recordings go
+                    description: where recordings go; "" = the default (Desktop's shared recordings folder)
                     type: string
                 image_format:
                     description: raw | png | jpegxl | webp | jpeg
                     type: string
+                logs:
+                    description: record the running dimos's jsonl logs
+                    type: boolean
+                rates:
+                    description: topic key -> max messages per second (0 or null = every message)
+                    type: object
+                recordNew:
+                    description: topics that appear mid-recording join it
+                    type: boolean
+        -
+            method: GET
+            path: api/recorder/streams
+            description: >-
+                Each stream on the bus, biggest first: key, topic, type, bytesPerSecond and messagesPerSecond (measured
+                live; the meter listens while this is asked for and stops 15 s after), whether it's recorded, and its
+                maxRate.
         -
             method: GET
             path: 'api/recorder/files/{name}'

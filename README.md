@@ -59,21 +59,27 @@ something changed. Settings → Stats shows fps, CPU per frame and bridge-to-scr
 ## Cameras
 
 One camera panel opens on the profile's preferred camera; `+` adds more, each with its own topic and an optional 2D
-detection overlay. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back).
+detection overlay. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back). With no point
+cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
+topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
+
+The 3D view's corner buttons recenter (frame the robot, or without one the drawn data) and look straight down on the
+area around the robot (`POST api/camera` does the same in every open page). Hovering a frame in the TF panel picks it
+out in the view: big axes drawn through everything, with its name.
 
 ## Driving
 
 Driving is **off until armed** (the ARM button, or `POST api/drive/arm`). Arming is held by the backend: one switch for
 every open page and the agent, shown on each, and a restart comes up disarmed. Escape or hiding the page disarms, and
 disarming stops the robot. Armed, W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
-and halves turning, Space stops (the agent's command too). Linear and angular speeds are in the Drive panel. Commands go
+and halves turning, Space stops (the agent's command too). Linear and angular speeds are in Settings → Drive. Commands go
 straight to the output topics through Desktop's bridge, each with its own deadman: if the page goes quiet or
 disconnects, the bridge sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
 of zeros, then silence), so a parked browser never drowns out other teleop.
 
 ### Driving: which topics
 
-The Drive panel's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or
+Settings → Drive's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or
 `/my_cmd_vel TwistStamped`; saved like the other settings). Auto ([core/cmdvel.ts](frontend/src/core/cmdvel.ts)):
 
 - A **velocity input** is a module input whose name contains `cmd_vel` (`cmd_vel`, `tele_cmd_vel`, `cmd_vel_in`, …) and
@@ -104,18 +110,21 @@ or up/down for a profile with a vertical axis), with FAST and STOP buttons.
 ## Costmap
 
 `nav_msgs.OccupancyGrid` topics (e.g. `global_costmap`) draw as a plane under the robot, with its pose and the planned
-path; Settings → Top-down (or `POST api/camera {action: "topDown"}`) gives the flat map view the old Controller
+path; the view's top-down button (or `POST api/camera {action: "topDown"}`) gives the flat map view the old Controller
 had in its map panel.
 
 ## Recording
 
-The Record panel writes an mcap with the chosen topics (rpc topics are grouped and off by default; choices are
-remembered, and topics that appear mid-recording join it: the backend finds them, so `POST api/recorder/start` with no
-keys records the same set). Known types are written as ROS 2 CDR so Foxglove opens the
-file; images can be re-encoded (png / jpeg xl lossless, webp, jpeg); anything else is kept as raw LCM bytes with its
-type name. Files land in Desktop's shared recordings folder, under `controller/` (`live-viewer/` if that exists from
-before the rename), else in `recordings` in its data dir (`dataDir`); the panel lists them with size, age, download, copy
-path and delete.
+**Record** in the top bar writes an mcap of every stream on the bus (while recording it shows the time, size and how
+many streams); streams that appear mid-recording join it (the backend finds them, so `POST api/recorder/start` with no
+keys records the same set). **…** opens the options: the folder (Desktop's shared recordings folder by default, under
+`controller/`, or `live-viewer/` if that exists from before the rename; else `recordings` in the app's data dir), the
+five biggest streams by live bandwidth (measured by the backend, `GET api/recorder/streams`) each with a switch to leave
+it out, and **See recordings**, which opens the Recordings app (or offers to install it). **Advanced** has the image
+format (raw, png / jpeg xl lossless, webp, jpeg), mcap chunk compression, whether new streams join, whether dimos's logs
+go in, and every stream with its rate, a switch and a max rate (messages per second; the rest are skipped). The options
+are saved in the backend (`lv.record.options`, `lv.record.topics`; `PUT api/recorder/settings`). Known types are
+written as ROS 2 CDR so Foxglove opens the file; anything else is kept as raw LCM bytes with its type name.
 
 The running dimos's own logs go into the same file. When recording starts the backend asks Desktop where they are
 (`GET /dimos/runs`: each run's `log_dir`; on newer Desktops `GET /dimos/paths` as a fallback) and the backend tails

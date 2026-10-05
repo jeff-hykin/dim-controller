@@ -31,7 +31,21 @@ export interface CameraLayout {
     main: number | null
     /** a panel was opened on the first camera once (closing it all stays closed) */
     seeded?: boolean
+    /** the camera is main because nothing draws in 3D (no point cloud): a cloud showing up gives the view back */
+    auto?: boolean
 }
+
+/** a lidar / point cloud: what makes the 3D view worth the screen */
+export const isCloudTopic = (topic: Topic) => topic.type === "sensor_msgs.PointCloud2" || /lidar/i.test(topic.name)
+
+/** the user swapped the layout themselves this session: the camera-only default leaves it alone */
+let userChoseLayout = false
+export function chooseLayout() {
+    userChoseLayout = true
+}
+
+/** how long the topic list has to stay the same before a camera-only blueprint gets the camera layout (topics arrive one by one) */
+const SETTLE_MS = 3000
 
 const isImage = (topic: Topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage"
 
@@ -61,8 +75,50 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         }
     }, [topics, panels.length, seeded, app, layout])
 
+    // camera-only (no point cloud, a camera): the camera fills the screen and the 3D view becomes the picture-in-picture
+    const topicKeys = topics.map((topic) => topic.key).join("|")
+    useEffect(() => {
+        const clouds = topics.some(isCloudTopic)
+        const current = layout.get()
+        if (clouds) {
+            if (current.auto) {
+                layout.update({ main: null, auto: false })
+            }
+            return
+        }
+        if (current.main !== null || userChoseLayout || !topics.some(isImage)) {
+            return
+        }
+        const timer = setTimeout(() => {
+            const latest = app.connection.status.get().topics
+            const now = layout.get()
+            if (latest.some(isCloudTopic) || now.main !== null || userChoseLayout) {
+                return
+            }
+            const camera = now.panels.find((panel) => latest.some((topic) => topic.key === panel.key && isImage(topic)))
+            if (camera) {
+                layout.update({ main: camera.id, auto: true })
+                return
+            }
+            const first = pickDefault(app, latest)
+            if (first) {
+                const id = Math.max(0, ...now.panels.map((panel) => panel.id)) + 1
+                layout.update({ seeded: true, auto: true, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+            }
+        }, SETTLE_MS)
+        return () => clearTimeout(timer)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [topicKeys, app, layout])
+
     const update = (id: number, patch: Partial<PanelState>) => layout.update({ panels: layout.get().panels.map((panel) => panel.id === id ? { ...panel, ...patch } : panel) })
-    const close = (id: number) => layout.update({ panels: layout.get().panels.filter((panel) => panel.id !== id), main: layout.get().main === id ? null : layout.get().main })
+    const close = (id: number) => {
+        const current = layout.get()
+        const wasMain = current.main === id
+        if (wasMain) {
+            chooseLayout()
+        }
+        layout.update({ panels: current.panels.filter((panel) => panel.id !== id), main: wasMain ? null : current.main, auto: wasMain ? false : current.auto })
+    }
     const add = () => {
         const used = new Set(panels.map((panel) => panel.key))
         const next = topics.filter(isImage).find((topic) => !used.has(topic.key)) ?? pickDefault(app, topics)
@@ -83,7 +139,10 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
                     mobile={mobile}
                     onChange={(patch) => update(panel.id, patch)}
                     onClose={() => close(panel.id)}
-                    onMain={() => layout.update({ main: main === panel.id ? null : panel.id })}
+                    onMain={() => {
+                        chooseLayout()
+                        layout.update({ main: main === panel.id ? null : panel.id, auto: false })
+                    }}
                 />
             ))}
             <button type="button" className="dim-btn icon add-camera" title="Add a camera panel" onClick={add}>

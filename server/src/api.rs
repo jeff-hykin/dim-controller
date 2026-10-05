@@ -108,15 +108,16 @@ pub fn routes() -> Routes<Api> {
         .role("view")
         .endpoint("POST", "api/camera", "Move the 3D camera in every open page: action=recenter (on the robot), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance).", json!({ "action": required(s("recenter | topDown | lookAt")), "target": vec3("lookAt: the point, world frame"), "distance": n("lookAt: meters from the target") }), camera)
         // settings: everything the page's panels change
-        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile, fixedFrame (\"\" = auto), follow, showStats}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.record.topics {<topic key>: record or not}; lv.record.options {recordNew}; lv.cameras (the camera panels).", json!({}), get_settings)
+        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile, fixedFrame (\"\" = auto), follow, showStats}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.record.topics {<topic key>: record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory (\"\" = default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).", json!({}), get_settings)
         .endpoint("PATCH", "api/settings", "Change a page setting (merged into the key's object; a null field is removed); every open page applies it at once. E.g. {key: \"lv.layers.enabled\", value: {\"dimos/lidar/sensor_msgs.PointCloud2\": false}} hides a layer; {key: \"lv.view\", value: {follow: false}}. Keys: see GET api/settings.", json!({ "key": required(s("e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>")), "value": required(json!({ "type": "object", "description": "the fields to set" })) }), patch_settings)
         // recording
-        .endpoint("GET", "api/recorder", "The recorder: whether it's recording (messages, bytes, dropped, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, and the image/compression settings.", json!({}), recorder::status)
-        .endpoint("POST", "api/recorder/start", "Start recording to mcap. Without keys: every topic on the bus except rpc topics and the ones unticked in the recorder panel, and topics that appear later join (unless recordNew is off); the running dimos's jsonl logs go in too. Location labels are written into it.", json!({ "keys": json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above" }), "name": s("file name (default controller_<time>.mcap)") }), recorder::start)
+        .endpoint("GET", "api/recorder", "The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default one, and Desktop's shared recordings folder) and its options (lv.record.options).", json!({}), recorder::status)
+        .endpoint("POST", "api/recorder/start", "Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Location labels are written into it.", json!({ "keys": json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above" }), "name": s("file name (default controller_<time>.mcap)") }), recorder::start)
         .endpoint("POST", "api/recorder/stop", "Stop the recording and close the file (it shows in Desktop's recordings).", json!({}), recorder::stop)
         .endpoint("POST", "api/recorder/add", "Add keys to the running recording.", json!({ "keys": required(json!({ "type": "array", "items": { "type": "string" } })) }), recorder::add)
         .endpoint("POST", "api/recorder/logs", "Add dimos log dirs to the running recording (each run's log dir, or logs roots whose run dirs are followed).", json!({ "log_dirs": json!({ "type": "array", "items": { "type": "string" } }), "log_roots": json!({ "type": "array", "items": { "type": "string" } }) }), recorder::add_logs)
-        .endpoint("PUT", "api/recorder/settings", "Recording settings (not while recording): image_format (raw | png | jpegxl | webp | jpeg), compression (none | lz4 | zstd), directory.", json!({ "image_format": s("raw | png | jpegxl | webp | jpeg"), "compression": s("none | lz4 | zstd"), "directory": s("where recordings go") }), recorder::settings)
+        .endpoint("PUT", "api/recorder/settings", "Recording options, saved (lv.record.options): image_format (raw | png | jpegxl | webp | jpeg), compression (none | lz4 | zstd) and directory (\"\" = the default) not while recording; recordNew, logs and rates (a stream's max messages per second, 0 = every message) any time.", json!({ "image_format": s("raw | png | jpegxl | webp | jpeg"), "compression": s("none | lz4 | zstd"), "directory": s("where recordings go; \"\" = the default (Desktop's shared recordings folder)"), "recordNew": b("topics that appear mid-recording join it"), "logs": b("record the running dimos's jsonl logs"), "rates": json!({ "type": "object", "description": "topic key -> max messages per second (0 or null = every message)" }) }), recorder::settings)
+        .endpoint("GET", "api/recorder/streams", "Each stream on the bus, biggest first: key, topic, type, bytesPerSecond and messagesPerSecond (measured live; the meter listens while this is asked for and stops 15 s after), whether it's recorded, and its maxRate.", json!({}), recorder::streams)
         .endpoint("GET", "api/recorder/files/{name}", "Download a recording from the recordings folder.", json!({}), recorder::download_file)
         .endpoint("DELETE", "api/recorder/files/{name}", "Delete a recording from the recordings folder (not the running one).", json!({}), recorder::delete_file)
         // location labels and annotations
@@ -328,6 +329,7 @@ impl Api {
 #[cfg(test)]
 pub fn test_router(recorder: Arc<recorder::State>) -> axum::Router {
     let mut api = Api::for_tests(Arc::default());
+    api.settings = recorder.settings.clone();
     api.recorder = recorder;
     routes().router.with_state(api)
 }
@@ -365,6 +367,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let mut api = Api::for_tests(Arc::default());
         api.recorder = Arc::new(recorder::State::new(dir, "tcp/127.0.0.1:9".into()));
+        api.settings = api.recorder.settings.clone();
         (api.clone(), routes().router.with_state(api))
     }
 
@@ -385,6 +388,7 @@ mod tests {
                     | "api/drive/stop"
                     | "api/drive/arm"
                     | "api/recorder/start"
+                    | "api/recorder/streams"
             ) {
                 continue;
             }

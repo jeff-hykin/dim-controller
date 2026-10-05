@@ -223,25 +223,85 @@ export class Viewer {
         return ground ? { point: ground, on: "ground" } : null
     }
 
-    /** Looks at `target` from the current direction, `distance` away. */
+    /**
+     * Looks at `target` from the current direction, `distance` away; from straight above (after a top-down) it goes
+     * back to the default three-quarter view, since keeping that direction would just stay top-down.
+     */
     frame(target: THREE.Vector3, distance: number) {
         const direction = this.camera.position.clone().sub(this.controls.target).normalize()
-        if (!Number.isFinite(direction.x) || direction.lengthSq() === 0) {
+        if (!Number.isFinite(direction.x) || direction.lengthSq() === 0 || direction.z > 0.97) {
             direction.set(-1, -1, 0.9).normalize()
         }
+        this.#place(target, target.clone().addScaledVector(direction, distance))
+    }
+
+    /** Straight down onto `target` from high enough that `extent` meters fit the shorter side of the view. */
+    topDown(target: THREE.Vector3, extent: number) {
+        const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2
+        const fit = Math.min(1, this.camera.aspect)
+        const height = (extent / 2 / Math.tan(halfFov) / fit) * 1.1
+        // a hair south of overhead, so "up" on screen is +y (orbit controls can't look exactly along their up axis)
+        this.#place(target, new THREE.Vector3(target.x, target.y - height * 0.002, target.z + height))
+    }
+
+    /** Puts the camera at `position` looking at `target` now: nothing left over from a drag's damping, no follow glide. */
+    #place(target: THREE.Vector3, position: THREE.Vector3) {
+        const controls = this.controls as unknown as { _sphericalDelta?: THREE.Spherical; _panOffset?: THREE.Vector3; _scale?: number }
+        controls._sphericalDelta?.set(0, 0, 0)
+        controls._panOffset?.set(0, 0, 0)
+        if (controls._scale !== undefined) {
+            controls._scale = 1
+        }
         this.controls.target.copy(target)
-        this.camera.position.copy(target).addScaledVector(direction, distance)
+        this.camera.position.copy(position)
+        this.camera.lookAt(target)
+        this.controls.update()
         this.#following = false
         this.#follow.reset()
         this.requestRender()
     }
 
-    topDown(target: THREE.Vector3, distance: number) {
-        this.controls.target.copy(target)
-        this.camera.position.set(target.x, target.y - distance * 0.01, target.z + distance)
-        this.#following = false
-        this.#follow.reset()
-        this.requestRender()
+    /**
+     * Where the drawn data is (point clouds and meshes, not the grid or helpers): the 2nd-98th percentile box of a
+     * sample of their points, so a few far-off returns don't stretch it. Null when nothing is drawn.
+     */
+    dataBounds(): THREE.Box3 | null {
+        const xs: number[] = [], ys: number[] = [], zs: number[] = []
+        const point = new THREE.Vector3()
+        this.scene.updateMatrixWorld()
+        this.scene.traverseVisible((object) => {
+            // fat lines are meshes of a template quad, not of their points: leave them out
+            const fat = (object as { isLineSegments2?: boolean }).isLineSegments2
+            const drawn = (object as THREE.Points).isPoints || ((object as THREE.Mesh).isMesh && !fat)
+            if (!drawn || object.userData.noPick) {
+                return
+            }
+            const geometry = (object as THREE.Points).geometry
+            const position = geometry?.getAttribute("position") as THREE.BufferAttribute | undefined
+            if (!position) {
+                return
+            }
+            const start = geometry.drawRange.start
+            const end = Math.min(position.count, start + geometry.drawRange.count)
+            const stride = Math.max(1, Math.floor((end - start) / 20000))
+            for (let index = start; index < end; index += stride) {
+                point.fromBufferAttribute(position, index).applyMatrix4(object.matrixWorld)
+                if (Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)) {
+                    xs.push(point.x)
+                    ys.push(point.y)
+                    zs.push(point.z)
+                }
+            }
+        })
+        if (!xs.length) {
+            return null
+        }
+        const range = (values: number[]) => {
+            values.sort((a, b) => a - b)
+            return [values[Math.floor(values.length * 0.02)], values[Math.min(values.length - 1, Math.floor(values.length * 0.98))]]
+        }
+        const [x, y, z] = [range(xs), range(ys), range(zs)]
+        return new THREE.Box3(new THREE.Vector3(x[0], y[0], z[0]), new THREE.Vector3(x[1], y[1], z[1]))
     }
 
     /**

@@ -1,6 +1,6 @@
 //! The page's settings, held here (not in the browser) so the agent can read and change them and every open page
 //! follows: a JSON object per key (`lv.view`, `lv.rendering.v2`, `lv.layers.enabled`, `lv.layer.<type>.<topic key>`,
-//! `lv.drive.<profile>`, `lv.record.topics`, `lv.record.options`, `lv.cameras`). Saved to `settings.json` in the
+//! `lv.drive.<profile>`, `lv.record.topics`, `lv.record.options` (recorder.rs `Options`), `lv.cameras`). Saved to `settings.json` in the
 //! app's data dir; a change is a `{type: "settings", key, value}` event on the page event stream.
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -41,6 +41,12 @@ impl Settings {
             .get(key)
             .cloned()
             .unwrap_or(Value::Null)
+    }
+
+    /// Reads the key's value (null when unset) without copying it: for the recorder's per-message checks.
+    pub fn read<R>(&self, key: &str, reader: impl FnOnce(&Value) -> R) -> R {
+        let values = self.values.lock().unwrap();
+        reader(values.get(key).unwrap_or(&Value::Null))
     }
 
     /// Merges `patch`'s fields into the key's object (`null` fields are removed); returns the new value.

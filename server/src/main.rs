@@ -166,8 +166,12 @@ async fn main() -> Result<()> {
         frontend.display(),
         record_dir.display()
     );
-    let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
-    let settings_file = settings_file();
+    let settings = Arc::new(settings::Settings::load(settings_file()));
+    let state = Arc::new(recorder::State::with_settings(
+        record_dir,
+        args.zenoh_connect.clone(),
+        settings.clone(),
+    ));
     let annotations: Arc<annotations::Annotations> = Arc::default();
     let app_info = dimos_app::get();
     let relay = app_info.and_then(|app| Some((app.desktop_url.clone()?, app.name.clone()?)));
@@ -180,7 +184,7 @@ async fn main() -> Result<()> {
     let api = api::Api {
         recorder: state.clone(),
         annotations: annotations.clone(),
-        settings: Arc::new(settings::Settings::load(settings_file)),
+        settings,
         drive: Arc::default(),
         desktop_url: Arc::new(args.desktop_url.clone()),
     };

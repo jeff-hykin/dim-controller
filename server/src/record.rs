@@ -58,6 +58,8 @@ struct Counters {
     messages: AtomicU64,
     bytes: AtomicU64,
     dropped: AtomicU64,
+    /// left out on purpose: over a stream's max rate
+    skipped: AtomicU64,
 }
 
 /// Chunk compression for the mcap file. The default stays off so a hard kill
@@ -89,6 +91,8 @@ pub struct RecordingStatus {
     pub messages: u64,
     pub bytes: u64,
     pub dropped: u64,
+    /// messages left out by a stream's max rate
+    pub skipped: u64,
     pub seconds: f64,
 }
 
@@ -150,6 +154,11 @@ impl Recorder {
         }
     }
 
+    /// Counts a message left out by its stream's max rate.
+    pub fn skip(&self) {
+        self.counters.skipped.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Writes an already-encoded message at `log_time` (ns since the epoch). It waits for room in the queue
     /// instead of shedding: these are logs and labels, rare next to sensor data and not worth losing.
     pub fn write_encoded(&self, topic: &str, encoded: Encoded, log_time: u64) {
@@ -179,6 +188,7 @@ impl Recorder {
             messages: self.counters.messages.load(Ordering::Relaxed),
             bytes: self.counters.bytes.load(Ordering::Relaxed),
             dropped: self.counters.dropped.load(Ordering::Relaxed),
+            skipped: self.counters.skipped.load(Ordering::Relaxed),
             seconds: self
                 .started
                 .elapsed()
@@ -340,6 +350,7 @@ pub fn idle_status() -> RecordingStatus {
         messages: 0,
         bytes: 0,
         dropped: 0,
+        skipped: 0,
         seconds: 0.0,
     }
 }
