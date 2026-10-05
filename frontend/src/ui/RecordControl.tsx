@@ -76,7 +76,10 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                 aria-label="Recording options"
                 onClick={() => setOpen(!open)}
             >
-                <Icon name="more-horizontal" size={16} />
+                {/* the shared set's dots are hairline at this size: solid ones */}
+                <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden="true">
+                    {[5, 12, 19].map((x) => <rect key={x} x={x - 2} y={10} width={4} height={4} rx={2} fill="currentColor" />)}
+                </svg>
             </button>
             {error && !open && <span className="dim-badge danger record-error" title={error}>failed</span>}
             {open && <RecordOptions app={app} error={error} onClose={() => setOpen(false)} />}
