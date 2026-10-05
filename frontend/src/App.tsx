@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { persistentStore, Store, useStore } from "./core/store.ts"
 import { TopBar } from "./ui/TopBar.tsx"
+import { RecordControl } from "./ui/RecordControl.tsx"
 import { SidePanel, type Tab } from "./ui/SidePanel.tsx"
 import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
@@ -30,7 +31,8 @@ export function App() {
     const host = useRef<HTMLDivElement>(null)
     const [app, setApp] = useState<ViewerApp | null>(null)
     const mobile = useMobile()
-    const [tab, setTab] = useState<Tab | null>(() => (matchMedia("(max-width: 720px)").matches ? null : "layers"))
+    // no panel open at first: the 3D view gets the whole screen, and the Record button the top-left corner
+    const [tab, setTab] = useState<Tab | null>(null)
 
     useEffect(() => {
         const created = new ViewerApp(host.current!)
@@ -72,6 +74,7 @@ export function App() {
             {app && (
                 <>
                     <TopBar app={app} tab={tab} onTab={(next) => setTab(tab === next ? null : next)} />
+                    <RecordControl app={app} />
                     {tab && <SidePanel app={app} tab={tab} onTab={setTab} onClose={() => setTab(null)} mobile={view.mobile} />}
                     <CameraPanels app={app} layout={cameraLayout} mobile={view.mobile} />
                     <FirstRun app={app} mobile={view.mobile} />

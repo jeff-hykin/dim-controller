@@ -1,13 +1,12 @@
 // Connection state, live numbers, and the panel tabs.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { RecordControl } from "./RecordControl.tsx"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
 import { ThemeToggle } from "./ThemeToggle.tsx"
 import type { Tab } from "./SidePanel.tsx"
 
-// driving's settings are Settings' first section; recording is the Record button and its "…" options (RecordControl)
+// driving's settings are Settings' first section; recording is the Record button at the top left (RecordControl)
 const TABS: { tab: Tab; icon: string; label: string }[] = [
     { tab: "tf", icon: "tree", label: "TF" },
     { tab: "layers", icon: "layers", label: "Layers" },
@@ -40,7 +39,6 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
             )}
             {drive.armed && <span className="dim-badge solid danger">ARMED</span>}
             <span className="spacer" />
-            <RecordControl app={app} />
             <ThemeToggle className="theme-toggle" />
             <nav className="dim-tabs tabs">
                 {TABS.map((item) => (

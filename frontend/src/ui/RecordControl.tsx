@@ -1,4 +1,4 @@
-// Recording, in the top bar: a Record button (while recording: its time, size and stream count) and "…", which opens
+// Recording, floating at the top left of the view (a panel opens below it): a Record button (while recording: its time, size and stream count) and "…", which opens
 // the options: the folder, the biggest streams by live bandwidth (each can be left out), See recordings, and an
 // Advanced section (image format, chunk compression, new topics, dimos logs, every stream with its rate and a max
 // rate). Every topic is recorded unless turned off; the options are saved in the backend (lv.record.options).
@@ -45,45 +45,48 @@ export function RecordControl({ app }: { app: ViewerApp }) {
         ? `Record every stream${topics.length - selected.length ? ` but ${topics.length - selected.length} turned off` : ""}; new ones join`
         : `Record ${selected.length} streams`
 
+    // the options are the button's sibling, not its child: the button's frosted glass would pin a fixed child to itself
     return (
-        <div className={`record-control ${active ? "recording" : ""}`} data-testid="record-control">
-            <button
-                type="button"
-                className={`dim-btn sm record-toggle ${active ? "danger recording" : ""}`}
-                aria-pressed={active}
-                title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
-                aria-label={label}
-                // with new streams joining, a recording can start before anything is on the bus: they join as they appear
-                disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
-                onClick={toggle}
-            >
-                <span className="record-dot" />
-                {active
-                    ? (
-                        <span className="record-live dim-mono" data-testid="record-live">
-                            <span className="record-clock">{formatClock(status.recording.seconds)}</span>
-                            <span className="record-extra"> · {formatBytes(status.recording.bytes)} · {status.keys.length} streams</span>
-                        </span>
-                    )
-                    : <span className="record-label">{busy ? "Starting…" : "Record"}</span>}
-            </button>
-            <button
-                type="button"
-                className={`dim-btn sm icon record-more ${open ? "on" : ""}`}
-                aria-haspopup="dialog"
-                aria-expanded={open}
-                title="Recording options"
-                aria-label="Recording options"
-                onClick={() => setOpen(!open)}
-            >
-                {/* the shared set's dots are hairline at this size: solid ones */}
-                <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden="true">
-                    {[5, 12, 19].map((x) => <rect key={x} x={x - 2} y={10} width={4} height={4} rx={2} fill="currentColor" />)}
-                </svg>
-            </button>
-            {error && !open && <span className="dim-badge danger record-error" title={error}>failed</span>}
+        <>
+            <div className={`dim-panel glass record-control ${active ? "recording" : ""}`} data-testid="record-control">
+                <button
+                    type="button"
+                    className={`dim-btn sm record-toggle ${active ? "danger recording" : ""}`}
+                    aria-pressed={active}
+                    title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
+                    aria-label={label}
+                    // with new streams joining, a recording can start before anything is on the bus: they join as they appear
+                    disabled={busy || !!status.unavailable || (!active && !status.options.recordNew && !selected.length)}
+                    onClick={toggle}
+                >
+                    <span className="record-dot" />
+                    {active
+                        ? (
+                            <span className="record-live dim-mono" data-testid="record-live">
+                                <span className="record-clock">{formatClock(status.recording.seconds)}</span>
+                                <span className="record-extra"> · {formatBytes(status.recording.bytes)} · {status.keys.length} streams</span>
+                            </span>
+                        )
+                        : <span className="record-label">{busy ? "Starting…" : "Record"}</span>}
+                </button>
+                <button
+                    type="button"
+                    className={`dim-btn sm icon record-more ${open ? "on" : ""}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={open}
+                    title="Recording options"
+                    aria-label="Recording options"
+                    onClick={() => setOpen(!open)}
+                >
+                    {/* the shared set's dots are hairline at this size: solid ones */}
+                    <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden="true">
+                        {[5, 12, 19].map((x) => <rect key={x} x={x - 2} y={10} width={4} height={4} rx={2} fill="currentColor" />)}
+                    </svg>
+                </button>
+                {error && !open && <span className="dim-badge danger record-error" title={error}>failed</span>}
+            </div>
             {open && <RecordOptions app={app} error={error} onClose={() => setOpen(false)} />}
-        </div>
+        </>
     )
 }
 

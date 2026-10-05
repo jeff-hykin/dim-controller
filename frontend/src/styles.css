@@ -56,7 +56,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 @keyframes blink { 50% { opacity: 0.3; } }
 
 /* ── side panel / bottom sheet ── */
-.side-panel { position: absolute; top: 58px; left: 10px; bottom: calc(10px + var(--dim-inset-bottom)); width: 340px; z-index: 8; display: flex; flex-direction: column; }
+.side-panel { position: absolute; top: 108px; left: calc(10px + var(--dim-inset-left)); bottom: calc(10px + var(--dim-inset-bottom)); width: 340px; z-index: 8; display: flex; flex-direction: column; }
 .side-panel.sheet { top: auto; left: 0; right: 0; bottom: var(--dim-inset-bottom); width: auto; max-height: 62vh; border-radius: 14px 14px 0 0;
     padding-bottom: env(safe-area-inset-bottom); z-index: 12; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 4px 14px; }
@@ -106,15 +106,16 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .controls { margin-top: 6px; }
 .twist-readout { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted-fg); margin-top: 10px; }
 
-/* recorder: the top bar's Record button and "…", and the options popover (ui/RecordControl.tsx) */
-.record-control { display: flex; align-items: center; gap: 4px; position: relative; }
+/* recorder: the Record button and "…", floating at the top left (a side panel opens below it), and the options popover
+   (ui/RecordControl.tsx) */
+.record-control { position: absolute; top: 58px; left: calc(10px + var(--dim-inset-left)); z-index: 9; display: flex; align-items: center; gap: 4px; padding: 5px; }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .record-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); flex: none; }
 .record-toggle.recording .record-dot { background: var(--danger-fg); border-radius: 4px; animation: blink 1s infinite; }
 .record-live { font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .record-more { width: 30px; height: 30px; padding: 0; }
 .record-error { cursor: help; }
-.record-options { position: fixed; top: calc(56px + env(safe-area-inset-top)); right: 10px; width: 380px; z-index: 20; display: flex; flex-direction: column;
+.record-options { position: fixed; top: calc(108px + env(safe-area-inset-top)); left: calc(10px + var(--dim-inset-left)); width: 380px; z-index: 20; display: flex; flex-direction: column;
     max-height: calc(100vh - 70px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
 .record-options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .record-options-head h2 { margin: 0; }
@@ -143,8 +144,9 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .record-topic.off .topic-name { color: var(--muted-fg); text-decoration: line-through; }
 .record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
 .record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
-.mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(50px + env(safe-area-inset-top)); }
-.mobile .record-label, .mobile .record-extra { display: none; }
+.mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: calc(8px + var(--dim-inset-left)); padding: 4px; }
+.mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
+.mobile .record-extra { display: none; }
 .mobile .record-toggle { padding: 6px 8px; }
 
 /* settings: Drive is its first section */
@@ -199,8 +201,8 @@ h3.dim-label.first { margin-top: 4px; }
     background: var(--primary); box-shadow: var(--shadow-md); pointer-events: none; }
 .joystick-label { position: absolute; top: -18px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.1em; }
 
-.stats-overlay { position: absolute; left: 12px; bottom: calc(74px + var(--dim-inset-bottom)); z-index: 6; font-size: 11px; padding: 6px 9px; pointer-events: none; }
-.desktop .side-panel ~ .stats-overlay { left: 362px; }
+.stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(74px + var(--dim-inset-bottom)); z-index: 6; font-size: 11px; padding: 6px 9px; pointer-events: none; }
+.desktop .side-panel ~ .stats-overlay { left: calc(362px + var(--dim-inset-left)); }
 
 /* ── phone ── */
 .mobile .topbar { height: calc(44px + env(safe-area-inset-top)); gap: 6px; padding-left: 10px; padding-right: 4px; }
@@ -216,7 +218,7 @@ h3.dim-label.first { margin-top: 4px; }
 .mobile .camera-panel.floating .camera-head select, .mobile .camera-panel.floating .camera-info { display: none; }
 .mobile .camera-panel.main { inset: calc(44px + env(safe-area-inset-top)) 0 0 0; }
 .mobile .add-camera { display: none; }
-.mobile .stats-overlay { bottom: auto; top: calc(52px + env(safe-area-inset-top)); }
+.mobile .stats-overlay { bottom: auto; top: calc(98px + env(safe-area-inset-top)); }
 .mobile .field-label { width: 70px; }
 .mobile .gradients { margin-left: 0; }
 .mobile .dim-select, .mobile .dim-input { font-size: 16px; } /* iOS zooms into anything smaller */
