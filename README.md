@@ -267,6 +267,17 @@ Controls only publish while drive is armed.
 also override a built-in one. Messages decode with the LCM schemas in `src/core/lcm/schemas.json` (every dimos_lcm
 type; regenerate with `deno run -A tools/gen_lcm_schemas.ts <dimos_lcm/lcm_files>`).
 
+## Credits
+
+The robot-type icons (`frontend/public/robots/`, shared with Desktop's Launcher) are modified versions (vectorized, line
+weight normalized, restyled; the wheeled robot puts the humanoid's upper body on an original column and chassis) of:
+
+- humanoid, wheeled (upper body): "Humanoid robot" by Izwar Muis, Noun Project,
+  https://thenounproject.com/icon/humanoid-robot-8041298/ — [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+- dog: "robot dog" by Izwar Muis, Noun Project, https://thenounproject.com/icon/robot-dog-8041305/ — CC BY 3.0
+- arm: "Robotics" by rukanicon, Noun Project, https://thenounproject.com/icon/robotics-5920654/ — CC BY 3.0
+- drone: Tabler Icons "drone", https://tabler.io/icons — MIT
+
 ## Develop
 
 ```sh
