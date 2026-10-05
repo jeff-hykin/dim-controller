@@ -1,6 +1,8 @@
 // The page's side of the agent link (server/src/annotations.rs): draws the live annotations every open viewer shares,
 // and answers capture requests only the page can: its rendered 3D view, the robot camera's latest frame, and
-// locating an object in 3D from a box around it in that frame (lidar points inside the box, else the floor).
+// locating an object in 3D from a box around it in that frame (lidar points inside the box, else the floor). The
+// backend's events arrive on zenoh (dim-app's appEvents: the frontend topic `events`); this page GETs what they change
+// on load and whenever the connection comes back, and reports itself (POST api/pages/<id>) so captures come to it.
 import { themeColors } from "../dim-app/theme.js"
 import * as THREE from "three"
 import { decode, headerFrameId } from "./lcm/lcm.ts"
@@ -9,9 +11,9 @@ import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
-import { appEvents } from "./events.js"
+import { appEvents } from "../dim-app/events.js"
 import type { LocationLabel } from "./labels.ts"
-import { applyRemoteSetting } from "./store.ts"
+import { applyRemoteSetting, loadSettings } from "./store.ts"
 import type { DriveEvent } from "./drive.ts"
 
 export interface Annotation {
@@ -48,6 +50,8 @@ function round(value: number, digits = 3): number {
 }
 
 const pageId = Math.random().toString(36).slice(2, 10)
+/** the backend forgets a page it hasn't heard from in 15 s */
+const REPORT_MS = 5000
 
 export class AgentLink {
     readonly group = new THREE.Group()
@@ -77,13 +81,13 @@ export class AgentLink {
     }
 
     #listen() {
-        // deno-lint-ignore no-explicit-any
-        const stop = appEvents((event: { type: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown; key?: string; value?: unknown; action?: string; target?: any; distance?: any }) => {
+        const stop = appEvents((raw) => {
+            // deno-lint-ignore no-explicit-any
+            const event = raw as { type: string; page?: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown; key?: string; value?: unknown; action?: string; target?: any; distance?: any }
             if (event.type === "annotations" && event.annotations) {
                 this.#annotations = event.annotations
                 this.#rebuild()
             } else if (event.type === "labels" && event.labels) {
-                // location labels ride the same stream (one socket per page)
                 this.app.labels.apply(event.labels)
             } else if (event.type === "settings" && event.key) {
                 applyRemoteSetting(event.key, event.value)
@@ -91,11 +95,28 @@ export class AgentLink {
                 this.app.drive.applyEvent(event as unknown as DriveEvent)
             } else if (event.type === "camera" && event.action) {
                 this.app.applyCamera({ action: event.action, target: event.target, distance: event.distance })
-            } else if (event.type === "capture" && event.request) {
+            } else if (event.type === "capture" && event.request && event.page === pageId) {
                 this.#answer(event.request, event.kind ?? "", event.args)
             }
-        }, { query: { page: pageId }, onOpen: () => this.#syncDrive() })
+        }, { onOpen: () => this.#resync() })
         this.#stops.push(stop)
+    }
+
+    /** Snapshot + live: what the events change, read again on connect and reconnect (events sent meanwhile are gone). */
+    #resync() {
+        this.#syncDrive()
+        fetch(this.#url("api/annotations"))
+            .then((response) => response.json())
+            .then((body) => {
+                this.#annotations = body.annotations ?? []
+                this.#rebuild()
+            })
+            .catch(() => {})
+        fetch(this.#url("api/labels"))
+            .then((response) => response.json())
+            .then((body) => this.app.labels.apply(body.labels ?? []))
+            .catch(() => {})
+        loadSettings()
     }
 
     /** Arming lives in the backend (a restart comes up disarmed): read it on every (re)connect. */
@@ -108,7 +129,8 @@ export class AgentLink {
         }
     }
 
-    /** Tells the server this page is the one the user is looking at (it answers the agent's captures). */
+    /** Tells the server this page is open (every REPORT_MS) and when it's the one the user is looking at (it answers
+     * the agent's captures); the page's going away is a beacon. */
     #reportActivity() {
         const report = (active: boolean) => {
             fetch(this.#url(`api/pages/${pageId}`), {
@@ -120,7 +142,8 @@ export class AgentLink {
         addEventListener("pointerdown", () => report(true))
         addEventListener("focus", () => report(true))
         document.addEventListener("visibilitychange", () => report(document.visibilityState === "visible"))
-        setInterval(() => document.hasFocus() && report(true), 3000)
+        setInterval(() => report(document.hasFocus()), REPORT_MS)
+        addEventListener("pagehide", () => navigator.sendBeacon(this.#url(`api/pages/${pageId}/close`)))
         report(true)
     }
 

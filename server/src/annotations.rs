@@ -1,20 +1,22 @@
 //! Live annotations and the agent's view of the viewer. Annotations are ephemeral 3D boxes with labels (not zenoh
-//! topics): kept here, pushed to every open page over the `GET /api/events/ws` websocket the moment they change. The page also answers
-//! capture requests through that stream (its 3D view, the camera image, locating an object from an image box),
-//! since only the page has the rendered view, the decoded clouds and the TF tree. The routes are in api.rs.
+//! topics): kept here, and every change is pushed to the pages on zenoh (frontend.rs: the frontend topic `events`; a page
+//! GETs api/annotations on load and when its zenoh-web connection comes back). The page also answers capture requests
+//! that arrive the same way (its 3D view, the camera image, locating an object from an image box), since only the page
+//! has the rendered view, the decoded clouds and the TF tree: a capture event names the page it's for (the one the user
+//! looked at last; pages report themselves with POST api/pages/{page} every few seconds), and the page answers with
+//! POST api/captures/{request}. The routes are in api.rs.
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocketUpgrade};
-use axum::extract::{Path, Query, State as Extract};
+use axum::extract::{Path, State as Extract};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use crate::api::Body;
-use futures_util::StreamExt;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, oneshot};
@@ -51,7 +53,13 @@ pub struct Page {
     visible: bool,
     #[serde(rename = "lastActive")]
     last_active: u64,
+    /// the page's last report (it reports every few seconds while open)
+    #[serde(skip)]
+    seen: u64,
 }
+
+/// A page not heard from for this long is gone (closed, crashed, asleep).
+const PAGE_TTL_MS: u64 = 15_000;
 
 pub struct Annotations {
     items: Mutex<BTreeMap<String, Annotation>>,
@@ -74,7 +82,10 @@ impl Default for Annotations {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// Fields an update may change; anything left out stays.
@@ -97,21 +108,34 @@ impl Annotations {
     }
 
     pub fn page_count(&self) -> usize {
-        self.pages.lock().unwrap().len()
+        self.live_pages().len()
     }
 
-    /// Sends an event to every open page.
+    /// The pages heard from lately (the others are dropped).
+    fn live_pages(&self) -> std::sync::MutexGuard<'_, HashMap<String, Page>> {
+        let mut pages = self.pages.lock().unwrap();
+        let now = now_ms();
+        pages.retain(|_, page| now.saturating_sub(page.seen) < PAGE_TTL_MS);
+        pages
+    }
+
+    /// Sends an event to every open page (frontend.rs publishes it on the frontend topic `events`).
     pub fn broadcast(&self, event: Value) {
         let _ = self.events.send(event);
     }
 
     fn changed(&self) {
-        let _ = self.events.send(json!({ "type": "annotations", "annotations": self.list() }));
+        let _ = self
+            .events
+            .send(json!({ "type": "annotations", "annotations": self.list() }));
     }
 
     /// Adds one; a missing id becomes "box-<n>", a taken id is an error.
     pub fn create(&self, mut annotation: Value) -> Result<Annotation, String> {
-        if annotation.get("id").is_none_or(|id| id.as_str().is_none_or(str::is_empty)) {
+        if annotation
+            .get("id")
+            .is_none_or(|id| id.as_str().is_none_or(str::is_empty))
+        {
             let items = self.items.lock().unwrap();
             let mut id = format!("box-{}", self.next.fetch_add(1, Ordering::Relaxed));
             while items.contains_key(&id) {
@@ -122,7 +146,8 @@ impl Annotations {
         if annotation.get("label").is_none() {
             annotation["label"] = json!("");
         }
-        let annotation: Annotation = serde_json::from_value(annotation).map_err(|e| format!("bad annotation: {e}"))?;
+        let annotation: Annotation =
+            serde_json::from_value(annotation).map_err(|e| format!("bad annotation: {e}"))?;
         validate(&annotation)?;
         {
             let mut items = self.items.lock().unwrap();
@@ -138,7 +163,10 @@ impl Annotations {
     pub fn update(&self, id: &str, patch: Patch) -> Result<Annotation, String> {
         let updated = {
             let mut items = self.items.lock().unwrap();
-            let mut annotation = items.get(id).cloned().ok_or_else(|| format!("no annotation {id}"))?;
+            let mut annotation = items
+                .get(id)
+                .cloned()
+                .ok_or_else(|| format!("no annotation {id}"))?;
             if let Some(label) = patch.label {
                 annotation.label = label;
             }
@@ -176,7 +204,11 @@ impl Annotations {
     }
 
     pub fn delete(&self, id: &str) -> Result<(), String> {
-        self.items.lock().unwrap().remove(id).ok_or_else(|| format!("no annotation {id}"))?;
+        self.items
+            .lock()
+            .unwrap()
+            .remove(id)
+            .ok_or_else(|| format!("no annotation {id}"))?;
         self.changed();
         Ok(())
     }
@@ -189,13 +221,18 @@ impl Annotations {
 
     /// The page the user looked at last (a visible one wins).
     fn active_page(&self) -> Option<String> {
-        let pages = self.pages.lock().unwrap();
-        pages.iter().max_by_key(|(_, page)| (page.visible, page.last_active)).map(|(id, _)| id.clone())
+        let pages = self.live_pages();
+        pages
+            .iter()
+            .max_by_key(|(_, page)| (page.visible, page.last_active))
+            .map(|(id, _)| id.clone())
     }
 
     /// Asks the active page to do something only it can (render, read the camera, locate) and waits for its answer.
     pub async fn ask_page(&self, kind: &str, args: Value) -> Result<Value, String> {
-        let page = self.active_page().ok_or("no Controller page is open (open_app the Controller first)")?;
+        let page = self
+            .active_page()
+            .ok_or("no Controller page is open (open_app the Controller first)")?;
         let request = format!("r{}", self.next.fetch_add(1, Ordering::Relaxed));
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().unwrap().insert(request.clone(), sender);
@@ -213,10 +250,15 @@ impl Annotations {
 }
 
 fn validate(annotation: &Annotation) -> Result<(), String> {
-    if annotation.id.is_empty() || annotation.id.len() > 64 || annotation.id.contains(['/', '?', '#']) {
+    if annotation.id.is_empty()
+        || annotation.id.len() > 64
+        || annotation.id.contains(['/', '?', '#'])
+    {
         return Err("id: 1-64 characters, no / ? #".into());
     }
-    if annotation.size.iter().any(|s| !s.is_finite() || *s <= 0.0) || annotation.center.iter().any(|c| !c.is_finite()) {
+    if annotation.size.iter().any(|s| !s.is_finite() || *s <= 0.0)
+        || annotation.center.iter().any(|c| !c.is_finite())
+    {
         return Err("center must be finite and size > 0".into());
     }
     Ok(())
@@ -227,82 +269,20 @@ fn error(status: StatusCode, message: impl std::fmt::Display) -> Response {
 }
 
 #[derive(Deserialize)]
-pub struct PageQuery {
-    page: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct PageReport {
     visible: bool,
     #[serde(default)]
     active: bool,
 }
 
-/// One page's events: registers the page (forgotten when the stream is dropped), starts with the annotations, then
-/// every broadcast event except capture requests meant for another page. Shared by the SSE and websocket routes.
-fn page_events(annotations: Arc<Annotations>, page: String) -> impl futures_util::Stream<Item = Value> + Send + 'static {
-    if !page.is_empty() {
-        annotations.pages.lock().unwrap().insert(page.clone(), Page { visible: true, last_active: now_ms() });
-    }
-    let first = json!({ "type": "annotations", "annotations": annotations.list() });
-    let receiver = annotations.events.subscribe();
-    // dropped when the page's stream closes: forget the page
-    struct Leave(Arc<Annotations>, String);
-    impl Drop for Leave {
-        fn drop(&mut self) {
-            self.0.pages.lock().unwrap().remove(&self.1);
-        }
-    }
-    let guard = Leave(annotations, page);
-    futures_util::stream::unfold((Some(first), receiver, guard), |(first, mut receiver, guard)| async move {
-        if let Some(first) = first {
-            return Some((first, (None, receiver, guard)));
-        }
-        loop {
-            match receiver.recv().await {
-                Ok(event) => {
-                    // a capture request is for one page only
-                    if event["type"] == "capture" && event["page"] != guard.1.as_str() {
-                        continue;
-                    }
-                    return Some((event, (None, receiver, guard)));
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(_) => return None,
-            }
-        }
-    })
-}
-
-/// The standard backend → page channel (dim-app's events.js): the same events, one JSON text message each.
-pub async fn events_ws(Extract(state): Extract<Arc<Annotations>>, Query(query): Query<PageQuery>, upgrade: WebSocketUpgrade) -> Response {
-    upgrade.on_upgrade(move |mut socket| async move {
-        let mut events = std::pin::pin!(page_events(state, query.page.unwrap_or_default()));
-        loop {
-            tokio::select! {
-                event = events.next() => {
-                    let Some(event) = event else {
-                        let _ = socket.send(Message::Close(None)).await;
-                        break;
-                    };
-                    if socket.send(Message::Text(event.to_string().into())).await.is_err() {
-                        break;
-                    }
-                }
-                incoming = socket.recv() => match incoming {
-                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
-                    Some(Ok(_)) => {}
-                },
-            }
-        }
-    })
-}
-
 pub async fn list_annotations(Extract(state): Extract<Arc<Annotations>>) -> Response {
     Json(json!({ "annotations": state.list() })).into_response()
 }
 
-pub async fn add_annotation(Extract(state): Extract<Arc<Annotations>>, Body(body): Body) -> Response {
+pub async fn add_annotation(
+    Extract(state): Extract<Arc<Annotations>>,
+    Body(body): Body,
+) -> Response {
     match state.create(body) {
         Ok(annotation) => Json(annotation).into_response(),
         Err(problem) => error(StatusCode::BAD_REQUEST, problem),
@@ -313,7 +293,11 @@ pub async fn clear_annotations(Extract(state): Extract<Arc<Annotations>>) -> Res
     Json(json!({ "removed": state.clear() })).into_response()
 }
 
-pub async fn patch_annotation(Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>, Body(body): Body) -> Response {
+pub async fn patch_annotation(
+    Extract(state): Extract<Arc<Annotations>>,
+    Path(id): Path<String>,
+    Body(body): Body,
+) -> Response {
     let mut body = body;
     if let Some(new_id) = body.get("newId").cloned() {
         body["id"] = new_id;
@@ -330,7 +314,10 @@ pub async fn patch_annotation(Extract(state): Extract<Arc<Annotations>>, Path(id
     }
 }
 
-pub async fn delete_annotation(Extract(state): Extract<Arc<Annotations>>, Path(id): Path<String>) -> Response {
+pub async fn delete_annotation(
+    Extract(state): Extract<Arc<Annotations>>,
+    Path(id): Path<String>,
+) -> Response {
     match state.delete(&id) {
         Ok(()) => Json(json!({ "ok": true, "removed": id })).into_response(),
         Err(problem) => error(StatusCode::NOT_FOUND, problem),
@@ -338,24 +325,50 @@ pub async fn delete_annotation(Extract(state): Extract<Arc<Annotations>>, Path(i
 }
 
 /// A page says it's visible / the one the user is using (it answers the agent's captures).
-pub async fn report_page(Extract(state): Extract<Arc<Annotations>>, Path(page): Path<String>, Json(report): Json<PageReport>) -> Response {
+pub async fn report_page(
+    Extract(state): Extract<Arc<Annotations>>,
+    Path(page): Path<String>,
+    Json(report): Json<PageReport>,
+) -> Response {
     let mut pages = state.pages.lock().unwrap();
-    let entry = pages.entry(page).or_insert(Page { visible: report.visible, last_active: now_ms() });
+    let now = now_ms();
+    let entry = pages.entry(page).or_insert(Page {
+        visible: report.visible,
+        last_active: 0,
+        seen: now,
+    });
     entry.visible = report.visible;
+    entry.seen = now;
     if report.active {
-        entry.last_active = now_ms();
+        entry.last_active = now;
     }
     Json(json!({ "ok": true })).into_response()
 }
 
+/// A page is going away (`navigator.sendBeacon` on pagehide).
+pub async fn close_page(
+    Extract(state): Extract<Arc<Annotations>>,
+    Path(page): Path<String>,
+) -> Response {
+    state.pages.lock().unwrap().remove(&page);
+    Json(json!({ "ok": true })).into_response()
+}
+
 /// A page answering a capture request.
-pub async fn answer_capture(Extract(state): Extract<Arc<Annotations>>, Path(request): Path<String>, Json(body): Json<Value>) -> Response {
+pub async fn answer_capture(
+    Extract(state): Extract<Arc<Annotations>>,
+    Path(request): Path<String>,
+    Json(body): Json<Value>,
+) -> Response {
     match state.pending.lock().unwrap().remove(&request) {
         Some(sender) => {
             let _ = sender.send(body);
             Json(json!({ "ok": true })).into_response()
         }
-        None => error(StatusCode::NOT_FOUND, "no such capture request (timed out?)"),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "no such capture request (timed out?)",
+        ),
     }
 }
 
@@ -367,9 +380,14 @@ pub async fn view(Extract(state): Extract<Arc<Annotations>>) -> Response {
 }
 
 pub async fn locate(Extract(state): Extract<Arc<Annotations>>, Body(body): Body) -> Response {
-    let bbox_ok = body["bbox"].as_array().is_some_and(|b| b.len() == 4 && b.iter().all(Value::is_number));
+    let bbox_ok = body["bbox"]
+        .as_array()
+        .is_some_and(|b| b.len() == 4 && b.iter().all(Value::is_number));
     if !bbox_ok {
-        return error(StatusCode::BAD_REQUEST, "bbox: [x1, y1, x2, y2] in camera image pixels");
+        return error(
+            StatusCode::BAD_REQUEST,
+            "bbox: [x1, y1, x2, y2] in camera image pixels",
+        );
     }
     let found = match state.ask_page("locate", body.clone()).await {
         Ok(found) => found,
@@ -397,17 +415,43 @@ mod tests {
     fn create_update_rename_delete() {
         let annotations = Annotations::default();
         let mut events = annotations.events.subscribe();
-        let first = annotations.create(json!({ "label": "person", "center": [1, 2, 0.9], "size": [0.6, 0.5, 1.8] })).unwrap();
+        let first = annotations
+            .create(json!({ "label": "person", "center": [1, 2, 0.9], "size": [0.6, 0.5, 1.8] }))
+            .unwrap();
         assert_eq!(first.id, "box-1");
         assert_eq!(first.frame, "world");
         let event = events.try_recv().unwrap();
         assert_eq!(event["annotations"][0]["label"], "person");
-        assert!(annotations.create(json!({ "id": "box-1", "center": [0, 0, 0], "size": [1, 1, 1] })).is_err());
-        assert!(annotations.create(json!({ "center": [0, 0, 0], "size": [0, 1, 1] })).is_err());
-        let patched = annotations.update("box-1", Patch { note: Some("1.76 m tall".into()), ..Default::default() }).unwrap();
+        assert!(annotations
+            .create(json!({ "id": "box-1", "center": [0, 0, 0], "size": [1, 1, 1] }))
+            .is_err());
+        assert!(annotations
+            .create(json!({ "center": [0, 0, 0], "size": [0, 1, 1] }))
+            .is_err());
+        let patched = annotations
+            .update(
+                "box-1",
+                Patch {
+                    note: Some("1.76 m tall".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         assert_eq!(patched.note.as_deref(), Some("1.76 m tall"));
-        let renamed = annotations.update("box-1", Patch { id: Some("person-1".into()), label: Some("Jeong".into()), ..Default::default() }).unwrap();
-        assert_eq!((renamed.id.as_str(), renamed.label.as_str()), ("person-1", "Jeong"));
+        let renamed = annotations
+            .update(
+                "box-1",
+                Patch {
+                    id: Some("person-1".into()),
+                    label: Some("Jeong".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            (renamed.id.as_str(), renamed.label.as_str()),
+            ("person-1", "Jeong")
+        );
         assert_eq!(annotations.list().len(), 1);
         assert!(annotations.delete("box-1").is_err());
         annotations.delete("person-1").unwrap();
@@ -418,49 +462,83 @@ mod tests {
     async fn the_active_page_answers_captures() {
         let annotations = Arc::new(Annotations::default());
         assert!(annotations.ask_page("view", json!({})).await.is_err());
-        annotations.pages.lock().unwrap().insert("p1".into(), Page { visible: true, last_active: 1 });
-        annotations.pages.lock().unwrap().insert("p2".into(), Page { visible: true, last_active: 2 });
+        let now = now_ms();
+        annotations.pages.lock().unwrap().insert(
+            "p1".into(),
+            Page {
+                visible: true,
+                last_active: 1,
+                seen: now,
+            },
+        );
+        annotations.pages.lock().unwrap().insert(
+            "p2".into(),
+            Page {
+                visible: true,
+                last_active: 2,
+                seen: now,
+            },
+        );
+        annotations.pages.lock().unwrap().insert(
+            "gone".into(),
+            Page {
+                visible: true,
+                last_active: 3,
+                seen: now - PAGE_TTL_MS,
+            },
+        );
         let mut events = annotations.events.subscribe();
         let asking = annotations.clone();
         let task = tokio::spawn(async move { asking.ask_page("view", json!({})).await });
         let request = events.recv().await.unwrap();
         assert_eq!(request["page"], "p2");
-        let sender = annotations.pending.lock().unwrap().remove(request["request"].as_str().unwrap()).unwrap();
+        let sender = annotations
+            .pending
+            .lock()
+            .unwrap()
+            .remove(request["request"].as_str().unwrap())
+            .unwrap();
         sender.send(json!({ "camera": { "fov": 60 } })).unwrap();
         assert_eq!(task.await.unwrap().unwrap()["camera"]["fov"], 60);
     }
 
-    /// The websocket route over a real socket: registers the page, sends the annotations first, then each change and
-    /// only this page's captures, one JSON text message each; the page is forgotten when the socket closes.
+    /// Pages register by reporting (api/pages/{page}), are dropped by api/pages/{page}/close or after PAGE_TTL_MS of
+    /// silence; only reports with active=true make a page the one the user looked at last.
     #[tokio::test(flavor = "multi_thread")]
-    async fn the_websocket_carries_this_pages_events() {
-        use tokio_tungstenite::tungstenite::Message as Frame;
+    async fn pages_report_and_close_over_http() {
+        use tower::ServiceExt;
         let annotations = Arc::new(Annotations::default());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let app = crate::api::routes().router.with_state(crate::api::Api::for_tests(annotations.clone()));
-        tokio::spawn(async move { axum::serve(listener, app).await });
-        let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/api/events/ws?page=p1")).await.unwrap();
-        let mut next = async || loop {
-            match socket.next().await.unwrap().unwrap() {
-                Frame::Text(text) => return serde_json::from_str::<Value>(&text).unwrap(),
-                _ => continue,
-            }
+        let app = crate::api::routes()
+            .router
+            .with_state(crate::api::Api::for_tests(annotations.clone()));
+        let post = |path: &str, body: &str| {
+            axum::http::Request::post(path)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(body.to_string()))
+                .unwrap()
         };
-        assert_eq!(next().await["type"], "annotations");
-        assert!(annotations.pages.lock().unwrap().contains_key("p1"));
-        annotations.create(json!({ "label": "chair", "center": [0, 0, 0], "size": [1, 1, 1] })).unwrap();
-        assert_eq!(next().await["annotations"][0]["label"], "chair");
-        let _ = annotations.events.send(json!({ "type": "capture", "page": "p2", "request": "r1" }));
-        let _ = annotations.events.send(json!({ "type": "capture", "page": "p1", "request": "r2" }));
-        assert_eq!(next().await["request"], "r2");
-        socket.close(None).await.unwrap();
-        for _ in 0..50 {
-            if !annotations.pages.lock().unwrap().contains_key("p1") {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        panic!("the page outlived its socket");
+        app.clone()
+            .oneshot(post("/api/pages/p1", r#"{"visible":true,"active":true}"#))
+            .await
+            .unwrap();
+        app.clone()
+            .oneshot(post("/api/pages/p2", r#"{"visible":true,"active":false}"#))
+            .await
+            .unwrap();
+        assert_eq!(annotations.page_count(), 2);
+        assert_eq!(annotations.active_page().as_deref(), Some("p1"));
+        app.clone()
+            .oneshot(post("/api/pages/p1/close", ""))
+            .await
+            .unwrap();
+        assert_eq!(annotations.page_count(), 1);
+        annotations
+            .pages
+            .lock()
+            .unwrap()
+            .get_mut("p2")
+            .unwrap()
+            .seen -= PAGE_TTL_MS;
+        assert_eq!(annotations.page_count(), 0);
     }
 }

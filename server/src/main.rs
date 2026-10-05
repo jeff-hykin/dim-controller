@@ -9,6 +9,7 @@ mod cdr;
 mod desktop;
 mod dimos_app;
 mod drive;
+mod frontend;
 mod image;
 mod labels;
 mod logs;
@@ -66,19 +67,29 @@ const OLD_APP_NAME: &str = "dim-live-viewer";
 fn default_record_dir() -> PathBuf {
     if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref(), "DIMOS_RECORDINGS_DIR") {
         let old = PathBuf::from(&dir).join("live-viewer");
-        return if old.is_dir() { old } else { PathBuf::from(dir).join("controller") };
+        return if old.is_dir() {
+            old
+        } else {
+            PathBuf::from(dir).join("controller")
+        };
     }
     if let Some(data) = app_data() {
-        let old = data.parent().map(|apps| apps.join(OLD_APP_NAME).join("recordings")).filter(|old| old.is_dir());
+        let old = data
+            .parent()
+            .map(|apps| apps.join(OLD_APP_NAME).join("recordings"))
+            .filter(|old| old.is_dir());
         return match old {
             Some(old) if !data.join("recordings").is_dir() => old,
             _ => data.join("recordings"),
         };
     }
-    let home = std::env::var("DIMOS_HOME").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
-    });
-    let app = dimos_app::field(|app| app.name.as_ref(), "DIMOS_APP_NAME").unwrap_or_else(|| "dim-controller".into());
+    let home = std::env::var("DIMOS_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
+        });
+    let app = dimos_app::field(|app| app.name.as_ref(), "DIMOS_APP_NAME")
+        .unwrap_or_else(|| "dim-controller".into());
     home.join("data").join(app).join("recordings")
 }
 
@@ -91,7 +102,9 @@ fn app_data() -> Option<PathBuf> {
 fn settings_file() -> Option<PathBuf> {
     let data = app_data()?;
     let file = data.join("settings.json");
-    let old = data.parent().map(|apps| apps.join(OLD_APP_NAME).join("settings.json"));
+    let old = data
+        .parent()
+        .map(|apps| apps.join(OLD_APP_NAME).join("settings.json"));
     if let Some(old) = old.filter(|old| !file.exists() && old.is_file() && *old != file) {
         let _ = std::fs::create_dir_all(&data);
         if std::fs::copy(&old, &file).is_ok() {
@@ -104,9 +117,16 @@ fn settings_file() -> Option<PathBuf> {
 /// The page itself is always revalidated: it names the hashed assets of its build, and the nix store's 1970 mtimes
 /// otherwise let a browser keep an old page (and the old app) for good after an update.
 async fn revalidate_html(mut response: axum::response::Response) -> axum::response::Response {
-    let html = response.headers().get(axum::http::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.starts_with("text/html"));
+    let html = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/html"));
     if html {
-        response.headers_mut().insert(axum::http::header::CACHE_CONTROL, axum::http::HeaderValue::from_static("no-cache"));
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-cache"),
+        );
     }
     response
 }
@@ -130,17 +150,36 @@ async fn main() -> Result<()> {
         set(&mut args.dimos_python, &app.dimos_python);
     }
     if args.agent_json {
-        println!("{}", serde_json::to_string_pretty(&api::routes().manifest(api::DESCRIPTION))?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&api::routes().manifest(api::DESCRIPTION))?
+        );
         return Ok(());
     }
     let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
-    let frontend = args.frontend.clone().unwrap_or_else(|| PathBuf::from("frontend/dist"));
-    eprintln!("controller: page {}, recordings {}", frontend.display(), record_dir.display());
+    let frontend = args
+        .frontend
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("frontend/dist"));
+    eprintln!(
+        "controller: page {}, recordings {}",
+        frontend.display(),
+        record_dir.display()
+    );
     let state = Arc::new(recorder::State::new(record_dir, args.zenoh_connect.clone()));
     let settings_file = settings_file();
+    let annotations: Arc<annotations::Annotations> = Arc::default();
+    let app_info = dimos_app::get();
+    let relay = app_info.and_then(|app| Some((app.desktop_url.clone()?, app.name.clone()?)));
+    frontend::spawn(
+        &annotations.events,
+        state.clone(),
+        app_info.and_then(|app| app.zenoh_prefix.clone()),
+        relay,
+    );
     let api = api::Api {
         recorder: state.clone(),
-        annotations: Arc::default(),
+        annotations: annotations.clone(),
         settings: Arc::new(settings::Settings::load(settings_file)),
         drive: Arc::default(),
         desktop_url: Arc::new(args.desktop_url.clone()),
@@ -148,25 +187,39 @@ async fn main() -> Result<()> {
     let app = api::routes()
         .router
         .with_state(api)
-        .fallback_service(tower_http::services::ServeDir::new(&frontend).fallback(tower_http::services::ServeFile::new(frontend.join("index.html"))))
+        .fallback_service(tower_http::services::ServeDir::new(&frontend).fallback(
+            tower_http::services::ServeFile::new(frontend.join("index.html")),
+        ))
         .layer(axum::middleware::map_response(revalidate_html));
     // Desktop stops an app server with SIGTERM to its process group
     let shutdown = async {
-        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("SIGTERM handler");
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("SIGTERM handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = terminate.recv() => {}
         }
     };
     if let Some(port) = args.port {
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.with_context(|| format!("bind :{port}"))?;
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+            .await
+            .with_context(|| format!("bind :{port}"))?;
         eprintln!("controller: http://127.0.0.1:{port}/");
-        axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await?;
     } else {
-        let socket = args.socket.clone().context("--socket or --port is required")?;
+        let socket = args
+            .socket
+            .clone()
+            .context("--socket or --port is required")?;
         let _ = std::fs::remove_file(&socket);
-        let listener = tokio::net::UnixListener::bind(&socket).with_context(|| format!("bind {}", socket.display()))?;
-        axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
+        let listener = tokio::net::UnixListener::bind(&socket)
+            .with_context(|| format!("bind {}", socket.display()))?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await?;
     }
     // a recording in progress is closed cleanly so the file has its summary
     state.stop().await.ok();

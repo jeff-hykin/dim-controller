@@ -1,7 +1,7 @@
 //! Every Controller action as an HTTP endpoint (routes.rs): the page calls these, Desktop's agent calls the same
 //! ones (the served agent.json, and dimos.yaml's `agent:`, which `deno task check-endpoints` keeps equal). What only
-//! the page can do (render its view, read the camera, locate from an image box) the backend asks the page for over
-//! the event socket (annotations.rs). The page's continuous driving (keys, stick) publishes through the bridge with
+//! the page can do (render its view, read the camera, locate from an image box) the backend asks the page for with an
+//! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the bridge with
 //! its deadman; `POST api/drive` is the endpoint way to drive. Both need driving armed (`POST api/drive/arm`), which
 //! is held here so every page and the agent see one switch.
 use std::sync::Arc;
@@ -54,11 +54,18 @@ impl<S: Send + Sync> FromRequest<S> for Body {
     type Rejection = Response;
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Response> {
-        let bytes = Bytes::from_request(request, state).await.map_err(|error| error.into_response())?;
+        let bytes = Bytes::from_request(request, state)
+            .await
+            .map_err(|error| error.into_response())?;
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Ok(Body(json!({})));
         }
-        serde_json::from_slice(&bytes).map(Body).map_err(|error| error_response(StatusCode::BAD_REQUEST, format!("the body isn't JSON: {error}")))
+        serde_json::from_slice(&bytes).map(Body).map_err(|error| {
+            error_response(
+                StatusCode::BAD_REQUEST,
+                format!("the body isn't JSON: {error}"),
+            )
+        })
     }
 }
 
@@ -127,8 +134,8 @@ pub fn routes() -> Routes<Api> {
         .endpoint("POST", "api/drive", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. Needs driving armed (POST api/drive/arm), else 409. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send (armed or not). A new command or a stop replaces a running one; every open page shows it.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
         .endpoint("POST", "api/drive/stop", "Stop driving (armed or not): cancels a running drive command and sends a second of zeros.", json!({ "topic": s("default as for api/drive"), "dryRun": b("") }), stop_robot)
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
-        .plumbing("GET", "api/events/ws", annotations::events_ws)
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
+        .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
         .plumbing("POST", "api/captures/{request}", annotations::answer_capture)
         .plumbing("GET", "agent.json", || async { Json(routes().manifest(DESCRIPTION)) })
 }
@@ -162,7 +169,12 @@ async fn camera(Extract(api): Extract<Api>, Body(body): Body) -> Response {
                 return error_response(StatusCode::BAD_REQUEST, "lookAt needs target [x, y, z]");
             }
         }
-        _ => return error_response(StatusCode::BAD_REQUEST, "action is recenter, topDown or lookAt"),
+        _ => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "action is recenter, topDown or lookAt",
+            )
+        }
     }
     let pages = api.annotations.page_count();
     api.annotations.broadcast(json!({ "type": "camera", "action": body["action"], "target": body["target"], "distance": body["distance"] }));
@@ -175,36 +187,67 @@ async fn get_settings(Extract(api): Extract<Api>) -> Response {
 
 async fn patch_settings(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     let Some(key) = body["key"].as_str().filter(|key| settings::valid_key(key)) else {
-        return error_response(StatusCode::BAD_REQUEST, "key: a setting key starting with lv. (GET api/settings lists them)");
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "key: a setting key starting with lv. (GET api/settings lists them)",
+        );
     };
     let Some(patch) = body["value"].as_object() else {
-        return error_response(StatusCode::BAD_REQUEST, "value: an object of the fields to set");
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "value: an object of the fields to set",
+        );
     };
     let value = api.settings.merge(key, patch);
-    api.annotations.broadcast(json!({ "type": "settings", "key": key, "value": value, "from": body["from"] }));
+    api.annotations
+        .broadcast(json!({ "type": "settings", "key": key, "value": value, "from": body["from"] }));
     Json(json!({ "key": key, "value": value })).into_response()
 }
 
 /// The drive topic when none is given: the drive panel's choice, else a Twist on the bus (tele_cmd_vel first).
 async fn default_topic(api: &Api) -> String {
-    let profile = api.settings.get("lv.view")["profile"].as_str().unwrap_or_default().to_string();
-    let chosen = api.settings.get(&format!("lv.drive.{profile}"))["topic"].as_str().unwrap_or_default().to_string();
+    let profile = api.settings.get("lv.view")["profile"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let chosen = api.settings.get(&format!("lv.drive.{profile}"))["topic"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     if !chosen.is_empty() {
         return chosen;
     }
     let keys = api.recorder.discover().await.unwrap_or_default();
-    let twists: Vec<String> = keys.iter().filter_map(|key| recorder::split_key(key)).filter(|(_, kind)| kind == crate::msgs::TWIST_TYPE).map(|(topic, _)| topic).collect();
-    twists.iter().find(|t| t.ends_with("tele_cmd_vel")).or_else(|| twists.iter().find(|t| t.ends_with("cmd_vel"))).cloned().unwrap_or_else(|| "/cmd_vel".into())
+    let twists: Vec<String> = keys
+        .iter()
+        .filter_map(|key| recorder::split_key(key))
+        .filter(|(_, kind)| kind == crate::msgs::TWIST_TYPE)
+        .map(|(topic, _)| topic)
+        .collect();
+    twists
+        .iter()
+        .find(|t| t.ends_with("tele_cmd_vel"))
+        .or_else(|| twists.iter().find(|t| t.ends_with("cmd_vel")))
+        .cloned()
+        .unwrap_or_else(|| "/cmd_vel".into())
 }
 
 fn source(body: &Value) -> String {
-    body["source"].as_str().filter(|s| !s.trim().is_empty()).unwrap_or("agent").chars().take(40).collect()
+    body["source"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("agent")
+        .chars()
+        .take(40)
+        .collect()
 }
 
 /// Tells every page what driving is doing: armed or not, and the command just sent (or dry-run) or stopped.
 fn announce(api: &Api, command: Option<Value>) {
     let by = api.drive.armed_by();
-    api.annotations.broadcast(json!({ "type": "drive", "armed": by.is_some(), "armedBy": by, "command": command }));
+    api.annotations.broadcast(
+        json!({ "type": "drive", "armed": by.is_some(), "armedBy": by, "command": command }),
+    );
 }
 
 async fn arm(Extract(api): Extract<Api>, Body(body): Body) -> Response {
@@ -222,9 +265,16 @@ async fn arm(Extract(api): Extract<Api>, Body(body): Body) -> Response {
 async fn drive_robot(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     let dry_run = body["dryRun"].as_bool().unwrap_or(false);
     if !dry_run && api.drive.armed_by().is_none() {
-        return error_response(StatusCode::CONFLICT, "driving is disarmed: POST api/drive/arm {armed: true} first (or dryRun: true)");
+        return error_response(
+            StatusCode::CONFLICT,
+            "driving is disarmed: POST api/drive/arm {armed: true} first (or dryRun: true)",
+        );
     }
-    let fallback = if body["topic"].as_str().is_some_and(|t| !t.is_empty()) { String::new() } else { default_topic(&api).await };
+    let fallback = if body["topic"].as_str().is_some_and(|t| !t.is_empty()) {
+        String::new()
+    } else {
+        default_topic(&api).await
+    };
     match drive::parse(&body, &fallback) {
         Ok(command) => {
             let mut sent = api.drive.send(api.recorder.clone(), command, dry_run);
@@ -243,7 +293,11 @@ async fn stop_robot(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     };
     match drive::parse(&json!({ "topic": topic }), "") {
         Ok(command) => {
-            let stopped = api.drive.stop(api.recorder.clone(), &command.topic, body["dryRun"].as_bool().unwrap_or(false));
+            let stopped = api.drive.stop(
+                api.recorder.clone(),
+                &command.topic,
+                body["dryRun"].as_bool().unwrap_or(false),
+            );
             announce(&api, None);
             Json(stopped).into_response()
         }
@@ -255,7 +309,10 @@ async fn stop_robot(Extract(api): Extract<Api>, Body(body): Body) -> Response {
 impl Api {
     pub fn for_tests(annotations: Arc<Annotations>) -> Api {
         Api {
-            recorder: Arc::new(recorder::State::new(std::env::temp_dir().join("lv_api_test"), "tcp/127.0.0.1:9".into())),
+            recorder: Arc::new(recorder::State::new(
+                std::env::temp_dir().join("lv_api_test"),
+                "tcp/127.0.0.1:9".into(),
+            )),
             annotations,
             settings: Arc::new(Settings::load(None)),
             drive: Arc::default(),
@@ -277,7 +334,12 @@ mod tests {
     use axum::body::Body as HttpBody;
     use tower::ServiceExt;
 
-    async fn call(router: &axum::Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+    async fn call(
+        router: &axum::Router,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let request = axum::http::Request::builder().method(method).uri(path);
         let request = match body {
             Some(body) => request.body(HttpBody::from(body.to_string())),
@@ -285,8 +347,13 @@ mod tests {
         };
         let response = router.clone().oneshot(request.unwrap()).await.unwrap();
         let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
     }
 
     fn router() -> (Api, axum::Router) {
@@ -306,20 +373,44 @@ mod tests {
             let method = endpoint["method"].as_str().unwrap();
             let path = endpoint["path"].as_str().unwrap();
             // no page answers captures and nothing may be published: skip what would wait or drive
-            if matches!(path, "api/view" | "api/locate" | "api/drive" | "api/drive/stop" | "api/drive/arm" | "api/recorder/start") {
+            if matches!(
+                path,
+                "api/view"
+                    | "api/locate"
+                    | "api/drive"
+                    | "api/drive/stop"
+                    | "api/drive/arm"
+                    | "api/recorder/start"
+            ) {
                 continue;
             }
             let path = path.replace("{id}", "x").replace("{name}", "x.mcap");
-            let request = axum::http::Request::builder().method(method).uri(format!("/{path}")).body(HttpBody::empty()).unwrap();
+            let request = axum::http::Request::builder()
+                .method(method)
+                .uri(format!("/{path}"))
+                .body(HttpBody::empty())
+                .unwrap();
             let response = router.clone().oneshot(request).await.unwrap();
             let status = response.status();
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-            assert!(status.is_success() || serde_json::from_slice::<Value>(&bytes).is_ok_and(|v| v["error"].is_string()), "{method} {path}: {status}");
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert!(
+                status.is_success()
+                    || serde_json::from_slice::<Value>(&bytes)
+                        .is_ok_and(|v| v["error"].is_string()),
+                "{method} {path}: {status}"
+            );
         }
         let (status, served) = call(&router, "GET", "/agent.json", None).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(served, manifest);
-        let roles: Vec<_> = manifest["endpoints"].as_array().unwrap().iter().filter_map(|e| e["role"].as_str()).collect();
+        let roles: Vec<_> = manifest["endpoints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["role"].as_str())
+            .collect();
         assert_eq!(roles, vec!["context", "view"]);
     }
 
@@ -327,54 +418,256 @@ mod tests {
     async fn settings_reach_every_page() {
         let (api, router) = router();
         let mut events = api.annotations.events.subscribe();
-        let (status, body) = call(&router, "PATCH", "/api/settings", Some(json!({ "key": "lv.view", "value": { "follow": false } }))).await;
+        let (status, body) = call(
+            &router,
+            "PATCH",
+            "/api/settings",
+            Some(json!({ "key": "lv.view", "value": { "follow": false } })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(events.try_recv().unwrap()["value"], json!({ "follow": false }));
-        assert_eq!(call(&router, "GET", "/api/settings", None).await.1["lv.view"]["follow"], false);
-        assert_eq!(call(&router, "GET", "/api/status", None).await.1["view"]["follow"], false);
-        assert_eq!(call(&router, "PATCH", "/api/settings", Some(json!({ "key": "view", "value": {} }))).await.0, StatusCode::BAD_REQUEST);
-        assert_eq!(call(&router, "PATCH", "/api/settings", Some(json!({ "key": "lv.view", "value": 3 }))).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            events.try_recv().unwrap()["value"],
+            json!({ "follow": false })
+        );
+        assert_eq!(
+            call(&router, "GET", "/api/settings", None).await.1["lv.view"]["follow"],
+            false
+        );
+        assert_eq!(
+            call(&router, "GET", "/api/status", None).await.1["view"]["follow"],
+            false
+        );
+        assert_eq!(
+            call(
+                &router,
+                "PATCH",
+                "/api/settings",
+                Some(json!({ "key": "view", "value": {} }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            call(
+                &router,
+                "PATCH",
+                "/api/settings",
+                Some(json!({ "key": "lv.view", "value": 3 }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]
     async fn camera_drive_and_labels() {
         let (api, router) = router();
         let mut events = api.annotations.events.subscribe();
-        assert_eq!(call(&router, "POST", "/api/camera", Some(json!({ "action": "topDown" }))).await.0, StatusCode::OK);
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/camera",
+                Some(json!({ "action": "topDown" }))
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
         assert_eq!(events.try_recv().unwrap()["action"], "topDown");
-        assert_eq!(call(&router, "POST", "/api/camera", Some(json!({ "action": "lookAt" }))).await.0, StatusCode::BAD_REQUEST);
-        assert_eq!(call(&router, "POST", "/api/camera", Some(json!({ "action": "spin" }))).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/camera",
+                Some(json!({ "action": "lookAt" }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/camera",
+                Some(json!({ "action": "spin" }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
         // dry runs only: tests never publish a Twist
-        let (status, dry) = call(&router, "POST", "/api/drive", Some(json!({ "linear": [0.3, 0, 0], "seconds": 2, "topic": "/cmd_vel", "dryRun": true }))).await;
+        let (status, dry) = call(
+            &router,
+            "POST",
+            "/api/drive",
+            Some(
+                json!({ "linear": [0.3, 0, 0], "seconds": 2, "topic": "/cmd_vel", "dryRun": true }),
+            ),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{dry}");
-        assert_eq!((dry["key"].as_str(), dry["messages"].as_u64()), (Some("dimos/cmd_vel/geometry_msgs.Twist"), Some(30)));
-        assert_eq!(call(&router, "POST", "/api/drive", Some(json!({ "seconds": 99, "topic": "/cmd_vel", "dryRun": true }))).await.0, StatusCode::BAD_REQUEST);
-        assert_eq!(call(&router, "POST", "/api/drive/stop", Some(json!({ "topic": "/cmd_vel", "dryRun": true }))).await.0, StatusCode::OK);
+        assert_eq!(
+            (dry["key"].as_str(), dry["messages"].as_u64()),
+            (Some("dimos/cmd_vel/geometry_msgs.Twist"), Some(30))
+        );
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/drive",
+                Some(json!({ "seconds": 99, "topic": "/cmd_vel", "dryRun": true }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/drive/stop",
+                Some(json!({ "topic": "/cmd_vel", "dryRun": true }))
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
         // disarmed: a real command is refused, the page hears arming
-        let (status, refused) = call(&router, "POST", "/api/drive", Some(json!({ "linear": [0.3, 0, 0], "topic": "/cmd_vel" }))).await;
+        let (status, refused) = call(
+            &router,
+            "POST",
+            "/api/drive",
+            Some(json!({ "linear": [0.3, 0, 0], "topic": "/cmd_vel" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::CONFLICT, "{refused}");
         while events.try_recv().is_ok() {}
-        assert_eq!(call(&router, "POST", "/api/drive/arm", Some(json!({}))).await.0, StatusCode::BAD_REQUEST);
-        let (status, armed) = call(&router, "POST", "/api/drive/arm", Some(json!({ "armed": true, "source": "page" }))).await;
-        assert_eq!((status, armed["armedBy"].as_str()), (StatusCode::OK, Some("page")));
+        assert_eq!(
+            call(&router, "POST", "/api/drive/arm", Some(json!({})))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let (status, armed) = call(
+            &router,
+            "POST",
+            "/api/drive/arm",
+            Some(json!({ "armed": true, "source": "page" })),
+        )
+        .await;
+        assert_eq!(
+            (status, armed["armedBy"].as_str()),
+            (StatusCode::OK, Some("page"))
+        );
         let heard = events.try_recv().unwrap();
-        assert_eq!((heard["type"].as_str(), heard["armed"].as_bool()), (Some("drive"), Some(true)));
-        assert_eq!(call(&router, "GET", "/api/status", None).await.1["armed"], true);
-        let (status, dry) = call(&router, "POST", "/api/drive", Some(json!({ "linear": [0.3, 0, 0], "topic": "/cmd_vel", "dryRun": true }))).await;
-        assert_eq!((status, dry["source"].as_str()), (StatusCode::OK, Some("agent")));
-        assert_eq!(events.try_recv().unwrap()["command"]["dryRun"], true, "pages see dry runs too");
-        assert_eq!(call(&router, "POST", "/api/drive/arm", Some(json!({ "armed": false }))).await.1["armed"], false);
-        assert_eq!(call(&router, "GET", "/api/status", None).await.1["armedBy"], Value::Null);
-        let (status, made) = call(&router, "POST", "/api/labels", Some(json!({ "label": "door", "frame_id": "world", "position": [1, 2, 0] }))).await;
+        assert_eq!(
+            (heard["type"].as_str(), heard["armed"].as_bool()),
+            (Some("drive"), Some(true))
+        );
+        assert_eq!(
+            call(&router, "GET", "/api/status", None).await.1["armed"],
+            true
+        );
+        let (status, dry) = call(
+            &router,
+            "POST",
+            "/api/drive",
+            Some(json!({ "linear": [0.3, 0, 0], "topic": "/cmd_vel", "dryRun": true })),
+        )
+        .await;
+        assert_eq!(
+            (status, dry["source"].as_str()),
+            (StatusCode::OK, Some("agent"))
+        );
+        assert_eq!(
+            events.try_recv().unwrap()["command"]["dryRun"],
+            true,
+            "pages see dry runs too"
+        );
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/drive/arm",
+                Some(json!({ "armed": false }))
+            )
+            .await
+            .1["armed"],
+            false
+        );
+        assert_eq!(
+            call(&router, "GET", "/api/status", None).await.1["armedBy"],
+            Value::Null
+        );
+        let (status, made) = call(
+            &router,
+            "POST",
+            "/api/labels",
+            Some(json!({ "label": "door", "frame_id": "world", "position": [1, 2, 0] })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{made}");
-        assert_eq!(call(&router, "POST", "/api/labels", Some(json!({ "label": "door" }))).await.0, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            call(
+                &router,
+                "POST",
+                "/api/labels",
+                Some(json!({ "label": "door" }))
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
         let id = made["label"]["id"].as_str().unwrap();
-        assert_eq!(call(&router, "DELETE", &format!("/api/labels/{id}"), None).await.0, StatusCode::OK);
-        assert_eq!(call(&router, "DELETE", "/api/labels/nope", None).await.0, StatusCode::NOT_FOUND);
-        let (status, added) = call(&router, "POST", "/api/annotations", Some(json!({ "label": "chair", "center": [0, 0, 0.5], "size": [0.5, 0.5, 1] }))).await;
+        assert_eq!(
+            call(&router, "DELETE", &format!("/api/labels/{id}"), None)
+                .await
+                .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            call(&router, "DELETE", "/api/labels/nope", None).await.0,
+            StatusCode::NOT_FOUND
+        );
+        let (status, added) = call(
+            &router,
+            "POST",
+            "/api/annotations",
+            Some(json!({ "label": "chair", "center": [0, 0, 0.5], "size": [0.5, 0.5, 1] })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{added}");
-        assert_eq!(call(&router, "PATCH", "/api/annotations/box-1", Some(json!({ "note": "tall" }))).await.0, StatusCode::OK);
-        assert_eq!(call(&router, "PATCH", "/api/annotations/nope", Some(json!({ "note": "x" }))).await.0, StatusCode::NOT_FOUND);
-        assert_eq!(call(&router, "GET", "/api/view", None).await.0, StatusCode::SERVICE_UNAVAILABLE, "no page open");
+        assert_eq!(
+            call(
+                &router,
+                "PATCH",
+                "/api/annotations/box-1",
+                Some(json!({ "note": "tall" }))
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            call(
+                &router,
+                "PATCH",
+                "/api/annotations/nope",
+                Some(json!({ "note": "x" }))
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(&router, "GET", "/api/view", None).await.0,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no page open"
+        );
     }
 }

@@ -125,14 +125,23 @@ fn to_jpeg(surface: &Surface, width: u32, height: u32) -> Option<Vec<u8>> {
 
 fn to_png(surface: &Surface, width: u32, height: u32) -> Option<Vec<u8>> {
     let (color, depth, bytes) = match surface {
-        Surface::Gray8(b) => (png::ColorType::Grayscale, png::BitDepth::Eight, Cow::from(b)),
+        Surface::Gray8(b) => (
+            png::ColorType::Grayscale,
+            png::BitDepth::Eight,
+            Cow::from(b),
+        ),
         Surface::Rgb8(b) => (png::ColorType::Rgb, png::BitDepth::Eight, Cow::from(b)),
         Surface::Rgba8(b) => (png::ColorType::Rgba, png::BitDepth::Eight, Cow::from(b)),
         // png stores 16-bit samples big-endian regardless of the host.
         Surface::Gray16(values) => (
             png::ColorType::Grayscale,
             png::BitDepth::Sixteen,
-            Cow::from(values.iter().flat_map(|value| value.to_be_bytes()).collect::<Vec<u8>>()),
+            Cow::from(
+                values
+                    .iter()
+                    .flat_map(|value| value.to_be_bytes())
+                    .collect::<Vec<u8>>(),
+            ),
         ),
     };
     let mut out = Vec::new();
@@ -160,8 +169,8 @@ fn to_webp(surface: &Surface, width: u32, height: u32) -> Option<Vec<u8>> {
 }
 
 fn to_jpegxl(surface: &Surface, width: u32, height: u32) -> Option<Vec<u8>> {
-    use zune_core::colorspace::ColorSpace;
     use zune_core::bit_depth::BitDepth;
+    use zune_core::colorspace::ColorSpace;
 
     let (bytes, colorspace, depth) = match surface {
         Surface::Gray8(b) => (Cow::from(b), ColorSpace::Luma, BitDepth::Eight),
@@ -169,7 +178,12 @@ fn to_jpegxl(surface: &Surface, width: u32, height: u32) -> Option<Vec<u8>> {
         Surface::Rgba8(b) => (Cow::from(b), ColorSpace::RGBA, BitDepth::Eight),
         // zune reads 16-bit samples as native-endian byte pairs.
         Surface::Gray16(values) => (
-            Cow::from(values.iter().flat_map(|value| value.to_ne_bytes()).collect::<Vec<u8>>()),
+            Cow::from(
+                values
+                    .iter()
+                    .flat_map(|value| value.to_ne_bytes())
+                    .collect::<Vec<u8>>(),
+            ),
             ColorSpace::Luma,
             BitDepth::Sixteen,
         ),
@@ -238,7 +252,11 @@ mod tests {
 
     fn depth_image(width: usize, height: usize) -> RawImage {
         RawImage {
-            header: crate::msgs::Header { stamp_sec: 0, stamp_nsec: 0, frame_id: String::new() },
+            header: crate::msgs::Header {
+                stamp_sec: 0,
+                stamp_nsec: 0,
+                frame_id: String::new(),
+            },
             is_bigendian: 0,
             width,
             height,
@@ -249,7 +267,9 @@ mod tests {
             data: (0..height)
                 .flat_map(|row| {
                     (0..width)
-                        .flat_map(move |column| (((row * width + column) * 517) as u16).to_le_bytes())
+                        .flat_map(move |column| {
+                            (((row * width + column) * 517) as u16).to_le_bytes()
+                        })
                         .chain([0xff, 0xff])
                 })
                 .collect(),
@@ -258,13 +278,19 @@ mod tests {
 
     fn colour_image(width: usize, height: usize) -> RawImage {
         RawImage {
-            header: crate::msgs::Header { stamp_sec: 0, stamp_nsec: 0, frame_id: String::new() },
+            header: crate::msgs::Header {
+                stamp_sec: 0,
+                stamp_nsec: 0,
+                frame_id: String::new(),
+            },
             is_bigendian: 0,
             width,
             height,
             step: width * 3,
             encoding: "rgb8".to_owned(),
-            data: (0..width * height * 3).map(|index| ((index * 7) % 251) as u8).collect(),
+            data: (0..width * height * 3)
+                .map(|index| ((index * 7) % 251) as u8)
+                .collect(),
         }
     }
 
@@ -301,7 +327,11 @@ mod tests {
         assert_eq!(container_format(&colour_image(16, 16)), None);
         let mut mislabelled = prejpeg_image(16, 16);
         mislabelled.data[0] = 0x00;
-        assert_eq!(container_format(&mislabelled), None, "a jpeg label without the jfif marker is not trusted");
+        assert_eq!(
+            container_format(&mislabelled),
+            None,
+            "a jpeg label without the jfif marker is not trusted"
+        );
     }
 
     #[test]
@@ -366,7 +396,8 @@ mod tests {
         let encoded = compress(&image, ImageFormat::Webp).unwrap();
         assert_eq!(encoded.format, "webp");
 
-        let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(&encoded.data)).unwrap();
+        let mut decoder =
+            image_webp::WebPDecoder::new(std::io::Cursor::new(&encoded.data)).unwrap();
         let mut bytes = vec![0u8; decoder.output_buffer_size().unwrap()];
         decoder.read_image(&mut bytes).unwrap();
         assert_eq!(decoder.dimensions(), (11, 7));

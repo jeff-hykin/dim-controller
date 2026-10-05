@@ -52,7 +52,13 @@ pub fn parse_time(value: &Value) -> Option<u64> {
     let number = |range: std::ops::Range<usize>| text.get(range)?.parse::<i64>().ok();
     let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
     let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
-    if bytes[4] != b'-' || bytes[7] != b'-' || bytes[13] != b':' || bytes[16] != b':' || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+    {
         return None;
     }
     let mut rest = &text[19..];
@@ -75,11 +81,16 @@ pub fn parse_time(value: &Value) -> Option<u64> {
             if digits.len() != 4 {
                 return None;
             }
-            sign * (digits[0..2].parse::<i64>().ok()? * 3600 + digits[2..4].parse::<i64>().ok()? * 60)
+            sign * (digits[0..2].parse::<i64>().ok()? * 3600
+                + digits[2..4].parse::<i64>().ok()? * 60)
         }
     };
     // days from the civil date (Howard Hinnant's algorithm)
-    let (y, m) = if month <= 2 { (year - 1, month + 9) } else { (year, month - 3) };
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
     let era = y.div_euclid(400);
     let year_of_era = y - era * 400;
     let day_of_year = (153 * m + 2) / 5 + day - 1;
@@ -90,16 +101,36 @@ pub fn parse_time(value: &Value) -> Option<u64> {
 }
 
 /// keys that become foxglove.Log's own fields; the rest are appended to the message as `key=value`
-const KNOWN: &[&str] = &["event", "message", "msg", "level", "levelname", "logger", "name", "timestamp", "func_name", "lineno", "exception_type", "exception_message", "exception", "exc_info"];
+const KNOWN: &[&str] = &[
+    "event",
+    "message",
+    "msg",
+    "level",
+    "levelname",
+    "logger",
+    "name",
+    "timestamp",
+    "func_name",
+    "lineno",
+    "exception_type",
+    "exception_message",
+    "exception",
+    "exc_info",
+];
 
 fn text(value: &Value) -> String {
-    value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string())
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
 }
 
 /// One log line as a foxglove.Log JSON message, and its time (the record's, else `received`). A line that isn't a
 /// JSON object is kept anyway: level UNKNOWN, the raw text as the message, `fields` null.
 pub fn to_log(line: &str, source: &str, received: u64) -> (u64, Value) {
-    let record = serde_json::from_str::<Value>(line).ok().filter(Value::is_object);
+    let record = serde_json::from_str::<Value>(line)
+        .ok()
+        .filter(Value::is_object);
     let Some(record) = record else {
         let log = json!({
             "timestamp": stamp(received), "level": 0, "message": line.trim_end(), "name": "", "file": "", "line": 0,
@@ -108,14 +139,29 @@ pub fn to_log(line: &str, source: &str, received: u64) -> (u64, Value) {
         return (received, log);
     };
     let object: &Map<String, Value> = record.as_object().expect("filtered to objects");
-    let get = |keys: &[&str]| keys.iter().find_map(|key| object.get(*key)).filter(|value| !value.is_null());
-    let time = get(&["timestamp", "time", "ts"]).and_then(parse_time).unwrap_or(received);
-    let mut message = get(&["event", "message", "msg"]).map(text).unwrap_or_default();
-    for (key, value) in object.iter().filter(|(key, _)| !KNOWN.contains(&key.as_str())) {
+    let get = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| object.get(*key))
+            .filter(|value| !value.is_null())
+    };
+    let time = get(&["timestamp", "time", "ts"])
+        .and_then(parse_time)
+        .unwrap_or(received);
+    let mut message = get(&["event", "message", "msg"])
+        .map(text)
+        .unwrap_or_default();
+    for (key, value) in object
+        .iter()
+        .filter(|(key, _)| !KNOWN.contains(&key.as_str()))
+    {
         message.push_str(&format!(" {key}={}", text(value)));
     }
     if let Some(kind) = get(&["exception_type"]) {
-        message.push_str(&format!("\n{}: {}", text(kind), get(&["exception_message"]).map(text).unwrap_or_default()));
+        message.push_str(&format!(
+            "\n{}: {}",
+            text(kind),
+            get(&["exception_message"]).map(text).unwrap_or_default()
+        ));
     } else if let Some(exception) = get(&["exception", "exc_info"]) {
         message.push_str(&format!("\n{}", text(exception)));
     }
@@ -140,13 +186,34 @@ pub fn stamp(nanos: u64) -> Value {
 
 /// `/dimos/logs/<stem>` for a log file, its stem cleaned to topic-safe characters.
 pub fn topic_for(path: &Path) -> String {
-    let stem = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
-    let clean: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' }).collect();
-    format!("{LOG_TOPIC_PREFIX}{}", if clean.is_empty() { "log" } else { &clean })
+    let stem = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let clean: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!(
+        "{LOG_TOPIC_PREFIX}{}",
+        if clean.is_empty() { "log" } else { &clean }
+    )
 }
 
 pub fn encoded(log: &Value) -> Encoded {
-    Encoded { schema_name: "foxglove.Log", schema_encoding: "jsonschema", schema: LOG_SCHEMA, message_encoding: "json", data: serde_json::to_vec(log).unwrap_or_default() }
+    Encoded {
+        schema_name: "foxglove.Log",
+        schema_encoding: "jsonschema",
+        schema: LOG_SCHEMA,
+        message_encoding: "json",
+        data: serde_json::to_vec(log).unwrap_or_default(),
+    }
 }
 
 struct Tail {
@@ -203,7 +270,13 @@ impl LogTailer {
                 })
                 .ok()
         };
-        LogTailer { watched, started, stop, lines, worker: Mutex::new(worker) }
+        LogTailer {
+            watched,
+            started,
+            stop,
+            lines,
+            worker: Mutex::new(worker),
+        }
     }
 
     /// Watches run log dirs (`dirs`) and logs roots that hold one dir per run (`roots`). Files already in a dir are
@@ -215,7 +288,11 @@ impl LogTailer {
         for dir in dirs {
             if watched.dirs.insert(dir.clone()) {
                 for file in jsonl_files(dir) {
-                    let tail = if early { from_end(&file) } else { from_start(self.started) };
+                    let tail = if early {
+                        from_end(&file)
+                    } else {
+                        from_start(self.started)
+                    };
                     watched.files.entry(file).or_insert(tail);
                 }
             }
@@ -225,7 +302,11 @@ impl LogTailer {
                 continue;
             }
             let existing: BTreeSet<PathBuf> = subdirs(root).into_iter().collect();
-            let live: Vec<PathBuf> = existing.iter().filter(|dir| recently_written(dir)).cloned().collect();
+            let live: Vec<PathBuf> = existing
+                .iter()
+                .filter(|dir| recently_written(dir))
+                .cloned()
+                .collect();
             watched.roots.insert(root.clone(), existing);
             drop(watched);
             self.watch(&live, &[]);
@@ -235,7 +316,12 @@ impl LogTailer {
 
     pub fn dirs(&self) -> Vec<String> {
         let watched = self.watched.lock().unwrap();
-        watched.dirs.iter().chain(watched.roots.keys()).map(|dir| dir.display().to_string()).collect()
+        watched
+            .dirs
+            .iter()
+            .chain(watched.roots.keys())
+            .map(|dir| dir.display().to_string())
+            .collect()
     }
 
     pub fn lines(&self) -> u64 {
@@ -259,29 +345,53 @@ impl Drop for LogTailer {
 
 fn from_end(file: &Path) -> Tail {
     let metadata = std::fs::metadata(file).ok();
-    Tail { offset: metadata.as_ref().map(|m| m.len()).unwrap_or(0), inode: metadata.map(|m| m.ino()).unwrap_or(0), partial: Vec::new(), skip_before: None }
+    Tail {
+        offset: metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+        inode: metadata.map(|m| m.ino()).unwrap_or(0),
+        partial: Vec::new(),
+        skip_before: None,
+    }
 }
 
 fn from_start(started: u64) -> Tail {
-    Tail { offset: 0, inode: 0, partial: Vec::new(), skip_before: Some(started) }
+    Tail {
+        offset: 0,
+        inode: 0,
+        partial: Vec::new(),
+        skip_before: Some(started),
+    }
 }
 
 fn jsonl_files(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
-    entries.flatten().map(|entry| entry.path()).filter(|path| path.extension().is_some_and(|end| end == "jsonl") && path.is_file()).collect()
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|end| end == "jsonl") && path.is_file())
+        .collect()
 }
 
 fn subdirs(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
-    entries.flatten().filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir())).map(|entry| entry.path()).collect()
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect()
 }
 
 fn recently_written(dir: &Path) -> bool {
-    jsonl_files(dir).iter().any(|file| std::fs::metadata(file).and_then(|m| m.modified()).ok().and_then(|when| when.elapsed().ok()).is_some_and(|age| age < LIVE_WITHIN))
+    jsonl_files(dir).iter().any(|file| {
+        std::fs::metadata(file)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|when| when.elapsed().ok())
+            .is_some_and(|age| age < LIVE_WITHIN)
+    })
 }
 
 /// New run dirs under the roots join (their files read from the start).
@@ -306,7 +416,10 @@ fn poll(watched: &Mutex<Watched>, recorder: &Recorder, lines: &AtomicU64, starte
     for dir in dirs {
         for file in jsonl_files(&dir) {
             // a file that appears after the dir was watched is new: all of it belongs to the recording
-            let tail = watched.files.entry(file.clone()).or_insert_with(|| from_start(started));
+            let tail = watched
+                .files
+                .entry(file.clone())
+                .or_insert_with(|| from_start(started));
             read_new(&file, tail, recorder, lines);
         }
     }
@@ -332,7 +445,10 @@ fn read_new(path: &Path, tail: &mut Tail, recorder: &Recorder, lines: &AtomicU64
         return;
     }
     let mut fresh = Vec::new();
-    let Ok(read) = file.take(metadata.len() - tail.offset).read_to_end(&mut fresh) else {
+    let Ok(read) = file
+        .take(metadata.len() - tail.offset)
+        .read_to_end(&mut fresh)
+    else {
         return;
     };
     tail.offset += read as u64;
@@ -341,7 +457,10 @@ fn read_new(path: &Path, tail: &mut Tail, recorder: &Recorder, lines: &AtomicU64
     let topic = topic_for(path);
     let received = now_nanos();
     let mut consumed = 0;
-    while let Some(end) = tail.partial[consumed..].iter().position(|&byte| byte == b'\n') {
+    while let Some(end) = tail.partial[consumed..]
+        .iter()
+        .position(|&byte| byte == b'\n')
+    {
         let line = String::from_utf8_lossy(&tail.partial[consumed..consumed + end]).into_owned();
         consumed += end + 1;
         if line.trim().is_empty() {
@@ -379,10 +498,22 @@ mod tests {
 
     #[test]
     fn times_parse_to_epoch_nanos() {
-        assert_eq!(parse_time(&json!("1970-01-01T00:00:01Z")), Some(1_000_000_000));
-        assert_eq!(parse_time(&json!("2026-09-24T13:45:45.848591Z")), Some(1_790_257_545_848_591_000));
-        assert_eq!(parse_time(&json!("2026-09-24 15:45:45.848591+02:00")), Some(1_790_257_545_848_591_000));
-        assert_eq!(parse_time(&json!("2026-09-24T13:45:45")), Some(1_790_257_545_000_000_000));
+        assert_eq!(
+            parse_time(&json!("1970-01-01T00:00:01Z")),
+            Some(1_000_000_000)
+        );
+        assert_eq!(
+            parse_time(&json!("2026-09-24T13:45:45.848591Z")),
+            Some(1_790_257_545_848_591_000)
+        );
+        assert_eq!(
+            parse_time(&json!("2026-09-24 15:45:45.848591+02:00")),
+            Some(1_790_257_545_848_591_000)
+        );
+        assert_eq!(
+            parse_time(&json!("2026-09-24T13:45:45")),
+            Some(1_790_257_545_000_000_000)
+        );
         assert_eq!(parse_time(&json!(1.5)), Some(1_500_000_000));
         assert_eq!(parse_time(&json!("yesterday")), None);
         assert_eq!(parse_time(&json!("2026-13-24T13:45:45Z")), None);
@@ -393,9 +524,15 @@ mod tests {
         let line = r#"{"module": "MovementManager", "worker_id": 7, "event": "Deployed module.", "level": "info", "logger": "dimos/core/coordination/python_worker.py", "timestamp": "2026-09-24T13:45:46.663730Z", "func_name": "deploy_module", "lineno": 242}"#;
         let (time, log) = to_log(line, "/logs/run/main.jsonl", 5);
         assert_eq!(time, 1_790_257_546_663_730_000);
-        assert_eq!(log["timestamp"], json!({ "sec": 1_790_257_546u64, "nsec": 663_730_000u64 }));
+        assert_eq!(
+            log["timestamp"],
+            json!({ "sec": 1_790_257_546u64, "nsec": 663_730_000u64 })
+        );
         assert_eq!(log["level"], 2);
-        assert_eq!(log["message"], "Deployed module. module=MovementManager worker_id=7");
+        assert_eq!(
+            log["message"],
+            "Deployed module. module=MovementManager worker_id=7"
+        );
         assert_eq!(log["name"], "dimos/core/coordination/python_worker.py");
         assert_eq!(log["file"], "dimos/core/coordination/python_worker.py");
         assert_eq!(log["line"], 242);
@@ -430,7 +567,10 @@ mod tests {
     #[test]
     fn topics_come_from_the_file_stem() {
         assert_eq!(topic_for(Path::new("/a/b/main.jsonl")), "/dimos/logs/main");
-        assert_eq!(topic_for(Path::new("/a/b/dimos_2026.v2.jsonl")), "/dimos/logs/dimos_2026_v2");
+        assert_eq!(
+            topic_for(Path::new("/a/b/dimos_2026.v2.jsonl")),
+            "/dimos/logs/dimos_2026_v2"
+        );
     }
 
     fn scratch(label: &str) -> PathBuf {
@@ -441,7 +581,13 @@ mod tests {
 
     fn append(path: &Path, text: &str) {
         use std::io::Write;
-        std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap().write_all(text.as_bytes()).unwrap();
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(text.as_bytes())
+            .unwrap();
     }
 
     fn read_logs(path: &Path) -> Vec<(String, Value)> {
@@ -452,8 +598,14 @@ mod tests {
             .filter(|message| message.channel.topic.starts_with(LOG_TOPIC_PREFIX))
             .map(|message| {
                 assert_eq!(message.channel.message_encoding, "json");
-                assert_eq!(message.channel.schema.as_ref().unwrap().name, "foxglove.Log");
-                (message.channel.topic.clone(), serde_json::from_slice(&message.data).unwrap())
+                assert_eq!(
+                    message.channel.schema.as_ref().unwrap().name,
+                    "foxglove.Log"
+                );
+                (
+                    message.channel.topic.clone(),
+                    serde_json::from_slice(&message.data).unwrap(),
+                )
             })
             .collect()
     }
@@ -466,18 +618,28 @@ mod tests {
         let root = scratch("root");
         let run = dir.join("run");
         std::fs::create_dir_all(&run).unwrap();
-        append(&run.join("main.jsonl"), "{\"event\": \"before\", \"level\": \"info\"}\n");
+        append(
+            &run.join("main.jsonl"),
+            "{\"event\": \"before\", \"level\": \"info\"}\n",
+        );
         let path = dir.join("out.mcap");
-        let recorder = Arc::new(Recorder::start(&path, Compression::None, ImageFormat::Raw).unwrap());
+        let recorder =
+            Arc::new(Recorder::start(&path, Compression::None, ImageFormat::Raw).unwrap());
         let tailer = LogTailer::start(recorder.clone());
         tailer.watch(&[run.clone()], &[root.clone()]);
-        append(&run.join("main.jsonl"), "{\"event\": \"during\", \"level\": \"warning\"}\n{\"event\": \"half");
+        append(
+            &run.join("main.jsonl"),
+            "{\"event\": \"during\", \"level\": \"warning\"}\n{\"event\": \"half",
+        );
         append(&run.join("other.jsonl"), "garbage line\n");
         std::thread::sleep(Duration::from_millis(600));
         append(&run.join("main.jsonl"), "\", \"level\": \"error\"}\n");
         let later = root.join("20261003-run");
         std::fs::create_dir_all(&later).unwrap();
-        append(&later.join("main.jsonl"), "{\"event\": \"new run\", \"level\": \"debug\"}\n");
+        append(
+            &later.join("main.jsonl"),
+            "{\"event\": \"new run\", \"level\": \"debug\"}\n",
+        );
         std::thread::sleep(Duration::from_millis(2600));
         std::fs::write(run.join("other.jsonl"), "cut\n").unwrap();
         tailer.stop();
@@ -485,12 +647,27 @@ mod tests {
         recorder.finish().unwrap();
 
         let logs = read_logs(&path);
-        let messages: Vec<(&str, &str)> = logs.iter().map(|(topic, log)| (topic.as_str(), log["message"].as_str().unwrap())).collect();
-        for expected in [("/dimos/logs/main", "during"), ("/dimos/logs/other", "garbage line"), ("/dimos/logs/main", "half"), ("/dimos/logs/main", "new run"), ("/dimos/logs/other", "cut")] {
-            assert!(messages.contains(&expected), "{expected:?} missing from {messages:?}");
+        let messages: Vec<(&str, &str)> = logs
+            .iter()
+            .map(|(topic, log)| (topic.as_str(), log["message"].as_str().unwrap()))
+            .collect();
+        for expected in [
+            ("/dimos/logs/main", "during"),
+            ("/dimos/logs/other", "garbage line"),
+            ("/dimos/logs/main", "half"),
+            ("/dimos/logs/main", "new run"),
+            ("/dimos/logs/other", "cut"),
+        ] {
+            assert!(
+                messages.contains(&expected),
+                "{expected:?} missing from {messages:?}"
+            );
         }
         assert!(!messages.iter().any(|(_, message)| *message == "before"));
-        let half = logs.iter().find(|(_, log)| log["message"] == "half").unwrap();
+        let half = logs
+            .iter()
+            .find(|(_, log)| log["message"] == "half")
+            .unwrap();
         assert_eq!(half.1["level"], 4);
         std::fs::remove_dir_all(&dir).unwrap();
         std::fs::remove_dir_all(&root).unwrap();

@@ -79,7 +79,12 @@ impl Labels {
         if label.frame_id.trim().is_empty() {
             return Err("a label needs a frame_id".into());
         }
-        if !label.position.iter().chain(label.orientation.iter()).all(|value| value.is_finite()) {
+        if !label
+            .position
+            .iter()
+            .chain(label.orientation.iter())
+            .all(|value| value.is_finite())
+        {
             return Err("position and orientation must be finite".into());
         }
         let mut items = self.items.lock().unwrap();
@@ -136,25 +141,42 @@ pub fn scene_update(label: &Label, action: &str, time: u64) -> Value {
 
 /// Writes one label change into a recording, on both topics.
 pub fn write(recorder: &Recorder, label: &Label, action: &str) {
-    let time = if action == "add" { label.created.max(1) } else { now_nanos() };
+    let time = if action == "add" {
+        label.created.max(1)
+    } else {
+        now_nanos()
+    };
     let as_json = |value: Value| serde_json::to_vec(&value).unwrap_or_default();
     let mut message = label_message(label, action);
     // a deletion is stamped when it happened
     message["timestamp"] = stamp(time);
     recorder.write_encoded(
         LABEL_TOPIC,
-        Encoded { schema_name: "dimos.LocationLabel", schema_encoding: "jsonschema", schema: LABEL_SCHEMA, message_encoding: "json", data: as_json(message) },
+        Encoded {
+            schema_name: "dimos.LocationLabel",
+            schema_encoding: "jsonschema",
+            schema: LABEL_SCHEMA,
+            message_encoding: "json",
+            data: as_json(message),
+        },
         time,
     );
     recorder.write_encoded(
         SCENE_TOPIC,
-        Encoded { schema_name: "foxglove.SceneUpdate", schema_encoding: "jsonschema", schema: SCENE_SCHEMA, message_encoding: "json", data: as_json(scene_update(label, action, time)) },
+        Encoded {
+            schema_name: "foxglove.SceneUpdate",
+            schema_encoding: "jsonschema",
+            schema: SCENE_SCHEMA,
+            message_encoding: "json",
+            data: as_json(scene_update(label, action, time)),
+        },
         time,
     );
 }
 
 fn changed(api: &Api) {
-    api.annotations.broadcast(json!({ "type": "labels", "labels": api.recorder.labels.list() }));
+    api.annotations
+        .broadcast(json!({ "type": "labels", "labels": api.recorder.labels.list() }));
 }
 
 fn error(status: StatusCode, message: impl std::fmt::Display) -> Response {
@@ -198,11 +220,31 @@ mod tests {
     #[test]
     fn labels_get_ids_and_are_validated() {
         let labels = Labels::default();
-        let made = labels.create(Label { id: String::new(), label: "door".into(), frame_id: "world".into(), position: [1.0, 2.0, 0.0], orientation: identity(), created: 0 }).unwrap();
+        let made = labels
+            .create(Label {
+                id: String::new(),
+                label: "door".into(),
+                frame_id: "world".into(),
+                position: [1.0, 2.0, 0.0],
+                orientation: identity(),
+                created: 0,
+            })
+            .unwrap();
         assert_eq!(made.id, "label-1");
         assert!(made.created > 0);
-        assert!(labels.create(Label { label: " ".into(), ..made.clone() }).is_err());
-        assert!(labels.create(Label { id: String::new(), position: [f64::NAN, 0.0, 0.0], ..made.clone() }).is_err());
+        assert!(labels
+            .create(Label {
+                label: " ".into(),
+                ..made.clone()
+            })
+            .is_err());
+        assert!(labels
+            .create(Label {
+                id: String::new(),
+                position: [f64::NAN, 0.0, 0.0],
+                ..made.clone()
+            })
+            .is_err());
         assert!(labels.create(made.clone()).is_err(), "taken id");
         assert_eq!(labels.list().len(), 1);
         assert_eq!(labels.remove("label-1"), Some(made));
@@ -211,17 +253,30 @@ mod tests {
 
     #[test]
     fn scene_updates_carry_the_text_and_deletions() {
-        let label = Label { id: "label-3".into(), label: "stuck here".into(), frame_id: "map".into(), position: [1.0, 2.0, 0.5], orientation: identity(), created: 2_500_000_000 };
+        let label = Label {
+            id: "label-3".into(),
+            label: "stuck here".into(),
+            frame_id: "map".into(),
+            position: [1.0, 2.0, 0.5],
+            orientation: identity(),
+            created: 2_500_000_000,
+        };
         let update = scene_update(&label, "add", 0);
         let entity = &update["entities"][0];
         assert_eq!(entity["frame_id"], "map");
         assert_eq!(entity["texts"][0]["text"], "stuck here");
         assert_eq!(entity["texts"][0]["pose"]["position"]["z"], 0.8);
-        assert_eq!(entity["timestamp"], json!({ "sec": 2, "nsec": 500_000_000 }));
+        assert_eq!(
+            entity["timestamp"],
+            json!({ "sec": 2, "nsec": 500_000_000 })
+        );
         let removed = scene_update(&label, "delete", 7);
         assert_eq!(removed["deletions"][0]["id"], "label-3");
         let message = label_message(&label, "add");
-        assert_eq!(message["pose"]["position"], json!({ "x": 1.0, "y": 2.0, "z": 0.5 }));
+        assert_eq!(
+            message["pose"]["position"],
+            json!({ "x": 1.0, "y": 2.0, "z": 0.5 })
+        );
         assert_eq!(message["pose"]["orientation"]["w"], 1.0);
     }
 }

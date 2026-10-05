@@ -84,26 +84,56 @@ pub fn to_ros2(msg_type: &str, payload: &[u8]) -> Option<Encoded> {
         "geometry_msgs.PoseWithCovarianceStamped" => pose_with_covariance_stamped(payload),
         "nav_msgs.Path" => path(payload),
         "nav_msgs.OccupancyGrid" => occupancy_grid(payload),
-        "std_msgs.Bool" => scalar(payload, &msgs::BOOL_FINGERPRINT, "Bool", "bool", |reader, writer| {
-            writer.boolean(reader.boolean()?);
-            Ok(())
-        }),
-        "std_msgs.String" => scalar(payload, &msgs::STRING_FINGERPRINT, "String", "string", |reader, writer| {
-            writer.string(&reader.string()?);
-            Ok(())
-        }),
-        "std_msgs.Float32" => scalar(payload, &msgs::FLOAT32_FINGERPRINT, "Float32", "float32", |reader, writer| {
-            writer.f32(reader.f32()?);
-            Ok(())
-        }),
-        "std_msgs.Float64" => scalar(payload, &msgs::FLOAT64_FINGERPRINT, "Float64", "float64", |reader, writer| {
-            writer.f64(reader.f64()?);
-            Ok(())
-        }),
-        "std_msgs.Int32" => scalar(payload, &msgs::INT32_FINGERPRINT, "Int32", "int32", |reader, writer| {
-            writer.i32(reader.i32()?);
-            Ok(())
-        }),
+        "std_msgs.Bool" => scalar(
+            payload,
+            &msgs::BOOL_FINGERPRINT,
+            "Bool",
+            "bool",
+            |reader, writer| {
+                writer.boolean(reader.boolean()?);
+                Ok(())
+            },
+        ),
+        "std_msgs.String" => scalar(
+            payload,
+            &msgs::STRING_FINGERPRINT,
+            "String",
+            "string",
+            |reader, writer| {
+                writer.string(&reader.string()?);
+                Ok(())
+            },
+        ),
+        "std_msgs.Float32" => scalar(
+            payload,
+            &msgs::FLOAT32_FINGERPRINT,
+            "Float32",
+            "float32",
+            |reader, writer| {
+                writer.f32(reader.f32()?);
+                Ok(())
+            },
+        ),
+        "std_msgs.Float64" => scalar(
+            payload,
+            &msgs::FLOAT64_FINGERPRINT,
+            "Float64",
+            "float64",
+            |reader, writer| {
+                writer.f64(reader.f64()?);
+                Ok(())
+            },
+        ),
+        "std_msgs.Int32" => scalar(
+            payload,
+            &msgs::INT32_FINGERPRINT,
+            "Int32",
+            "int32",
+            |reader, writer| {
+                writer.i32(reader.i32()?);
+                Ok(())
+            },
+        ),
         _ => None,
     }
 }
@@ -394,7 +424,13 @@ fn scalar(
     ros_type: &str,
     body: impl FnOnce(&mut Reader, &mut CdrWriter) -> anyhow::Result<()>,
 ) -> Option<Encoded> {
-    stream(payload, fingerprint, &format!("std_msgs/msg/{name}"), format!("{ros_type} data\n"), body)
+    stream(
+        payload,
+        fingerprint,
+        &format!("std_msgs/msg/{name}"),
+        format!("{ros_type} data\n"),
+        body,
+    )
 }
 
 fn copy_header(reader: &mut Reader, writer: &mut CdrWriter) -> anyhow::Result<()> {
@@ -838,7 +874,10 @@ mod tests {
     }
 
     fn unhex(text: &str) -> Vec<u8> {
-        (0..text.len()).step_by(2).map(|index| u8::from_str_radix(&text[index..index + 2], 16).unwrap()).collect()
+        (0..text.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&text[index..index + 2], 16).unwrap())
+            .collect()
     }
 
     fn hex(bytes: &[u8]) -> String {

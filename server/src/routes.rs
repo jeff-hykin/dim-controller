@@ -25,23 +25,40 @@ fn filter(method: &str) -> MethodFilter {
 
 impl<S: Clone + Send + Sync + 'static> Routes<S> {
     pub fn new() -> Self {
-        Routes { router: Router::new(), endpoints: Vec::new() }
+        Routes {
+            router: Router::new(),
+            endpoints: Vec::new(),
+        }
     }
 
     /// An action: routed and listed. `params` is Desktop's shorthand (`{ name: { type, description, required } }`);
     /// `{name}` path parts are added to it as required strings when it doesn't describe them.
-    pub fn endpoint<H, T>(mut self, method: &str, path: &str, description: &str, params: Value, handler: H) -> Self
+    pub fn endpoint<H, T>(
+        mut self,
+        method: &str,
+        path: &str,
+        description: &str,
+        params: Value,
+        handler: H,
+    ) -> Self
     where
         H: Handler<T, S>,
         T: 'static,
     {
-        self.router = self.router.route(&format!("/{path}"), on(filter(method), handler));
+        self.router = self
+            .router
+            .route(&format!("/{path}"), on(filter(method), handler));
         let mut params = match params {
             Value::Object(map) => map,
             _ => Map::new(),
         };
-        for part in path.split('/').filter_map(|part| part.strip_prefix('{')?.strip_suffix('}')) {
-            params.entry(part.to_string()).or_insert_with(|| json!({ "type": "string", "required": true }));
+        for part in path
+            .split('/')
+            .filter_map(|part| part.strip_prefix('{')?.strip_suffix('}'))
+        {
+            params
+                .entry(part.to_string())
+                .or_insert_with(|| json!({ "type": "string", "required": true }));
         }
         let mut endpoint = json!({ "method": method, "path": path, "description": description });
         if !params.is_empty() {
@@ -66,7 +83,9 @@ impl<S: Clone + Send + Sync + 'static> Routes<S> {
         H: Handler<T, S>,
         T: 'static,
     {
-        self.router = self.router.route(&format!("/{path}"), on(filter(method), handler));
+        self.router = self
+            .router
+            .route(&format!("/{path}"), on(filter(method), handler));
         self
     }
 

@@ -34,7 +34,10 @@ struct Sample {
 
 enum Body {
     /// a dimos wire message: transcoded to CDR when its type is known, else kept as LCM
-    Wire { msg_type: Option<String>, payload: Vec<u8> },
+    Wire {
+        msg_type: Option<String>,
+        payload: Vec<u8>,
+    },
     /// already encoded by the caller (the JSON log and label channels)
     Encoded(Encoded),
 }
@@ -100,11 +103,15 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn start(path: &Path, compression: Compression, image_format: ImageFormat) -> Result<Self> {
-        if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("could not create {}", parent.display()))?;
         }
-        let file = File::create(path).with_context(|| format!("could not create {}", path.display()))?;
+        let file =
+            File::create(path).with_context(|| format!("could not create {}", path.display()))?;
         let writer = WriteOptions::new()
             .compression(compression.to_mcap())
             .profile("ros2")
@@ -132,7 +139,10 @@ impl Recorder {
         };
         let sample = Sample {
             topic: topic.to_string(),
-            body: Body::Wire { msg_type: msg_type.map(str::to_string), payload: payload.to_vec() },
+            body: Body::Wire {
+                msg_type: msg_type.map(str::to_string),
+                payload: payload.to_vec(),
+            },
             log_time: now_nanos(),
         };
         if let Err(TrySendError::Full(_)) = sender.try_send(sample) {
@@ -146,7 +156,14 @@ impl Recorder {
         let Some(sender) = self.sender.lock().unwrap().clone() else {
             return;
         };
-        if sender.send(Sample { topic: topic.to_string(), body: Body::Encoded(encoded), log_time }).is_err() {
+        if sender
+            .send(Sample {
+                topic: topic.to_string(),
+                body: Body::Encoded(encoded),
+                log_time,
+            })
+            .is_err()
+        {
             self.counters.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -162,7 +179,11 @@ impl Recorder {
             messages: self.counters.messages.load(Ordering::Relaxed),
             bytes: self.counters.bytes.load(Ordering::Relaxed),
             dropped: self.counters.dropped.load(Ordering::Relaxed),
-            seconds: self.started.elapsed().map(|age| age.as_secs_f64()).unwrap_or(0.0),
+            seconds: self
+                .started
+                .elapsed()
+                .map(|age| age.as_secs_f64())
+                .unwrap_or(0.0),
         }
     }
 
@@ -204,8 +225,17 @@ fn drain(
                 let id = match channels.get(&sample.topic) {
                     Some((id, _)) => *id,
                     None => {
-                        let schema_id = writer.add_schema(encoded.schema_name, encoded.schema_encoding, encoded.schema)?;
-                        let id = writer.add_channel(schema_id, &sample.topic, encoded.message_encoding, &BTreeMap::new())?;
+                        let schema_id = writer.add_schema(
+                            encoded.schema_name,
+                            encoded.schema_encoding,
+                            encoded.schema,
+                        )?;
+                        let id = writer.add_channel(
+                            schema_id,
+                            &sample.topic,
+                            encoded.message_encoding,
+                            &BTreeMap::new(),
+                        )?;
                         channels.insert(sample.topic.clone(), (id, 0));
                         id
                     }
@@ -213,18 +243,34 @@ fn drain(
                 (id, encoded.data)
             }
             Body::Wire { msg_type, payload } => {
-                let encoded = msg_type.as_deref().and_then(|msg_type| transcode(msg_type, &payload, image_format));
+                let encoded = msg_type
+                    .as_deref()
+                    .and_then(|msg_type| transcode(msg_type, &payload, image_format));
                 let id = match channels.get(&sample.topic) {
                     Some((id, _)) => *id,
                     None => {
                         let id = match &encoded {
                             Some(encoded) => {
-                                let schema_id = writer.add_schema(&encoded.schema_name, "ros2msg", encoded.schema_text.as_bytes())?;
-                                writer.add_channel(schema_id, &sample.topic, "cdr", &BTreeMap::new())?
+                                let schema_id = writer.add_schema(
+                                    &encoded.schema_name,
+                                    "ros2msg",
+                                    encoded.schema_text.as_bytes(),
+                                )?;
+                                writer.add_channel(
+                                    schema_id,
+                                    &sample.topic,
+                                    "cdr",
+                                    &BTreeMap::new(),
+                                )?
                             }
                             // Schema id 0 means "no schema", which is how an
                             // untranscodable type gets stored rather than dropped.
-                            None => writer.add_channel(0, &sample.topic, "lcm", &lcm_metadata(msg_type.as_deref()))?,
+                            None => writer.add_channel(
+                                0,
+                                &sample.topic,
+                                "lcm",
+                                &lcm_metadata(msg_type.as_deref()),
+                            )?,
                         };
                         channels.insert(sample.topic.clone(), (id, 0));
                         id
@@ -250,7 +296,9 @@ fn drain(
             &data,
         )?;
         counters.messages.fetch_add(1, Ordering::Relaxed);
-        counters.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+        counters
+            .bytes
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
     }
     writer.finish()?;
     Ok(())
@@ -260,7 +308,11 @@ fn drain(
 /// `CompressedImage` when a format is chosen and can hold them; a format that
 /// would lose precision falls through to storing the frame untouched, so a
 /// depth topic is never silently degraded by a colour-only codec.
-fn transcode(msg_type: &str, payload: &[u8], image_format: ImageFormat) -> Option<crate::cdr::Encoded> {
+fn transcode(
+    msg_type: &str,
+    payload: &[u8],
+    image_format: ImageFormat,
+) -> Option<crate::cdr::Encoded> {
     if image_format != ImageFormat::Raw && msg_type == msgs::IMAGE_TYPE {
         if let Ok(ImageMessage::Raw(raw)) = msgs::decode_any_image(msg_type, payload) {
             if let Some(compressed) = crate::image::compress(&raw, image_format) {
@@ -491,7 +543,10 @@ mod tests {
                 message.channel.schema.as_ref().map(|s| s.name.clone()),
             );
         }
-        assert_eq!(seen["/camera"].as_deref(), Some("sensor_msgs/msg/CompressedImage"));
+        assert_eq!(
+            seen["/camera"].as_deref(),
+            Some("sensor_msgs/msg/CompressedImage")
+        );
         // webp cannot hold 16-bit samples, so depth keeps its full precision.
         assert_eq!(seen["/depth"].as_deref(), Some("sensor_msgs/msg/Image"));
 

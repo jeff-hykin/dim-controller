@@ -52,7 +52,7 @@ export class ViewerApp {
 
     constructor(host: HTMLElement) {
         this.profile = profiles.find((profile) => profile.name === this.settings.get().profile) ?? profiles[0]
-        this.connection = new Connection(new URL("../../zenoh-web", location.href).href, this.profile.drive.deadmanMs)
+        this.connection = new Connection(this.profile.drive.deadmanMs)
         this.viewer = new Viewer(host, () => this.connection.bridgeNow())
         this.video = new VideoSources(this.connection)
         this.layers = new LayerManager(this.viewer, this.tf, this.connection, this.video, this.profile)

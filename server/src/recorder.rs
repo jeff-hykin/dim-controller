@@ -46,7 +46,11 @@ pub struct LogDirs {
 
 impl LogDirs {
     fn paths(list: &[String]) -> Vec<PathBuf> {
-        list.iter().map(|dir| dir.trim()).filter(|dir| !dir.is_empty()).map(PathBuf::from).collect()
+        list.iter()
+            .map(|dir| dir.trim())
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from)
+            .collect()
     }
 
     fn watch(&self, tailer: &LogTailer) {
@@ -95,27 +99,49 @@ impl State {
         let mut config = zenoh::Config::default();
         if !self.zenoh_connect.is_empty() {
             // an explicit endpoint is the whole story: no multicast scouting of the LAN
-            for (key, value) in [("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?), ("scouting/multicast/enabled", "false".into())] {
-                config.insert_json5(key, &value).map_err(|error| anyhow::anyhow!("zenoh config {key}: {error}"))?;
+            for (key, value) in [
+                (
+                    "connect/endpoints",
+                    serde_json::to_string(&[&self.zenoh_connect])?,
+                ),
+                ("scouting/multicast/enabled", "false".into()),
+            ] {
+                config
+                    .insert_json5(key, &value)
+                    .map_err(|error| anyhow::anyhow!("zenoh config {key}: {error}"))?;
             }
         }
-        let open = zenoh::open(config).await.map_err(|error| anyhow::anyhow!("zenoh: {error}"))?;
+        let open = zenoh::open(config)
+            .await
+            .map_err(|error| anyhow::anyhow!("zenoh: {error}"))?;
         *session = Some(open.clone());
         Ok(open)
     }
 
-    async fn subscribe(&self, recorder: &Arc<Recorder>, key: &str) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
-        let (topic, msg_type) = split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?;
+    async fn subscribe(
+        &self,
+        recorder: &Arc<Recorder>,
+        key: &str,
+    ) -> anyhow::Result<zenoh::pubsub::Subscriber<()>> {
+        let (topic, msg_type) =
+            split_key(key).ok_or_else(|| anyhow::anyhow!("not a dimos key: {key}"))?;
         let recorder = recorder.clone();
         let session = self.session().await?;
         session
             .declare_subscriber(key.to_string())
-            .callback(move |sample| recorder.offer(&topic, Some(&msg_type), &sample.payload().to_bytes()))
+            .callback(move |sample| {
+                recorder.offer(&topic, Some(&msg_type), &sample.payload().to_bytes())
+            })
             .await
             .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))
     }
 
-    pub async fn start(&self, keys: Vec<String>, name: Option<String>, logs: LogDirs) -> anyhow::Result<record::RecordingStatus> {
+    pub async fn start(
+        &self,
+        keys: Vec<String>,
+        name: Option<String>,
+        logs: LogDirs,
+    ) -> anyhow::Result<record::RecordingStatus> {
         let mut active = self.active.lock().await;
         if active.is_some() {
             anyhow::bail!("already recording");
@@ -123,17 +149,28 @@ impl State {
         let directory = self.record_dir.lock().unwrap().clone();
         let path = record::resolve(&directory, &name.unwrap_or_else(record::default_name))?;
         let settings = *self.settings.lock().unwrap();
-        let recorder = Arc::new(Recorder::start(&path, settings.compression, settings.image_format)?);
+        let recorder = Arc::new(Recorder::start(
+            &path,
+            settings.compression,
+            settings.image_format,
+        )?);
         // the labels made so far are part of the picture: they open the recording
         for label in self.labels.list() {
             labels::write(&recorder, &label, "add");
         }
         let tailer = LogTailer::start(recorder.clone());
         logs.watch(&tailer);
-        let mut started = Active { recorder: recorder.clone(), subscribers: Vec::new(), keys: BTreeSet::new(), logs: tailer };
+        let mut started = Active {
+            recorder: recorder.clone(),
+            subscribers: Vec::new(),
+            keys: BTreeSet::new(),
+            logs: tailer,
+        };
         for key in keys {
             if started.keys.insert(key.clone()) {
-                started.subscribers.push(self.subscribe(&recorder, &key).await?);
+                started
+                    .subscribers
+                    .push(self.subscribe(&recorder, &key).await?);
             }
         }
         let status = recorder.status();
@@ -150,7 +187,9 @@ impl State {
         let mut added = 0;
         for key in keys {
             if active.keys.insert(key.clone()) {
-                active.subscribers.push(self.subscribe(&active.recorder, &key).await?);
+                active
+                    .subscribers
+                    .push(self.subscribe(&active.recorder, &key).await?);
                 added += 1;
             }
         }
@@ -203,37 +242,71 @@ impl State {
         let listener = session
             .declare_subscriber("dimos/**")
             .callback(move |sample| {
-                sink.lock().unwrap().insert(sample.key_expr().as_str().to_string());
+                sink.lock()
+                    .unwrap()
+                    .insert(sample.key_expr().as_str().to_string());
             })
             .await
             .map_err(|error| anyhow::anyhow!("zenoh: {error}"))?;
         for selector in ["dimos/**", "dimos/**/@adv/pub/**"] {
-            if let Ok(replies) = session.liveliness().get(selector).timeout(std::time::Duration::from_millis(400)).await {
+            if let Ok(replies) = session
+                .liveliness()
+                .get(selector)
+                .timeout(std::time::Duration::from_millis(400))
+                .await
+            {
                 while let Ok(reply) = replies.recv_async().await {
                     if let Ok(sample) = reply.result() {
                         let token = sample.key_expr().as_str();
-                        found.lock().unwrap().insert(token.split_once("/@adv/pub/").map_or(token, |(key, _)| key).to_string());
+                        found.lock().unwrap().insert(
+                            token
+                                .split_once("/@adv/pub/")
+                                .map_or(token, |(key, _)| key)
+                                .to_string(),
+                        );
                     }
                 }
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
         let _ = listener.undeclare().await;
-        let keys = found.lock().unwrap().iter().filter(|key| split_key(key).is_some()).cloned().collect();
+        let keys = found
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|key| split_key(key).is_some())
+            .cloned()
+            .collect();
         Ok(keys)
     }
 
     pub async fn is_recording(&self, path: &Option<String>) -> bool {
-        self.active.lock().await.as_ref().is_some_and(|active| active.recorder.status().path == *path)
+        self.active
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|active| active.recorder.status().path == *path)
     }
 
     pub async fn status(&self) -> Status {
         let active = self.active.lock().await;
         let directory = self.record_dir.lock().unwrap().clone();
         Status {
-            recording: active.as_ref().map(|active| active.recorder.status()).unwrap_or_else(record::idle_status),
-            keys: active.as_ref().map(|active| active.keys.iter().cloned().collect()).unwrap_or_default(),
-            logs: active.as_ref().map(|active| LogStatus { dirs: active.logs.dirs(), lines: active.logs.lines() }).unwrap_or_default(),
+            recording: active
+                .as_ref()
+                .map(|active| active.recorder.status())
+                .unwrap_or_else(record::idle_status),
+            keys: active
+                .as_ref()
+                .map(|active| active.keys.iter().cloned().collect())
+                .unwrap_or_default(),
+            logs: active
+                .as_ref()
+                .map(|active| LogStatus {
+                    dirs: active.logs.dirs(),
+                    lines: active.logs.lines(),
+                })
+                .unwrap_or_default(),
             files: record::list(&directory),
             settings: *self.settings.lock().unwrap(),
             directory: directory.display().to_string(),
@@ -289,13 +362,21 @@ pub async fn status(Extract(state): Extract<Arc<State>>) -> Response {
     Json(state.status().await).into_response()
 }
 
-pub async fn start(Extract(api): Extract<crate::api::Api>, crate::api::Body(body): crate::api::Body) -> Response {
+pub async fn start(
+    Extract(api): Extract<crate::api::Api>,
+    crate::api::Body(body): crate::api::Body,
+) -> Response {
     let state = api.recorder.clone();
     let explicit: Option<Vec<String>> = match body.get("keys") {
         None | Some(Value::Null) => None,
         Some(keys) => match serde_json::from_value(keys.clone()) {
             Ok(keys) => Some(keys),
-            Err(_) => return error(StatusCode::BAD_REQUEST, "keys: a list of dimos keys (dimos/<topic>/<pkg.Type>)"),
+            Err(_) => {
+                return error(
+                    StatusCode::BAD_REQUEST,
+                    "keys: a list of dimos keys (dimos/<topic>/<pkg.Type>)",
+                )
+            }
         },
     };
     let follow = explicit.is_none();
@@ -306,7 +387,12 @@ pub async fn start(Extract(api): Extract<crate::api::Api>, crate::api::Body(body
             Err(problem) => return error(StatusCode::SERVICE_UNAVAILABLE, problem),
         },
     };
-    let given: Option<LogDirs> = if body.get("log_dirs").is_some() || body.get("log_roots").is_some() { serde_json::from_value(body.clone()).ok() } else { None };
+    let given: Option<LogDirs> =
+        if body.get("log_dirs").is_some() || body.get("log_roots").is_some() {
+            serde_json::from_value(body.clone()).ok()
+        } else {
+            None
+        };
     let logs = match given {
         Some(logs) => logs,
         None => crate::desktop::log_dirs(&api.desktop_url, true).await,
@@ -331,10 +417,15 @@ fn follow_recording(api: crate::api::Api, path: Option<String>, topics: bool) {
                 return;
             }
             tick += 1;
-            let record_new = api.settings.get("lv.record.options")["recordNew"].as_bool().unwrap_or(true);
+            let record_new = api.settings.get("lv.record.options")["recordNew"]
+                .as_bool()
+                .unwrap_or(true);
             if topics && record_new {
                 if let Ok(keys) = api.recorder.discover().await {
-                    let _ = api.recorder.add(wanted(&keys, &api.settings.get("lv.record.topics"))).await;
+                    let _ = api
+                        .recorder
+                        .add(wanted(&keys, &api.settings.get("lv.record.topics")))
+                        .await;
                 }
             }
             if tick % 2 == 0 {
@@ -347,7 +438,10 @@ fn follow_recording(api: crate::api::Api, path: Option<String>, topics: bool) {
     });
 }
 
-pub async fn add(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+pub async fn add(
+    Extract(state): Extract<Arc<State>>,
+    crate::api::Body(body): crate::api::Body,
+) -> Response {
     let keys: Vec<String> = match serde_json::from_value(body["keys"].clone()) {
         Ok(keys) => keys,
         Err(_) => return error(StatusCode::BAD_REQUEST, "keys: a list of dimos keys"),
@@ -358,7 +452,10 @@ pub async fn add(Extract(state): Extract<Arc<State>>, crate::api::Body(body): cr
     }
 }
 
-pub async fn add_logs(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+pub async fn add_logs(
+    Extract(state): Extract<Arc<State>>,
+    crate::api::Body(body): crate::api::Body,
+) -> Response {
     let logs: LogDirs = serde_json::from_value(body).unwrap_or_default();
     match state.add_logs(logs).await {
         Ok(dirs) => Json(json!({ "dirs": dirs })).into_response(),
@@ -373,13 +470,19 @@ pub async fn stop(Extract(state): Extract<Arc<State>>) -> Response {
     }
 }
 
-pub async fn settings(Extract(state): Extract<Arc<State>>, crate::api::Body(body): crate::api::Body) -> Response {
+pub async fn settings(
+    Extract(state): Extract<Arc<State>>,
+    crate::api::Body(body): crate::api::Body,
+) -> Response {
     let body: SettingsBody = match serde_json::from_value(body) {
         Ok(body) => body,
         Err(problem) => return error(StatusCode::BAD_REQUEST, problem),
     };
     if state.active.lock().await.is_some() {
-        return error(StatusCode::CONFLICT, "can't change settings while recording");
+        return error(
+            StatusCode::CONFLICT,
+            "can't change settings while recording",
+        );
     }
     {
         let mut settings = state.settings.lock().unwrap();
@@ -390,13 +493,19 @@ pub async fn settings(Extract(state): Extract<Arc<State>>, crate::api::Body(body
             settings.image_format = format;
         }
     }
-    if let Some(directory) = body.directory.filter(|directory| !directory.trim().is_empty()) {
+    if let Some(directory) = body
+        .directory
+        .filter(|directory| !directory.trim().is_empty())
+    {
         *state.record_dir.lock().unwrap() = PathBuf::from(directory.trim());
     }
     Json(state.status().await).into_response()
 }
 
-pub async fn delete_file(Extract(state): Extract<Arc<State>>, Path(name): Path<String>) -> Response {
+pub async fn delete_file(
+    Extract(state): Extract<Arc<State>>,
+    Path(name): Path<String>,
+) -> Response {
     let directory = state.record_dir.lock().unwrap().clone();
     let path = match record::resolve(&directory, &name) {
         Ok(path) => path,
@@ -413,7 +522,10 @@ pub async fn delete_file(Extract(state): Extract<Arc<State>>, Path(name): Path<S
     }
 }
 
-pub async fn download_file(Extract(state): Extract<Arc<State>>, Path(name): Path<String>) -> Response {
+pub async fn download_file(
+    Extract(state): Extract<Arc<State>>,
+    Path(name): Path<String>,
+) -> Response {
     let directory = state.record_dir.lock().unwrap().clone();
     let path = match record::resolve(&directory, &name) {
         Ok(path) => path,
@@ -423,7 +535,10 @@ pub async fn download_file(Extract(state): Extract<Arc<State>>, Path(name): Path
         Ok(file) => (
             [
                 (header::CONTENT_TYPE, "application/octet-stream".to_string()),
-                (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{name}\"")),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{name}\""),
+                ),
             ],
             Body::from_stream(tokio_util::io::ReaderStream::new(file)),
         )
@@ -440,26 +555,48 @@ mod tests {
 
     #[test]
     fn dimos_keys_split_into_topic_and_type() {
-        assert_eq!(split_key("dimos/odom/nav_msgs.Odometry"), Some(("/odom".into(), "nav_msgs.Odometry".into())));
-        assert_eq!(split_key("dimos/head/left/image/sensor_msgs.Image"), Some(("/head/left/image".into(), "sensor_msgs.Image".into())));
+        assert_eq!(
+            split_key("dimos/odom/nav_msgs.Odometry"),
+            Some(("/odom".into(), "nav_msgs.Odometry".into()))
+        );
+        assert_eq!(
+            split_key("dimos/head/left/image/sensor_msgs.Image"),
+            Some(("/head/left/image".into(), "sensor_msgs.Image".into()))
+        );
         assert_eq!(split_key("dimos/**"), None);
         assert_eq!(split_key("other/odom/nav_msgs.Odometry"), None);
         assert_eq!(split_key("dimos/odom/notatype"), None);
     }
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("controller_test_{name}_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("controller_test_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
 
-    async fn call(app: &axum::Router, method: &str, uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
-        let request = Request::builder().method(method).uri(uri).header("content-type", "application/json").body(Body::from(body.to_string())).unwrap();
+    async fn call(
+        app: &axum::Router,
+        method: &str,
+        uri: &str,
+        body: &str,
+    ) -> (StatusCode, serde_json::Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
         let response = app.clone().oneshot(request).await.unwrap();
         let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
     }
 
     #[tokio::test]
@@ -471,7 +608,12 @@ mod tests {
         let (status, body) = call(&app, "GET", "/api/recorder", "").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["recording"]["active"], false);
-        let names: Vec<_> = body["files"].as_array().unwrap().iter().map(|file| file["name"].as_str().unwrap().to_string()).collect();
+        let names: Vec<_> = body["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["name"].as_str().unwrap().to_string())
+            .collect();
         assert_eq!(names, vec!["a.mcap"]);
         let (status, _) = call(&app, "DELETE", "/api/recorder/files/..%2Fnotes.txt", "").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -485,21 +627,41 @@ mod tests {
     /// A real zenoh round trip on loopback: what's published on a chosen key lands in the mcap under its topic.
     #[tokio::test(flavor = "multi_thread")]
     async fn records_chosen_keys_from_zenoh_into_an_mcap() {
-        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let mut config = zenoh::Config::default();
-        config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
-        config.insert_json5("scouting/multicast/enabled", "false").unwrap();
+        config
+            .insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#))
+            .unwrap();
+        config
+            .insert_json5("scouting/multicast/enabled", "false")
+            .unwrap();
         let robot = zenoh::open(config).await.unwrap();
         let dir = temp_dir("zenoh");
         let state = Arc::new(State::new(dir.clone(), format!("tcp/127.0.0.1:{port}")));
         let app = crate::api::test_router(state.clone());
-        let (status, body) = call(&app, "POST", "/api/recorder/start", r#"{"keys":["dimos/test_cmd/geometry_msgs.Twist"],"name":"zenoh.mcap"}"#).await;
+        let (status, body) = call(
+            &app,
+            "POST",
+            "/api/recorder/start",
+            r#"{"keys":["dimos/test_cmd/geometry_msgs.Twist"],"name":"zenoh.mcap"}"#,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let twist = crate::msgs::encode_twist([0.5, 0.0, 0.0], [0.0, 0.0, 0.25]);
         for _ in 0..5 {
-            robot.put("dimos/test_cmd/geometry_msgs.Twist", twist.clone()).await.unwrap();
-            robot.put("dimos/not_chosen/geometry_msgs.Twist", twist.clone()).await.unwrap();
+            robot
+                .put("dimos/test_cmd/geometry_msgs.Twist", twist.clone())
+                .await
+                .unwrap();
+            robot
+                .put("dimos/not_chosen/geometry_msgs.Twist", twist.clone())
+                .await
+                .unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -507,7 +669,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["messages"], 5);
         let bytes = std::fs::read(dir.join("zenoh.mcap")).unwrap();
-        let topics: Vec<String> = mcap::MessageStream::new(&bytes).unwrap().map(|message| message.unwrap().channel.topic.clone()).collect();
+        let topics: Vec<String> = mcap::MessageStream::new(&bytes)
+            .unwrap()
+            .map(|message| message.unwrap().channel.topic.clone())
+            .collect();
         assert_eq!(topics, vec!["/test_cmd"; 5]);
         robot.close().await.unwrap();
     }
@@ -519,14 +684,22 @@ mod tests {
         let dir = temp_dir("logs_labels");
         let run = dir.join("run");
         std::fs::create_dir_all(&run).unwrap();
-        std::fs::write(run.join("main.jsonl"), "{\"event\": \"old\", \"level\": \"info\"}\n").unwrap();
+        std::fs::write(
+            run.join("main.jsonl"),
+            "{\"event\": \"old\", \"level\": \"info\"}\n",
+        )
+        .unwrap();
         let state = Arc::new(State::new(dir.clone(), String::new()));
         let annotations = Arc::new(crate::annotations::Annotations::default());
         let _ = annotations;
         let app = crate::api::test_router(state.clone());
-        let label = |text: &str| format!(r#"{{"label":"{text}","frame_id":"world","position":[1,2,0]}}"#);
+        let label =
+            |text: &str| format!(r#"{{"label":"{text}","frame_id":"world","position":[1,2,0]}}"#);
         let (status, body) = call(&app, "POST", "/api/labels", &label("before")).await;
-        assert_eq!((status, &body["recorded"]), (StatusCode::OK, &serde_json::json!(false)));
+        assert_eq!(
+            (status, &body["recorded"]),
+            (StatusCode::OK, &serde_json::json!(false))
+        );
         let start = serde_json::json!({ "keys": [], "name": "full.mcap", "log_dirs": [run.display().to_string()] }).to_string();
         let (status, body) = call(&app, "POST", "/api/recorder/start", &start).await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -537,7 +710,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         {
             use std::io::Write;
-            let mut file = std::fs::OpenOptions::new().append(true).open(run.join("main.jsonl")).unwrap();
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(run.join("main.jsonl"))
+                .unwrap();
             writeln!(file, r#"{{"event": "went wrong", "level": "error", "logger": "dimos/x.py", "timestamp": "2026-10-03T08:00:00Z", "lineno": 3}}"#).unwrap();
         }
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -550,18 +726,52 @@ mod tests {
         let mut seen: Vec<(String, String, String, serde_json::Value)> = Vec::new();
         for message in mcap::MessageStream::new(&bytes).unwrap() {
             let message = message.unwrap();
-            let schema = message.channel.schema.as_ref().map(|schema| schema.name.clone()).unwrap_or_default();
-            seen.push((message.channel.topic.clone(), schema, message.channel.message_encoding.clone(), serde_json::from_slice(&message.data).unwrap()));
+            let schema = message
+                .channel
+                .schema
+                .as_ref()
+                .map(|schema| schema.name.clone())
+                .unwrap_or_default();
+            seen.push((
+                message.channel.topic.clone(),
+                schema,
+                message.channel.message_encoding.clone(),
+                serde_json::from_slice(&message.data).unwrap(),
+            ));
         }
-        let on = |topic: &str| seen.iter().filter(|seen| seen.0 == topic).collect::<Vec<_>>();
+        let on = |topic: &str| {
+            seen.iter()
+                .filter(|seen| seen.0 == topic)
+                .collect::<Vec<_>>()
+        };
         let logs = on("/dimos/logs/main");
         assert_eq!(logs.len(), 1);
-        assert_eq!((logs[0].1.as_str(), logs[0].2.as_str()), ("foxglove.Log", "json"));
+        assert_eq!(
+            (logs[0].1.as_str(), logs[0].2.as_str()),
+            ("foxglove.Log", "json")
+        );
         assert_eq!(logs[0].3["message"], "went wrong");
         assert_eq!(logs[0].3["level"], 4);
-        let labels: Vec<(String, String)> = on("/labels").iter().map(|seen| (seen.3["label"].as_str().unwrap().to_string(), seen.3["action"].as_str().unwrap().to_string())).collect();
-        assert_eq!(labels, vec![("before".into(), "add".into()), ("during".into(), "add".into()), ("during".into(), "delete".into())]);
-        assert!(on("/labels").iter().all(|seen| seen.1 == "dimos.LocationLabel" && seen.3["frame_id"] == "world"));
+        let labels: Vec<(String, String)> = on("/labels")
+            .iter()
+            .map(|seen| {
+                (
+                    seen.3["label"].as_str().unwrap().to_string(),
+                    seen.3["action"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                ("before".into(), "add".into()),
+                ("during".into(), "add".into()),
+                ("during".into(), "delete".into())
+            ]
+        );
+        assert!(on("/labels")
+            .iter()
+            .all(|seen| seen.1 == "dimos.LocationLabel" && seen.3["frame_id"] == "world"));
         let scene = on("/labels/scene");
         assert_eq!(scene.len(), 3);
         assert_eq!(scene[0].1, "foxglove.SceneUpdate");
@@ -573,8 +783,15 @@ mod tests {
 
     #[tokio::test]
     async fn settings_change_and_are_reported() {
-        let app = crate::api::test_router(Arc::new(State::new(temp_dir("settings"), String::new())));
-        let (status, body) = call(&app, "PUT", "/api/recorder/settings", r#"{"compression":"zstd","image_format":"png"}"#).await;
+        let app =
+            crate::api::test_router(Arc::new(State::new(temp_dir("settings"), String::new())));
+        let (status, body) = call(
+            &app,
+            "PUT",
+            "/api/recorder/settings",
+            r#"{"compression":"zstd","image_format":"png"}"#,
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["settings"]["compression"], "zstd");
         assert_eq!(body["settings"]["image_format"], "png");

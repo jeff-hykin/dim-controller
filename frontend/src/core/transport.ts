@@ -1,6 +1,8 @@
-// The one connection to Desktop's zenoh-web bridge, and topic discovery. dimos names a channel
+// The page's one connection to Desktop's zenoh-web bridge (dim-app's getZenoh(): the backend's events ride it too), and
+// topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
 import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type ZenohWeb } from "../vendor/zenoh_web/zenoh_web.ts"
+import { getZenoh } from "../dim-app/zenoh.js"
 import { Store } from "./store.ts"
 
 export { Priority }
@@ -48,24 +50,17 @@ export class Connection {
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, error: null })
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
-    #url: string
-    #heartbeatMisses: number
+    #shared: ReturnType<typeof getZenoh>
 
-    constructor(url: string, deadmanMs = 400) {
-        this.#url = url
-        this.#heartbeatMisses = Math.max(2, Math.round((deadmanMs / 1000) * HEARTBEAT_HZ))
+    /** Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs. */
+    constructor(deadmanMs = 400) {
+        const heartbeatMisses = Math.max(2, Math.round((deadmanMs / 1000) * HEARTBEAT_HZ))
+        this.#shared = getZenoh({ connect: connect as never, connectOptions: { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses } })
     }
 
     async start() {
-        while (!this.client) {
-            try {
-                this.client = await connect(this.#url, { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses: this.#heartbeatMisses })
-            } catch (error) {
-                this.status.update({ state: "lost", error: String(error) })
-                await new Promise((resolve) => setTimeout(resolve, 2000))
-            }
-        }
-        const client = this.client
+        const client = (await this.#shared.ready).client as ZenohWeb
+        this.client = client
         this.status.update({ state: "connected", error: null })
         client.onState((state) => this.status.update({ state }))
         for (const subscription of this.#subscriptions) {
