@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { type Store, useStore } from "../core/store.ts"
-import type { Topic } from "../core/transport.ts"
+import { parseKey, type Topic } from "../core/transport.ts"
 import { isDepthTopic } from "../core/video.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
@@ -189,6 +189,13 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
     const [depthRange, setDepthRange] = useState<[number, number] | null>(null)
     const overlayCanvas = useRef<HTMLCanvasElement>(null)
     const topic = topics.find((other) => other.key === panel.key) ?? null
+    // "(gone)" only once this topic was on the bus and then left, not while it's still being discovered
+    const everSeen = useRef<string | null>(null)
+    if (topic) {
+        everSeen.current = panel.key
+    } else if (everSeen.current !== panel.key) {
+        everSeen.current = null
+    }
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
     const depth = topic ? isDepthTopic(topic) : false
 
@@ -330,7 +337,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
             <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
                 <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value })} aria-label="Camera topic">
-                    {!topic && <option value={panel.key}>{panel.key ? "(gone) " + panel.key : "pick a camera"}</option>}
+                    {!topic && <option value={panel.key}>{!panel.key ? "pick a camera" : (everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</option>}
                     {topics.filter(isImage).map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
                 </select>
                 {overlays.length > 0 && (

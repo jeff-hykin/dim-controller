@@ -787,9 +787,10 @@ body.science.dark .dim-dot.danger {
     box-shadow: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
-body.science.dark .dim-input,
-body.science.dark .dim-textarea,
-body.science.dark .dim-select {
+/* :where() keeps this at the base rule's weight, so a select keeps room for its arrow and app sizing still wins */
+:where(body.science.dark) .dim-input,
+:where(body.science.dark) .dim-textarea,
+:where(body.science.dark) .dim-select {
     padding: 9px 11px;
 }
 .dim-input.dim-mono,
@@ -806,12 +807,12 @@ body.science.dark .dim-select {
 .dim-select:focus {
     border-color: var(--ring);
     box-shadow: 0 0 0 3px var(--ring-soft);
-    background: var(--card);
+    background-color: var(--card);
 }
 body.science.dark .dim-input:focus,
 body.science.dark .dim-textarea:focus,
 body.science.dark .dim-select:focus {
-    background: var(--bk);
+    background-color: var(--bk);
     box-shadow: 0 0 0 1px var(--primary), 0 0 14px rgba(124, 200, 236, 0.25);
 }
 .dim-textarea {

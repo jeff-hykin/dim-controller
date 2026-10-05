@@ -109,9 +109,20 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .record-control { position: absolute; top: 58px; left: calc(10px + var(--dim-inset-left)); z-index: 9; display: flex; align-items: center; gap: 4px; padding: 5px; }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .record-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); flex: none; }
-.record-toggle.recording .record-dot { background: var(--danger-fg); border-radius: 4px; animation: blink 1s infinite; }
+.record-toggle.recording .record-dot { background: var(--danger); border-radius: 4px; animation: blink 1s infinite; }
 .record-live { font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .record-more { width: 30px; height: 30px; padding: 0; }
+/* Record │ … as one box: the split owns the border and fill, each segment just its hover */
+.record-split { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.record-control .record-split > .dim-btn { height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.record-control .record-split > .record-toggle { padding: 0 10px; color: var(--fg); }
+.record-control .record-split > .record-more { width: 30px; padding: 0; border-left: 1px solid var(--border); color: var(--fg); }
+.record-control .record-split > .dim-btn:hover:not(:disabled), .record-control .record-split > .record-more.on { background: var(--accent); }
+.record-control .record-split > .dim-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--ring); }
+.record-control.recording .record-split { border-color: var(--danger); }
+.record-control.recording .record-split > .record-toggle { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.record-control.recording .record-split > .record-more { border-left-color: var(--danger); }
+.record-control.recording .record-split > .record-toggle:hover { background: color-mix(in srgb, var(--danger) 20%, transparent); }
 .record-error { cursor: help; }
 .record-options { position: fixed; top: calc(108px + env(safe-area-inset-top)); left: calc(10px + var(--dim-inset-left)); width: 380px; z-index: 20; display: flex; flex-direction: column;
     max-height: calc(100vh - 70px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
@@ -145,7 +156,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: calc(8px + var(--dim-inset-left)); padding: 4px; }
 .mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
 .mobile .record-extra { display: none; }
-.mobile .record-toggle { padding: 6px 8px; }
+.mobile .record-control .record-split > .record-toggle { padding: 0 8px; }
 
 /* settings: Drive is its first section */
 h3.dim-label.first { margin-top: 4px; }
