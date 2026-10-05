@@ -23,6 +23,8 @@ export interface PanelState {
     height: number
     /** the user resized it: keep that size (else it fits the image's aspect) */
     sized?: boolean
+    /** got the default size once (panels saved before 2026-10-05 have neither flag: they start over at the default) */
+    fitted?: boolean
     /** depth topics: colormap and fixed range (null = auto) */
     depth?: DepthLook
 }
@@ -83,7 +85,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         }
         const first = pickDefault(app, topics)
         if (first) {
-            layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize() }] })
+            layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize(), fitted: true }] })
         }
     }, [topics, panels.length, seeded, app, layout])
 
@@ -116,7 +118,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
             const first = pickDefault(app, latest)
             if (first) {
                 const id = Math.max(0, ...now.panels.map((panel) => panel.id)) + 1
-                layout.update({ seeded: true, auto: true, autoPanel: id, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize() }] })
+                layout.update({ seeded: true, auto: true, autoPanel: id, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize(), fitted: true }] })
             }
         }, SETTLE_MS)
         return () => clearTimeout(timer)
@@ -136,7 +138,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         const used = new Set(panels.map((panel) => panel.key))
         const next = topics.filter(isImage).find((topic) => !used.has(topic.key)) ?? pickDefault(app, topics)
         const id = Math.max(0, ...panels.map((panel) => panel.id)) + 1
-        layout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "", x: -1, y: -1, ...defaultSize() }] })
+        layout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "", x: -1, y: -1, ...defaultSize(), fitted: true }] })
     }
 
     return (
@@ -278,24 +280,24 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         addEventListener("pointerup", up)
     }
 
-    // a panel the user hasn't resized fits the image's aspect (no bars); one at the old 360×240 default grows first
+    // a panel the user hasn't resized fits the image's aspect (no bars); one saved before (often tiny) starts at the default
     useEffect(() => {
         if (isMain || mobile || panel.sized) {
             return
         }
-        const width = panel.width === 360 && panel.height === 240 ? defaultSize().width : panel.width
+        const width = panel.fitted ? panel.width : defaultSize().width
         if (!size.width || !size.height) {
-            if (width !== panel.width) {
-                onChange(defaultSize())
+            if (!panel.fitted) {
+                onChange({ ...defaultSize(), fitted: true })
             }
             return
         }
         const head = element.current?.querySelector<HTMLElement>(".camera-head")?.offsetHeight ?? HEAD_PX
         const height = Math.round(width * size.height / size.width) + head
-        if (width !== panel.width || Math.abs(height - panel.height) > 2) {
-            onChange({ width, height })
+        if (!panel.fitted || width !== panel.width || Math.abs(height - panel.height) > 2) {
+            onChange({ width, height, fitted: true })
         }
-    }, [isMain, mobile, panel.sized, panel.width, panel.height, size.width, size.height])
+    }, [isMain, mobile, panel.sized, panel.fitted, panel.width, panel.height, size.width, size.height])
 
     // remember a resize
     useEffect(() => {
