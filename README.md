@@ -2,7 +2,7 @@
 
 A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving a running dimOS robot while watching
 it: a low-latency 3D view placed by TF (point clouds, costmap, pose, planned path), live cameras, driving (keyboard, or
-sticks on a phone, armed and with a deadman) and an mcap recorder. It is the one canonical controller: it replaces
+sticks on a phone, armed and with a deadman), jogging a robot arm (joints, end effector, gripper) and an mcap recorder. It is the one canonical controller: it replaces
 web_ctrl, the Live Viewer (its old name), `dimos-controller` and `dim-app-minimal-kb-control` (Teleop), and is meant to
 be **forked per robot** (see [Fork this for your robot](#fork-this-for-your-robot)).
 
@@ -66,6 +66,35 @@ topics settle, and gives it back when a cloud appears; a swap you make yourself 
 The 3D view's corner buttons recenter (frame the robot, or without one the drawn data) and look straight down on the
 area around the robot (`POST api/camera` does the same in every open page). Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.
+
+## Robot type
+
+Settings → **Robot** picks the kind of robot: **dog**, **humanoid**, **wheeled base**, **arm** or **drone** (the
+Launcher's five robot icons), or **Auto** (the default). The type sets the keys, speeds and controls
+(`frontend/src/profile/<type>.ts`), the stand-in model drawn at the robot's pose, and whether Settings shows the drive
+controls or the [arm panel](#arm-control). Changing it applies at once in every open page (no reload), and disarms.
+
+| type | keys | defaults |
+| --- | --- | --- |
+| dog | W/S forward, A/D turn, Q/E strafe | 0.5 m/s, 0.8 rad/s |
+| humanoid | W/S forward, A/D turn, Q/E side-step | 0.3 m/s, 0.5 rad/s |
+| wheeled | W/S forward, A/D turn (no strafe) | 0.4 m/s, 0.6 rad/s |
+| drone | W/S forward, A/D yaw, Q/E down/up (`linear.z`) | 1 m/s, 1 rad/s, 0.5 m/s vertical |
+| arm | the [arm panel](#arm-control)'s keys | 5 cm/s, 0.5 rad/s, joints 0.4 rad/s |
+
+Auto ([core/robotType.ts](frontend/src/core/robotType.ts)), first match wins:
+
+1. a running blueprint that robots.json lists under a robot with a `type` (Desktop's `GET /api/launcher/robots`);
+2. what's running looks like an arm: a joint state / joint command / gripper stream and nothing takes `cmd_vel`;
+3. the default robot set in Desktop, by its robots.json `type`;
+4. the running blueprint's name (go2 / spot → dog, g1 → humanoid, r1pro / alfred → wheeled, drone, xarm / piper /
+   openarm / a1z / coordinator → arm);
+5. dog.
+
+Running blueprints come before Desktop's default robot so a remembered Go2 doesn't turn a running arm sim into a dog.
+The hint under the picker says which rule decided. The page writes the type in use to `lv.view.robot` (the pick is
+`lv.view.profile`, `""` = auto), and drive settings are per type (`lv.drive.dog`, …; an install from before types
+starts from its old profile's, e.g. `lv.drive.Unitree Go2`).
 
 ## Driving
 
@@ -141,15 +170,70 @@ remove (and the labels already made when it starts) is written to `/labels` as `
 `timestamp`, `frame_id`, `id`, `label`, `action` add/delete, `pose` with position and orientation) and to
 `/labels/scene` as a `foxglove.SceneUpdate` so Foxglove's 3D panel shows them.
 
+## Arm control
+
+With the robot type **arm**, Settings' first section is the arm panel and the bottom bar shows the arm's keys:
+
+- **Joints**: one row per joint of the joint state: hold **−** / **+** to jog, or drag the slider to send that joint a
+  target. **Home (all 0)** sends every joint to 0 and **Start pose** back to where they were when the Controller first
+  saw them (dimos's `go_init`). Joint speed is a slider.
+- **End effector**: hold X / Y / Z / Roll / Pitch / Yaw ± (or the keys, dimos's keyboard arm teleop's: W/S x, A/D y,
+  Q/E z, R/F roll, T/G pitch, Y/H yaw); linear and angular speed are sliders.
+- **Gripper**: Open / Close (`[` / `]`) and an opening slider; with more than one gripper topic, each on its own too.
+
+It is armed with the same switch as driving, and as safe:
+
+- disarmed, nothing is sent; Escape or hiding the page disarms, and disarming stops (one hold / zero twist, then
+  nothing);
+- a held joint jog's target creeps ahead at the joint speed but never more than 0.25 s of motion past where the joint is,
+  so if the page dies the joint stops within that; letting go sends "stay where you are" (the measured position);
+- the end-effector jog is a TwistStamped at 20 Hz with the bridge's deadman set to a zero twist (zero = hold), and a
+  second of zeros after a release, then silence;
+- if a command moves no joint within 1.5 s the panel says so: the running coordinator may have no task for that input.
+
+### Arm control: which topics
+
+Nothing here is invented: the panel uses the ports of dimos's `ControlCoordinator` (`dimos/control/coordinator.py`)
+and its arm subclasses (`dimos/robot/manipulators/common/coordinators.py`, `dimos/control/teleop_coordinator.py`), found
+in the running blueprints' metadata ([core/armTopics.ts](frontend/src/core/armTopics.ts)); without metadata it uses the
+same standard names. A port `foo` is the topic `/foo`, zenoh key `dimos/foo/<type>`, payload the LCM encoding:
+
+| panel | topic | message | what the coordinator does with it |
+| --- | --- | --- | --- |
+| joint rows (read) | `/coordinator_joint_state` (else `*_joints` / `joint_states`) | `sensor_msgs.JointState` | every joint's position, 100 Hz |
+| jog, slider, Home, Start pose | `/joint_command` | `sensor_msgs.JointState` (`name[]` + `position[]`, only the joints being moved) | trajectory task: a velocity-limited move to the target |
+| end-effector jog | `/ee_twist_command` | `geometry_msgs.TwistStamped` (no `frame_id`: the arm's base frame) | eef_twist task: Pink IK follows the twist; zero holds |
+| gripper | `/gripper_command`, `/left_gripper_command`, `/right_gripper_command` | `std_msgs.Float32`, 0 closed … 1 open | gripper task |
+
+Known gaps (none of these are on a topic in dimos today):
+
+- **Which inputs act.** A coordinator only subscribes to an input a task of its config takes, and the blueprint
+  metadata doesn't say which; e.g. `keyboard-teleop-xarm7` has `joint_command` but no trajectory task, so joint jogs
+  do nothing there (the panel's "no joint moved" note). `coordinator-mock` has joints but no gripper task.
+- **Joint limits** aren't published (they live in the URDF and the hardware adapter), so sliders span ±180°, widened to
+  any joint past that; a fork can set `arm.limits` in `profile/arm.ts`.
+- **Absolute end-effector poses** (`/cartesian_command`, PoseStamped) are only in the cartesian-IK blueprints and need
+  the current pose, which they don't publish; the panel lists the topic but jogs by twist and joints.
+- **Go home as dimos means it** is `ManipulationSkills.go_home`, an RPC skill (pickled zenoh queryable) the browser
+  can't call; Home here is joints to 0 over `joint_command`, which is that skill's default preset (the xArm7 sim's
+  preset differs).
+- **The arm in 3D** is what TF has: ManipulationModule publishes `world → <tip link>` only, and there is no
+  `robot_description` topic, so the view shows those TF frames (Settings → Layers → TF), not a URDF mesh.
+- Arm commands are page → bridge like continuous driving; there is no agent endpoint for them yet.
+
+Verified against dimos `main` @ 0861d853e3 with `dtk run coordinator-mock` (see the commit for what moved).
+
 ## Fork this for your robot
 
-Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`: which frame is the robot, which
-Twist topics to prefer, speeds, what each key does, and extra controls (sliders and buttons that publish a message).
-`src/core/` (bridge, TF, renderer, drive loop, recorder) never needs to change.
+Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`, one per robot type (`dog.ts`,
+`humanoid.ts`, `wheeled.ts`, `arm.ts`, `drone.ts`): which frame is the robot, which Twist topics to prefer, speeds,
+what each key does, an arm's jog speeds, keys and joint limits, and extra controls (sliders and buttons that publish a
+message). `src/core/` (bridge, TF, renderer, drive loop, arm control, recorder) never needs to change.
 
-1. Copy `frontend/src/profile/go2.ts` to `frontend/src/profile/my_robot.ts`, rename it, and list it first in
-   `frontend/src/profile/index.ts` (the first profile is the default; Settings → Robot switches).
-2. Edit it. For example `r1.ts` adds a torso height slider, stepped with R/F:
+1. Edit the profile of your robot's type (e.g. `dog.ts` for a quadruped), or copy one and return it from `profileFor`
+   in `frontend/src/profile/index.ts`.
+2. Add what your robot has. For example a torso height slider stepped with R/F (`/torso_height` here stands for your
+   robot's real height command; no stock dimos blueprint has one):
 
 ```ts
 keys: {
@@ -168,11 +252,11 @@ controls: [{
 and `drone.ts` makes Q/E change altitude instead of strafing:
 
 ```ts
-keys: { ...groundKeys, KeyQ: { axis: "vertical", value: -1 }, KeyE: { axis: "vertical", value: 1 } },
+keys: { ...turnKeys, KeyQ: { axis: "vertical", value: -1 }, KeyE: { axis: "vertical", value: 1 } },
 ```
 
-A profile can also replace how the axes become a Twist (`drive.twist`), e.g. for an arm or a robot that steers
-differently. Controls only publish while drive is armed.
+A profile can also replace how the axes become a Twist (`drive.twist`), e.g. for a robot that steers differently.
+Controls only publish while drive is armed.
 
 **A new message type** is one file too: copy the closest layer in `frontend/src/layers/` (e.g. `path.tsx`), change its
 `types` and drawing, and import it in `layers/index.ts`. A layer registered later for the same type wins, so a fork can

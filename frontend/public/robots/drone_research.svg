@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.5 5.5 53 53" width="64" height="64" role="img" aria-label="Drone">
+  <!-- dimOS robot-type icon (research): app icon set v6 treatment, gradient glyph, bloom, logo scan lines -->
+  <defs>
+    <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.8"/></filter>
+    <linearGradient id="a" gradientUnits="userSpaceOnUse" x1="0" y1="21.5" x2="0" y2="44"><stop offset="0" stop-color="#5a6ff2"/><stop offset="1" stop-color="#293ce4"/></linearGradient>
+    
+    <g id="glyph"><g transform="translate(32 32) scale(0.8085) translate(-32.00 -32.75)"><g>
+      <rect x="26" y="28" width="12" height="7" rx="2.8" fill="none" stroke="url(#a)" stroke-width="3.71" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M26.5 31.5L16.5 39.5V37" fill="none" stroke="url(#a)" stroke-width="2.97" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="16.5" cy="37" rx="7" ry="2.4" fill="none" stroke="url(#a)" stroke-width="2.72" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M37.5 31.5L47.5 39.5V37" fill="none" stroke="url(#a)" stroke-width="2.97" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="47.5" cy="37" rx="7" ry="2.4" fill="none" stroke="url(#a)" stroke-width="2.72" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M26.5 31.5L21 26.5V24.5" fill="none" stroke="url(#a)" stroke-width="2.97" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="21" cy="24.5" rx="5.5" ry="1.9" fill="none" stroke="url(#a)" stroke-width="2.72" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M37.5 31.5L43 26.5V24.5" fill="none" stroke="url(#a)" stroke-width="2.97" stroke-linecap="round" stroke-linejoin="round"/>
+      <ellipse cx="43" cy="24.5" rx="5.5" ry="1.9" fill="none" stroke="url(#a)" stroke-width="2.72" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M28.5 35.5L27 42H30.5M35.5 35.5L37 42H33.5" fill="none" stroke="url(#a)" stroke-width="2.72" stroke-linecap="round" stroke-linejoin="round"/>
+    </g></g></g>
+    <linearGradient id="scanrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".25" stop-color="#ebebeb"/><stop offset=".5" stop-color="#d6d6d6"/><stop offset=".75" stop-color="#ebebeb"/><stop offset="1" stop-color="#fff"/></linearGradient>
+    <pattern id="scan" width="64" height="3.6" patternUnits="userSpaceOnUse"><rect width="64" height="3.6" fill="url(#scanrow)"/></pattern>
+    <mask id="scanlines" maskUnits="userSpaceOnUse" x="-16" y="-16" width="96" height="96"><rect x="-16" y="-16" width="96" height="96" fill="url(#scan)"/></mask>
+    
+  </defs>
+  <g transform="translate(32 32) scale(1.12) translate(-32 -32)">
+    <use href="#glyph" filter="url(#bloom)" opacity="0.35"/>
+    <g mask="url(#scanlines)"><use href="#glyph"/></g>
+  </g>
+</svg>

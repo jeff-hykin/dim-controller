@@ -1,7 +1,9 @@
-// Settings: driving first (it was its own tab), then the robot profile and the view.
+// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
 import type { ViewerApp } from "../core/app.ts"
-import { useStore, saveSetting } from "../core/store.ts"
+import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
+import { RobotIcon } from "./RobotIcon.tsx"
+import { ArmPanel } from "./ArmPanel.tsx"
 import { Field, Toggle } from "./controls.tsx"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
@@ -11,25 +13,42 @@ import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/poi
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
+    const robot = useStore(app.robot)
+    const current = profiles.find((profile) => profile.type === robot.type)
     return (
         <div className="settings-panel">
-            <section className="settings-section" data-section="drive">
-                <h3 className="dim-label first">Drive</h3>
-                <DrivePanel app={app} />
-            </section>
-            <h3 className="dim-label">Robot</h3>
-            <Field label="Profile" hint="key bindings, drive topics, speeds and extra controls (src/profile)">
-                <select
-                    className="dim-select"
-                    value={app.profile.name}
-                    onChange={(event) => {
-                        // the page restarts on the new profile (every open viewer does, app.ts)
-                        saveSetting("lv.view", { profile: event.target.value }).then(() => location.reload())
-                    }}
-                >
-                    {profiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name}</option>)}
-                </select>
-            </Field>
+            <div className="field-block robot-type" data-testid="robot-type">
+                <span className="field-label">Robot</span>
+                <div className="robot-type-row">
+                    <RobotIcon type={robot.type} size={40} />
+                    <select
+                        className="dim-select"
+                        aria-label="Robot type"
+                        value={robot.auto ? "" : robot.type}
+                        // every open viewer switches with it (app.ts), no reload
+                        onChange={(event) => app.settings.update({ profile: event.target.value })}
+                    >
+                        <option value="">Auto: {current?.name ?? robot.type}</option>
+                        {profiles.map((profile) => <option key={profile.type} value={profile.type}>{profile.name}</option>)}
+                    </select>
+                </div>
+                <p className="hint" data-testid="robot-type-reason">
+                    {robot.auto ? `Auto: ${robot.reason}.` : "Picked here; Auto follows what's running."} Sets the keys, speeds, the drive or arm controls and the model in the view.
+                </p>
+            </div>
+            {robot.type === "arm"
+                ? (
+                    <section className="settings-section" data-section="arm">
+                        <h3 className="dim-label">Arm</h3>
+                        <ArmPanel app={app} />
+                    </section>
+                )
+                : (
+                    <section className="settings-section" data-section="drive">
+                        <h3 className="dim-label">Drive</h3>
+                        <DrivePanel app={app} />
+                    </section>
+                )}
             <h3 className="dim-label">Rendering</h3>
             <div className="field-block">
                 <span className="field-label">Point style</span>
@@ -44,6 +63,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 </span>
             </Field>
             <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
+            <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Recenter and top-down are on the view (top right).</p>
         </div>

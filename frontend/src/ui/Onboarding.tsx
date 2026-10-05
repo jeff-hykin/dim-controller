@@ -8,6 +8,7 @@ import { emptyState, type EmptyStateOptions } from "../dim-app/desktop.js"
 import { takesVelocity } from "../core/cmdvel.ts"
 
 const LAUNCH_DRIVABLE = { kind: "blueprint" as const, stream: "cmd_vel" }
+const LAUNCH_ARM = { kind: "blueprint" as const, stream: "joint_command" }
 const REPLAY_HINT = "No robot? Turn on replay in the Launcher to drive a recorded one."
 
 /** desktop.js's emptyState, centered over the view (above Desktop's dock). */
@@ -30,6 +31,9 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     const connection = useStore(app.connection.status)
     const [dismissed, setDismissed] = useState<string | null>(null)
     const runningKey = runs.running.join(",")
+    const isArm = useStore(app.robot).type === "arm"
+    const arm = useStore(app.arm.state)
+    const launch = isArm ? LAUNCH_ARM : LAUNCH_DRIVABLE
 
     if (connection.state === "lost") {
         return {
@@ -60,7 +64,7 @@ export function useOnboarding(app: ViewerApp): Onboarding {
                 label: "dimOS not installed",
                 title: "dimOS isn't installed yet",
                 body: "The Controller drives robots that a dimOS blueprint connects to. The Launcher installs dimOS (a few minutes) and then runs blueprints.",
-                actions: [{ label: "Open the Launcher", app: "launcher", params: LAUNCH_DRIVABLE }],
+                actions: [{ label: "Open the Launcher", app: "launcher", params: launch }],
             },
         }
     }
@@ -77,21 +81,43 @@ export function useOnboarding(app: ViewerApp): Onboarding {
             },
         }
     }
-    if (runs.running.length === 0) {
+    // nothing the Launcher started, but robot data is flowing: a blueprint run from a terminal (dimos run / dtk run)
+    const outside = runs.running.length === 0 && connection.topics.some((topic) => !/^\/rpc\b|^\/dimos\//.test(topic.name))
+    if (runs.running.length === 0 && !outside) {
         return {
             blocksDriving: true,
             message: {
                 testId: "onboard-no-blueprint",
                 label: "No blueprint running",
-                title: "You need to launch a blueprint with a cmd_vel topic before you can control a robot",
-                body: `A blueprint is the software that connects to a robot. ${REPLAY_HINT}`,
-                actions: [{ label: "Open the Launcher", app: "launcher", params: LAUNCH_DRIVABLE }],
+                title: isArm ? "You need to launch an arm blueprint before you can move an arm" : "You need to launch a blueprint with a cmd_vel topic before you can control a robot",
+                body: isArm
+                    ? "A blueprint is the software that connects to a robot. No arm? coordinator-mock or keyboard-teleop-xarm7 run a simulated one."
+                    : `A blueprint is the software that connects to a robot. ${REPLAY_HINT}`,
+                actions: [{ label: "Open the Launcher", app: "launcher", params: launch }],
             },
         }
     }
     const names = runs.running.join(", ")
+    // an arm, and nothing running takes an arm command (joint_command, ee_twist_command, gripper_command)
+    const armInputs = arm.topics.jointCommand || arm.topics.eeTwist || arm.topics.grippers.length
+    if (isArm && arm.topics.fromMetadata && !armInputs && dismissed !== runningKey) {
+        return {
+            blocksDriving: true,
+            message: {
+                testId: "onboard-no-arm-input",
+                tone: "warn",
+                label: "Nothing to move",
+                title: `${names} has no arm command input, so the arm panel won't move anything`,
+                body: "None of its modules takes joint_command, ee_twist_command or gripper_command (dimos's ControlCoordinator does). You can still look at its topics here.",
+                actions: [
+                    { label: "Open the Launcher", app: "launcher", params: LAUNCH_ARM },
+                    { label: "Just view", onClick: () => setDismissed(runningKey), primary: false },
+                ],
+            },
+        }
+    }
     // no module of the running blueprints takes a velocity command (an input named *cmd_vel*): driving moves nothing
-    if (takesVelocity(runs.blueprints) === false && dismissed !== runningKey) {
+    if (!isArm && takesVelocity(runs.blueprints) === false && dismissed !== runningKey) {
         return {
             blocksDriving: true,
             message: {

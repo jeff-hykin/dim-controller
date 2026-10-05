@@ -2,12 +2,14 @@
 // bottom sheet and driving moves to on-screen sticks.
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
-import { persistentStore, useStore } from "./core/store.ts"
+import { persistentStore, Store, useStore } from "./core/store.ts"
 import { TopBar } from "./ui/TopBar.tsx"
 import { SidePanel, type Tab } from "./ui/SidePanel.tsx"
 import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
+import { useArmKeys } from "./ui/useArmKeys.ts"
+import { ArmHud } from "./ui/ArmHud.tsx"
 import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { Icon } from "./ui/icons.tsx"
@@ -15,6 +17,7 @@ import { SceneMenu } from "./ui/SceneMenu.tsx"
 import { ViewControls } from "./ui/ViewControls.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 
+const noRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
 
 declare global {
@@ -46,7 +49,11 @@ export function App() {
 
     const layout = useStore(cameraLayout)
     const mainCamera = layout.main !== null && layout.panels.some((panel) => panel.id === layout.main)
-    useDriveKeys(app?.drive ?? null, app?.profile ?? null)
+    const robot = useStore(app?.robot ?? noRobot)
+    // the profile changes with the robot type: keys follow it
+    const profile = app && robot ? app.profile : null
+    useDriveKeys(app?.drive ?? null, profile)
+    useArmKeys(app?.arm ?? null, profile?.type === "arm" ? profile : null)
 
     const view = useMemo(() => ({ mobile, mainCamera }), [mobile, mainCamera])
 
@@ -79,9 +86,10 @@ export function App() {
 /** The drive bar, or (until there's something to drive) the first-run message that says what's missing. */
 function FirstRun({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const onboarding = useOnboarding(app)
+    const isArm = useStore(app.robot).type === "arm"
     return (
         <>
-            {!onboarding.blocksDriving && <DriveHud app={app} mobile={mobile} />}
+            {!onboarding.blocksDriving && (isArm ? <ArmHud app={app} mobile={mobile} /> : <DriveHud app={app} mobile={mobile} />)}
             {onboarding.message && <EmptyLayer {...onboarding.message} />}
         </>
     )

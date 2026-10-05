@@ -24,7 +24,7 @@ export class LayerManager {
     #instances = new Map<string, LayerInstance>()
     #enabled = persistentStore<Record<string, boolean>>(ENABLED_KEY, {})
 
-    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly video: VideoSources, readonly profile: RobotProfile) {
+    constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
         connection.status.subscribe(() => this.#sync(connection.status.get().topics))
         // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
         this.#enabled.subscribe(() => {
@@ -98,13 +98,17 @@ export class LayerManager {
 
     #start(entry: LayerEntry) {
         const key = entry.topic.key
+        const manager = this
         const context = {
             viewer: this.viewer,
             tf: this.tf,
             connection: this.connection,
             video: this.video,
             topics: () => this.connection.status.get().topics,
-            profile: this.profile,
+            // the robot type can change while a layer runs (Settings → Robot, or auto)
+            get profile() {
+                return manager.profile
+            },
             setStatus: (status: LayerStatus) => {
                 const current = this.entries.get().list.find((other) => other.topic.key === key)?.status
                 if (current?.info !== status.info || current?.problem !== status.problem) {

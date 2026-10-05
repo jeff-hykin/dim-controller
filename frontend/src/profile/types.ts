@@ -51,8 +51,35 @@ export type Control =
         message: () => LcmValue
     }
 
+/** The five kinds of robot (Desktop's Launcher draws the same five icons; robots.json's `type`). */
+export const ROBOT_TYPES = ["dog", "humanoid", "wheeled", "arm", "drone"] as const
+export type RobotType = typeof ROBOT_TYPES[number]
+
+/** The end effector's jog axes: linear x/y/z and roll/pitch/yaw, in the arm's base frame. */
+export const EE_AXES = ["x", "y", "z", "roll", "pitch", "yaw"] as const
+export type EeAxis = typeof EE_AXES[number]
+
+/** What a key does on an arm: hold to move the end effector along an axis, or set the gripper (0 closed … 1 open). */
+export type ArmKeyAction = { ee: EeAxis; value: number } | { gripper: number }
+
+export interface ArmProfile {
+    /** end-effector jog speed: m/s for x/y/z, rad/s for roll/pitch/yaw */
+    linear: number
+    angular: number
+    /** joint jog speed, rad/s (the coordinator's own velocity limit still applies) */
+    jointSpeed: number
+    /** KeyboardEvent.code → action */
+    keys: Record<string, ArmKeyAction>
+    /** slider range for joints without a limit here, rad (dimos publishes no joint limits) */
+    defaultLimit: [number, number]
+    /** per-joint slider ranges by joint name, rad */
+    limits: Record<string, [number, number]>
+}
+
 export interface RobotProfile {
-    /** shown in the profile picker */
+    /** which kind of robot: the key the Robot picker and settings use (lv.view.profile, lv.drive.<type>) */
+    type: RobotType
+    /** shown in the Robot picker */
     name: string
     /** the robot's TF frame: the camera follows it */
     baseFrame: string
@@ -74,6 +101,10 @@ export interface RobotProfile {
         twist?: (axes: Axes, speeds: Speeds) => Twist
     }
     controls: Control[]
+    /** an arm's jog speeds and keys (the arm panel replaces the drive controls) */
+    arm?: ArmProfile
+    /** how far the camera starts from the robot, m */
+    viewDistance?: number
     cameras: {
         /** image topics to show first, in preference order (the first on the bridge wins) */
         preferred: string[]

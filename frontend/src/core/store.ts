@@ -76,6 +76,11 @@ export function applyRemoteSetting(key: string, value: unknown) {
     }
 }
 
+/** A setting as loaded from the backend (undefined: never saved). */
+export function loadedSetting(key: string): object | undefined {
+    return loaded[key]
+}
+
 /** Saves fields of a setting now (PATCH api/settings), e.g. before a reload. */
 export async function saveSetting(key: string, value: object): Promise<void> {
     await fetch(settingsUrl(), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ key, value }) })

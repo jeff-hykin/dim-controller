@@ -250,3 +250,26 @@ h3.dim-label.first { margin-top: 4px; }
 
 /* the Portal / Research switch in the top bar; on a phone the tabs need the room */
 .mobile .theme-toggle { display: none; }
+
+/* robot type (Settings) */
+.robot-type-row { display: flex; align-items: center; gap: 10px; }
+.robot-type-row .dim-select { flex: 1; }
+.robot-icon { flex: none; display: block; }
+
+/* arm panel */
+.joint-row { display: grid; grid-template-columns: 58px 30px 1fr 30px 56px; align-items: center; gap: 6px; padding: 3px 0; }
+.joint-row.jogging .joint-name { color: var(--primary); }
+.joint-name { font: 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joint-slider { min-width: 0; width: 100%; }
+.joint-value { font: 11px var(--mono); color: var(--muted-fg); text-align: right; }
+.hold-button { padding: 0; min-width: 0; height: 28px; touch-action: none; user-select: none; -webkit-user-select: none; font-variant-numeric: tabular-nums; }
+.joint-row .hold-button { width: 30px; font: 600 14px var(--mono); }
+.ee-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 8px; }
+.ee-axis { display: grid; grid-template-columns: 40px 1fr 1fr; align-items: center; gap: 4px; }
+.ee-name { font: 11.5px var(--mono); color: var(--muted-fg); }
+.ee-axis .hold-button { font: 600 11px var(--mono); }
+.gripper-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; }
+.gripper-row .slider { min-width: 140px; }
+.ok-text { color: var(--ok); }
+.warn-text { color: var(--warn); font-size: 12px; margin: 6px 0; }
+.arm-panel code, .drive-panel code { font: 11px var(--mono); }

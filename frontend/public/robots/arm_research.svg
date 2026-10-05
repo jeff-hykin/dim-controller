@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5.5 5.5 53 53" width="64" height="64" role="img" aria-label="Robot arm">
+  <!-- dimOS robot-type icon (research): app icon set v6 treatment, gradient glyph, bloom, logo scan lines -->
+  <defs>
+    <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.8"/></filter>
+    <linearGradient id="a" gradientUnits="userSpaceOnUse" x1="0" y1="16" x2="0" y2="54"><stop offset="0" stop-color="#5a6ff2"/><stop offset="1" stop-color="#293ce4"/></linearGradient>
+    
+    <g id="glyph"><g transform="translate(32 32) scale(1.0000) translate(-33.00 -35.00)"><g>
+      <path d="M17.5 52.5H38.5M20.5 52.5L22 45.5H34L35.5 52.5" fill="none" stroke="url(#a)" stroke-width="3.00" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="24" cy="41" r="3.4" fill="none" stroke="url(#a)" stroke-width="3.00" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="28" cy="21" r="3.4" fill="none" stroke="url(#a)" stroke-width="3.00" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="45" cy="25.5" r="2.8" fill="none" stroke="url(#a)" stroke-width="3.00" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M24.67 37.67L27.33 24.33" fill="none" stroke="url(#a)" stroke-width="3.40" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M31.29 21.87L42.29 24.78" fill="none" stroke="url(#a)" stroke-width="3.40" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M45 28.3V32.0M41.5 32.0H48.5M41.5 32.0V37.5M48.5 32.0V37.5" fill="none" stroke="url(#a)" stroke-width="2.20" stroke-linecap="round" stroke-linejoin="round"/>
+    </g></g></g>
+    <linearGradient id="scanrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".25" stop-color="#ebebeb"/><stop offset=".5" stop-color="#d6d6d6"/><stop offset=".75" stop-color="#ebebeb"/><stop offset="1" stop-color="#fff"/></linearGradient>
+    <pattern id="scan" width="64" height="3.6" patternUnits="userSpaceOnUse"><rect width="64" height="3.6" fill="url(#scanrow)"/></pattern>
+    <mask id="scanlines" maskUnits="userSpaceOnUse" x="-16" y="-16" width="96" height="96"><rect x="-16" y="-16" width="96" height="96" fill="url(#scan)"/></mask>
+    
+  </defs>
+  <g transform="translate(32 32) scale(1.12) translate(-32 -32)">
+    <use href="#glyph" filter="url(#bloom)" opacity="0.35"/>
+    <g mask="url(#scanlines)"><use href="#glyph"/></g>
+  </g>
+</svg>

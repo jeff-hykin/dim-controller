@@ -1,0 +1,87 @@
+{
+    "name": "coordinator-teleop-xarm7",
+    "modules": [
+        {
+            "name": "ControlCoordinator",
+            "class": "dimos.control.teleop_coordinator.TeleopControlCoordinator",
+            "streams": [
+                {
+                    "name": "coordinator_joint_state",
+                    "type": "dimos.msgs.sensor_msgs.JointState.JointState",
+                    "direction": "out"
+                },
+                {
+                    "name": "joint_command",
+                    "type": "dimos.msgs.sensor_msgs.JointState.JointState",
+                    "direction": "in"
+                },
+                {
+                    "name": "twist_command",
+                    "type": "dimos.msgs.geometry_msgs.Twist.Twist",
+                    "direction": "in"
+                },
+                {
+                    "name": "gripper_command",
+                    "type": "dimos.msgs.std_msgs.Float32.Float32",
+                    "direction": "in"
+                },
+                {
+                    "name": "left_cartesian_command",
+                    "type": "dimos.msgs.geometry_msgs.PoseStamped.PoseStamped",
+                    "direction": "in"
+                },
+                {
+                    "name": "right_cartesian_command",
+                    "type": "dimos.msgs.geometry_msgs.PoseStamped.PoseStamped",
+                    "direction": "in"
+                },
+                {
+                    "name": "left_gripper_command",
+                    "type": "dimos.msgs.std_msgs.Float32.Float32",
+                    "direction": "in"
+                },
+                {
+                    "name": "right_gripper_command",
+                    "type": "dimos.msgs.std_msgs.Float32.Float32",
+                    "direction": "in"
+                },
+                {
+                    "name": "teleop_buttons",
+                    "type": "dimos.teleop.webxr.controller_types.Buttons",
+                    "direction": "in"
+                },
+                {
+                    "name": "ee_twist_command",
+                    "type": "dimos.msgs.geometry_msgs.TwistStamped.TwistStamped",
+                    "direction": "in"
+                }
+            ]
+        },
+        {
+            "name": "manipulationmodule",
+            "class": "dimos.manipulation.manipulation_module.ManipulationModule",
+            "streams": [
+                {
+                    "name": "coordinator_joint_state",
+                    "type": "dimos.msgs.sensor_msgs.JointState.JointState",
+                    "direction": "in"
+                },
+                {
+                    "name": "voxel_map",
+                    "type": "dimos.msgs.sensor_msgs.PointCloud2.PointCloud2",
+                    "direction": "in"
+                },
+                {
+                    "name": "objects",
+                    "type": "list",
+                    "direction": "in"
+                },
+                {
+                    "name": "tf",
+                    "type": "dimos.msgs.tf2_msgs.TFMessage.TFMessage",
+                    "direction": "out"
+                }
+            ]
+        }
+    ]
+}

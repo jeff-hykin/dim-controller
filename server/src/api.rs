@@ -102,13 +102,13 @@ pub fn routes() -> Routes<Api> {
         "note": s("a second line under the label, e.g. \"1.76 m tall\""),
     });
     Routes::new()
-        .endpoint("GET", "api/status", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot profile, fixed frame, follow), layers turned on or off, driving (armed and by whom, the command being sent, speeds and topic), annotations and location labels, and how many pages are open.", json!({}), status)
+        .endpoint("GET", "api/status", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (armed and by whom, the command being sent, speeds and topic), annotations and location labels, and how many pages are open.", json!({}), status)
         .role("context")
         .endpoint("GET", "api/view", "What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the robot's pose, the annotations, and the fixed frame.", json!({}), annotations::view)
         .role("view")
         .endpoint("POST", "api/camera", "Move the 3D camera in every open page: action=recenter (on the robot), topDown (straight down over the robot), or lookAt (target [x, y, z], optional distance).", json!({ "action": required(s("recenter | topDown | lookAt")), "target": vec3("lookAt: the point, world frame"), "distance": n("lookAt: meters from the target") }), camera)
         // settings: everything the page's panels change
-        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile, fixedFrame (\"\" = auto), follow, showStats}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<profile> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.record.topics {<topic key>: record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory (\"\" = default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).", json!({}), get_settings)
+        .endpoint("GET", "api/settings", "Every page setting by key: lv.view {profile (the robot type picked: dog, humanoid, wheeled, arm, drone; \"\" = auto), robot (the type in use, written by the page), fixedFrame (\"\" = auto), follow, showStats, robotModel}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.record.topics {<topic key>: record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory (\"\" = default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels).", json!({}), get_settings)
         .endpoint("PATCH", "api/settings", "Change a page setting (merged into the key's object; a null field is removed); every open page applies it at once. E.g. {key: \"lv.layers.enabled\", value: {\"dimos/lidar/sensor_msgs.PointCloud2\": false}} hides a layer; {key: \"lv.view\", value: {follow: false}}. Keys: see GET api/settings.", json!({ "key": required(s("e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>")), "value": required(json!({ "type": "object", "description": "the fields to set" })) }), patch_settings)
         // recording
         .endpoint("GET", "api/recorder", "The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default one, and Desktop's shared recordings folder) and its options (lv.record.options).", json!({}), recorder::status)
@@ -144,7 +144,7 @@ pub fn routes() -> Routes<Api> {
 async fn status(Extract(api): Extract<Api>) -> Response {
     let recorder = api.recorder.status().await;
     let view = api.settings.get("lv.view");
-    let profile = view["profile"].as_str().unwrap_or_default().to_string();
+    let profile = robot_type(&view);
     Json(json!({
         "recording": recorder.recording,
         "recordingKeys": recorder.keys.len(),
@@ -205,13 +205,20 @@ async fn patch_settings(Extract(api): Extract<Api>, Body(body): Body) -> Respons
     Json(json!({ "key": key, "value": value })).into_response()
 }
 
+/// The robot type in use (`lv.view.robot`, which the page writes: auto's answer or the pick), else the pick
+/// (`lv.view.profile`); it names the drive settings, `lv.drive.<type>`.
+fn robot_type(view: &Value) -> String {
+    [&view["robot"], &view["profile"]]
+        .iter()
+        .find_map(|value| value.as_str().filter(|text| !text.is_empty()))
+        .unwrap_or("dog")
+        .to_string()
+}
+
 /// The drive topic when none is given: the drive panel's list (its first; the older single `topic` too), else a Twist
 /// on the bus (tele_cmd_vel first).
 async fn default_topic(api: &Api) -> String {
-    let profile = api.settings.get("lv.view")["profile"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
+    let profile = robot_type(&api.settings.get("lv.view"));
     let drive = api.settings.get(&format!("lv.drive.{profile}"));
     let chosen = drive["topics"][0]
         .as_str()
@@ -369,6 +376,15 @@ mod tests {
         api.recorder = Arc::new(recorder::State::new(dir, "tcp/127.0.0.1:9".into()));
         api.settings = api.recorder.settings.clone();
         (api.clone(), routes().router.with_state(api))
+    }
+
+    /// the drive settings follow the robot type in use (lv.view.robot), else the pick, else dog
+    #[test]
+    fn drive_settings_are_per_robot_type() {
+        assert_eq!(robot_type(&json!({ "profile": "", "robot": "arm" })), "arm");
+        assert_eq!(robot_type(&json!({ "profile": "drone" })), "drone");
+        assert_eq!(robot_type(&json!({ "profile": "", "robot": "" })), "dog");
+        assert_eq!(robot_type(&json!({})), "dog");
     }
 
     /// every listed endpoint is routed (a readable JSON answer, never the router's bare 404 / 405), and agent.json is the table

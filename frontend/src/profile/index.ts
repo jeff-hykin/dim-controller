@@ -1,7 +1,12 @@
-// The robot profiles the picker offers; the first is the default. A fork adds its own file here (or edits one).
-import go2 from "./go2.ts"
-import r1 from "./r1.ts"
+// The robot types the Robot picker offers, one profile each (the order is the picker's). A fork edits one, or adds its
+// own and returns it from profileFor.
+import dog from "./dog.ts"
+import humanoid from "./humanoid.ts"
+import wheeled from "./wheeled.ts"
+import arm from "./arm.ts"
 import drone from "./drone.ts"
-import type { RobotProfile } from "./types.ts"
+import type { RobotProfile, RobotType } from "./types.ts"
 
-export const profiles: RobotProfile[] = [go2, r1, drone]
+export const profiles: RobotProfile[] = [dog, humanoid, wheeled, arm, drone]
+
+export const profileFor = (type: RobotType): RobotProfile => profiles.find((profile) => profile.type === type) ?? dog

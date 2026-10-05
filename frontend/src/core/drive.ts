@@ -5,7 +5,7 @@
 // Arming is the backend's (POST api/drive/arm), one switch for every page and the agent; its `drive` events carry it
 // back here, with the agent's commands (and dry runs) for the HUD.
 import { encode } from "./lcm/lcm.ts"
-import { persistentStore, Store } from "./store.ts"
+import { loadedSetting, persistentStore, Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
 import { autoTopics, type DriveTopic, type Module, parseTopics, TWIST, TWIST_STAMPED, zenohKey } from "./cmdvel.ts"
 import { type Axes, type Axis, defaultTwist, type RobotProfile, type Twist } from "../profile/types.ts"
@@ -58,11 +58,14 @@ export interface DriveEvent {
     command: DriveCommand | null
 }
 
+/** The drive settings' key before robot types (2026-10-05), by the profile that replaced it. */
+const LEGACY_DRIVE_KEYS: Partial<Record<RobotProfile["type"], string>> = { dog: "lv.drive.Unitree Go2", wheeled: "lv.drive.Galaxea R1 Pro", drone: "lv.drive.Drone" }
+
 const zeroAxes = (): Axes => ({ forward: 0, strafe: 0, turn: 0, vertical: 0 })
 
 export class Drive {
     readonly state = new Store<DriveState>({ armed: false, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, armedBy: null, command: null })
-    readonly settings: Store<DriveSettings>
+    settings: Store<DriveSettings>
     readonly controlValues = new Store<Record<string, number>>({})
     /** axis contributions by source (keys, stick, pad), summed and clamped */
     #sources = new Map<string, Partial<Axes>>()
@@ -72,22 +75,57 @@ export class Drive {
     #timer: ReturnType<typeof setInterval>
     #commandTimer: ReturnType<typeof setTimeout> | undefined
     #controlPublishers = new Map<string, Publisher>()
+    #unsubscribeSettings = () => {}
     /** the running blueprints' modules (null = unknown), from Desktop's /dimos/ API */
     #blueprints: Record<string, Module[] | null> = {}
     /** Twist topics seen on the bridge (someone publishes them; maybe nobody reads them) */
     #onBridge: string[] = []
 
-    constructor(readonly connection: Connection, readonly profile: RobotProfile) {
-        const { speeds } = profile.drive
-        this.settings = persistentStore<DriveSettings>(`lv.drive.${profile.name}`, { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topics: [] })
-        const old = this.settings.get().topic
-        if (old && !this.settings.get().topics?.length) {
-            this.settings.update({ topics: [old], topic: "" })
-        }
-        this.controlValues.set(Object.fromEntries(profile.controls.filter((control) => control.kind === "slider").map((control) => [control.id, control.kind === "slider" ? control.initial : 0])))
+    constructor(readonly connection: Connection, public profile: RobotProfile) {
+        this.settings = this.#settingsFor(profile)
         this.#timer = setInterval(() => this.#tick(), 1000 / profile.drive.publishHz)
-        this.settings.subscribe(() => this.#refreshTopics())
+        this.#useProfile(profile)
+    }
+
+    /** lv.drive.<type> (an install from before robot types starts from its profile's, e.g. lv.drive.Unitree Go2). */
+    #settingsFor(profile: RobotProfile): Store<DriveSettings> {
+        const key = `lv.drive.${profile.type}`
+        const legacy = LEGACY_DRIVE_KEYS[profile.type]
+        const { speeds } = profile.drive
+        const defaults: DriveSettings = { linear: speeds.linear, angular: speeds.angular, vertical: speeds.vertical, topics: [] }
+        const earlier = !loadedSetting(key) && legacy ? loadedSetting(legacy) : undefined
+        const settings = persistentStore<DriveSettings>(key, { ...defaults, ...(earlier ?? {}) })
+        const old = settings.get().topic
+        if (old && !settings.get().topics?.length) {
+            settings.update({ topics: [old], topic: "" })
+        }
+        return settings
+    }
+
+    #useProfile(profile: RobotProfile) {
+        this.controlValues.set(Object.fromEntries(profile.controls.filter((control) => control.kind === "slider").map((control) => [control.id, control.kind === "slider" ? control.initial : 0])))
+        this.#unsubscribeSettings()
+        this.#unsubscribeSettings = this.settings.subscribe(() => this.#refreshTopics())
         this.#refreshTopics()
+    }
+
+    /** Another kind of robot (Settings → Robot, or auto changed its mind): disarmed first, then its keys, speeds and topics. */
+    setProfile(profile: RobotProfile) {
+        if (profile === this.profile) {
+            return
+        }
+        if (this.state.get().armed) {
+            this.setArmed(false)
+        }
+        this.#sources.clear()
+        this.#recompute()
+        this.#closeAll()
+        this.#controlPublishers.forEach((publisher) => publisher.close())
+        this.#controlPublishers.clear()
+        this.profile = profile
+        this.settings = this.#settingsFor(profile)
+        this.#useProfile(profile)
+        this.#recompute()
     }
 
     /** What's running (Desktop's metadata) and the Twist topics on the bridge; auto follows them. */
@@ -330,6 +368,7 @@ export class Drive {
     dispose() {
         clearInterval(this.#timer)
         clearTimeout(this.#commandTimer)
+        this.#unsubscribeSettings()
         this.#closeAll()
         this.#controlPublishers.forEach((publisher) => publisher.close())
     }

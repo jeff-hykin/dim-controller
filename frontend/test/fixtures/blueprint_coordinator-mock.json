@@ -1,0 +1,31 @@
+{
+    "name": "coordinator-mock",
+    "modules": [
+        {
+            "name": "controlcoordinator",
+            "class": "dimos.control.coordinator.ControlCoordinator",
+            "streams": [
+                {
+                    "name": "coordinator_joint_state",
+                    "type": "dimos.msgs.sensor_msgs.JointState.JointState",
+                    "direction": "out"
+                },
+                {
+                    "name": "joint_command",
+                    "type": "dimos.msgs.sensor_msgs.JointState.JointState",
+                    "direction": "in"
+                },
+                {
+                    "name": "twist_command",
+                    "type": "dimos.msgs.geometry_msgs.Twist.Twist",
+                    "direction": "in"
+                },
+                {
+                    "name": "gripper_command",
+                    "type": "dimos.msgs.std_msgs.Float32.Float32",
+                    "direction": "in"
+                }
+            ]
+        }
+    ]
+}
