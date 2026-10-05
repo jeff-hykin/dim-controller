@@ -196,6 +196,9 @@ h3.dim-label.first { margin-top: 4px; }
 .drive-hud.corner { left: calc(12px + var(--dim-inset-left)); transform: none; }
 .desktop .side-panel ~ .drive-hud.corner { left: calc(362px + var(--dim-inset-left)); }
 .drive-hud.corner.moving { border-color: var(--primary); }
+/* on a desktop the dock is centered, so the corner guide (and the stats above it) sit at the real bottom, not above the dock's inset */
+.desktop .drive-hud.corner { bottom: 14px; }
+.desktop .stats-overlay { bottom: 96px; }
 .keys { display: grid; gap: 3px; }
 .keys > div { display: flex; gap: 3px; justify-content: center; }
 .key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; font: 700 11px var(--mono);
