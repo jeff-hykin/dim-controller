@@ -12,6 +12,7 @@ import { Drive } from "./drive.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
+import { RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profiles } from "../profile/index.ts"
 import type { RobotProfile } from "../profile/types.ts"
@@ -42,6 +43,8 @@ export class ViewerApp {
     readonly agent: AgentLink
     /** right-click location labels (server/src/labels.rs) */
     readonly labels: LocationLabels
+    /** what's running (Desktop's /dimos/runs, live on its zenoh events): the first-run messages and the drive topic */
+    readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
     /** the robot's pose in the fixed frame, or null (updated every frame) */
@@ -64,7 +67,8 @@ export class ViewerApp {
         this.connection.start()
         this.labels = new LocationLabels(this)
         this.agent = new AgentLink(this)
-        this.#pollRobotInputs()
+        this.runs.state.subscribe(() => this.#updateDriveCandidates())
+        this.runs.start()
         // another viewer (or the agent) switched the robot profile: start over on it
         this.settings.subscribe(() => {
             const wanted = this.settings.get().profile
@@ -118,35 +122,8 @@ export class ViewerApp {
         }
     }
 
-    /** Twist topics the robot listens on come from the running blueprint (Desktop's /dimos API), plus any Twist on the bridge. */
-    #robotInputs: string[] = []
-    async #pollRobotInputs() {
-        for (;;) {
-            try {
-                const runs = await (await fetch(new URL("../../dimos/runs", location.href))).json()
-                const names = new Set<string>([...(runs.runs ?? []).map((run: { blueprint: string }) => run.blueprint), runs.launch?.phase === "running" ? runs.launch.blueprint : null].filter(Boolean))
-                const inputs: string[] = []
-                for (const name of names) {
-                    const blueprint = await (await fetch(new URL(`../../dimos/blueprints/${encodeURIComponent(name)}`, location.href))).json()
-                    for (const module of blueprint.modules ?? []) {
-                        for (const stream of module.streams ?? []) {
-                            if (/Twist$/.test(stream.type ?? "") && stream.direction !== "out") {
-                                inputs.push("/" + String(stream.name).replace(/^\/+/, ""))
-                            }
-                        }
-                    }
-                }
-                this.#robotInputs = [...new Set(inputs)]
-                this.#updateDriveCandidates()
-            } catch {
-                // no Desktop dimos API here (dev server, remote robot): the profile's list and the bridge are enough
-            }
-            await new Promise((resolve) => setTimeout(resolve, 10_000))
-        }
-    }
-
     #updateDriveCandidates() {
         const onBridge = this.connection.status.get().topics.filter((topic) => topic.type === "geometry_msgs.Twist").map((topic) => topic.name)
-        this.drive.setCandidates(this.#robotInputs, onBridge)
+        this.drive.setCandidates(this.runs.state.get().driveInputs, onBridge)
     }
 }

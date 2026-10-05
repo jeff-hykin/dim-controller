@@ -12,6 +12,7 @@ import { useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
+import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
 
@@ -61,11 +62,22 @@ export function App() {
                     <TopBar app={app} tab={tab} onTab={(next) => setTab(tab === next ? null : next)} />
                     {tab && <SidePanel app={app} tab={tab} onTab={setTab} onClose={() => setTab(null)} mobile={view.mobile} />}
                     <CameraPanels app={app} layout={cameraLayout} mobile={view.mobile} />
-                    <DriveHud app={app} mobile={view.mobile} />
+                    <FirstRun app={app} mobile={view.mobile} />
                     <StatsOverlay app={app} />
                     <SceneMenu app={app} />
                 </>
             )}
         </div>
+    )
+}
+
+/** The drive bar, or (until there's something to drive) the first-run message that says what's missing. */
+function FirstRun({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
+    const onboarding = useOnboarding(app)
+    return (
+        <>
+            {!onboarding.blocksDriving && <DriveHud app={app} mobile={mobile} />}
+            {onboarding.message && <EmptyLayer {...onboarding.message} />}
+        </>
     )
 }

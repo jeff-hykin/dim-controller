@@ -7,6 +7,7 @@ import { recorder } from "../core/recorder.ts"
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
+import { openApp } from "../dim-app/desktop.js"
 
 /** topic key → chosen on/off; untouched topics fall back to the default (on, rpc off) so new ones are picked up */
 const overrides = persistentStore<Record<string, boolean>>("lv.record.topics", {})
@@ -46,7 +47,28 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="recorder">
-            {status.unavailable && <p className="problem">{status.unavailable}</p>}
+            {status.unavailable === "connecting…" && <p className="hint">connecting to the recorder…</p>}
+            {status.unavailable && status.unavailable !== "connecting…" && (
+                <div className="dim-alert warn" data-testid="onboard-recorder-down">
+                    <div>
+                        <div className="dim-alert-title">Recording isn't available</div>
+                        The Controller's server isn't answering. Closing the Controller (✕) and opening it again restarts it.
+                        <div className="hint">{status.unavailable}</div>
+                        <button type="button" className="dim-btn sm" onClick={() => recorder.refresh()}>Try again</button>
+                    </div>
+                </div>
+            )}
+            {!status.unavailable && !topics.length && (
+                <div className="dim-alert" data-testid="onboard-nothing-to-record">
+                    <div>
+                        <div className="dim-alert-title">Nothing to record yet</div>
+                        Launch a blueprint (or a replay) and its topics show up here to record.
+                        <div>
+                            <button type="button" className="dim-btn sm" onClick={() => openApp("launcher", { kind: "blueprint" })}>Open the Launcher</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <button
                 type="button"
                 className={`dim-btn lg record-button ${active ? "danger recording" : ""}`}
@@ -100,7 +122,7 @@ export function RecorderPanel({ app }: { app: ViewerApp }) {
             </div>
 
             <h3 className="dim-label">Recordings</h3>
-            {!status.files.length && <p className="empty">none yet</p>}
+            {!status.files.length && <p className="empty">None yet. Press Record above; recordings open in the Recordings and Map Editor apps.</p>}
             <ul className="files">
                 {status.files.map((file) => (
                     <li key={file.name} className="file">
