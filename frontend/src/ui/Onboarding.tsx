@@ -10,6 +10,22 @@ import { takesVelocity } from "../core/cmdvel.ts"
 const LAUNCH_DRIVABLE = { kind: "blueprint" as const, stream: "cmd_vel" }
 const LAUNCH_ARM = { kind: "blueprint" as const, stream: "joint_command" }
 const REPLAY_HINT = "No robot? Turn on replay in the Launcher to drive a recorded one."
+/** A lost connection is usually Desktop restarting or a network blip that heals by itself: warn only past this. */
+const LOST_WARN_AFTER_MS = 8000
+
+/** True once `on` has held for `ms` without a break. */
+function useSustained(on: boolean, ms: number): boolean {
+    const [sustained, setSustained] = useState(false)
+    useEffect(() => {
+        setSustained(false)
+        if (!on) {
+            return
+        }
+        const timer = setTimeout(() => setSustained(true), ms)
+        return () => clearTimeout(timer)
+    }, [on, ms])
+    return on && sustained
+}
 
 /** desktop.js's emptyState, centered over the view (above Desktop's dock). */
 export function EmptyLayer(props: EmptyStateOptions) {
@@ -34,8 +50,9 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     const isArm = useStore(app.robot).type === "arm"
     const arm = useStore(app.arm.state)
     const launch = isArm ? LAUNCH_ARM : LAUNCH_DRIVABLE
+    const lostAWhile = useSustained(connection.state === "lost", LOST_WARN_AFTER_MS)
 
-    if (connection.state === "lost") {
+    if (lostAWhile) {
         return {
             blocksDriving: false,
             message: {
@@ -43,7 +60,7 @@ export function useOnboarding(app: ViewerApp): Onboarding {
                 tone: "warn",
                 label: "No connection",
                 title: "Can't reach the robot data bridge",
-                body: "Desktop's zenoh-web bridge is down or blocked on this network, so no robot data can arrive. It keeps retrying by itself.",
+                body: "Desktop or its zenoh-web bridge hasn't answered for a while (restarting, or blocked on this network), so no robot data can arrive. It keeps retrying by itself.",
                 actions: [
                     { label: "Try again", onClick: () => location.reload() },
                     { label: "Open Settings", app: "settings", primary: false },
