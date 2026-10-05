@@ -221,7 +221,11 @@ Known gaps (none of these are on a topic in dimos today):
   `robot_description` topic, so the view shows those TF frames (Settings → Layers → TF), not a URDF mesh.
 - Arm commands are page → bridge like continuous driving; there is no agent endpoint for them yet.
 
-Verified against dimos `main` @ 0861d853e3 with `dtk run coordinator-mock` (see the commit for what moved).
+Verified against dimos `main` @ 0861d853e3: with `dtk run coordinator-mock` on Desktop's bridge, Auto picked arm, a
+held + moved `arm/joint1` 0.42 → 1.14 rad in 2 s and stopped on release, a slider target and Home were reached,
+disarming mid-jog stopped it and nothing was sent while disarmed; the JointState, TwistStamped and Float32 the page
+encodes decode with dimos's own message classes. Not verified on a running arm: the end-effector jog and the gripper
+(the blueprints with those tasks need dimos's manipulation extra or a MuJoCo window that didn't start here).
 
 ## Fork this for your robot
 
