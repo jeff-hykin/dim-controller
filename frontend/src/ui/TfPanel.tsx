@@ -51,7 +51,7 @@ export function TfPanel({ app }: { app: ViewerApp }) {
                     {snapshot.frames.map((frame) => <option key={frame} value={frame}>{frame}</option>)}
                 </select>
             </Field>
-            <p className="hint">Robot frame: {app.profile.baseFrame} {frameInfo.robotFound ? "✓" : "(not in TF yet)"}</p>
+            <p className="hint">Robot frame: {app.profile.baseFrame} {frameInfo.robotFound ? "(in TF)" : "(not in TF yet)"}</p>
             {problems.doubleParent.map(([child, parents]) => <p key={child} className="problem">{child} has {parents.length} parents: {parents.join(", ")}</p>)}
             {problems.roots.length > 1 && <p className="problem">{problems.roots.length} separate trees (roots {problems.roots.join(", ")}): frames in different trees can't be placed relative to each other</p>}
             {problems.cycle.length > 0 && <p className="problem">cycle through {problems.cycle.join(", ")}</p>}
