@@ -26,22 +26,11 @@ function fakeBridge() {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-Deno.test("disarmed: nothing is ever published", async () => {
-    localStorage.clear()
-    const { connection, puts } = fakeBridge()
-    const drive = new Drive(connection, go2)
-    drive.setAxes("keys", { forward: 1 })
-    await wait(200)
-    assertEquals(puts.length, 0)
-    drive.dispose()
-})
-
-Deno.test("armed: forward at the linear speed, shift doubles linear and halves turning, a release flushes zeros then goes quiet", async () => {
+Deno.test("no arming: forward at the linear speed, shift doubles linear and halves turning, a release flushes zeros then goes quiet", async () => {
     localStorage.clear()
     const { connection, puts, deadmen } = fakeBridge()
     const drive = new Drive(connection, go2)
     drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
-    drive.setArmed(true)
     drive.setAxes("keys", { forward: 1, turn: 1 })
     await wait(150)
     const plain = puts.at(-1)!
@@ -70,7 +59,6 @@ Deno.test("auto drives every entry point, each with its own deadman; a list in t
     const drive = new Drive(connection, go2)
     // no metadata: the standard set
     assertEquals(drive.state.get().topics.map((topic) => topic.topic), ["/cmd_vel", "/tele_cmd_vel"])
-    drive.setArmed(true)
     drive.setAxes("keys", { forward: 1 })
     await wait(150)
     assertEquals(new Set(puts.map((put) => put.key)), new Set(["dimos/cmd_vel/geometry_msgs.Twist", "dimos/tele_cmd_vel/geometry_msgs.Twist"]))
@@ -89,30 +77,23 @@ Deno.test("a drone profile's Q/E-style vertical axis lands in linear.z", async (
     localStorage.clear()
     const { connection, puts } = fakeBridge()
     const drive = new Drive(connection, drone)
-    drive.setArmed(true)
     drive.setAxes("keys", { vertical: 1 })
     await wait(120)
     assertAlmostEquals(puts.at(-1)!.twist.linear.z, drone.drive.speeds.vertical)
     drive.dispose()
 })
 
-Deno.test("arming comes from the backend's drive events (another page, the agent), and so do its commands", async () => {
+Deno.test("the backend's drive events carry the agent's commands; older events with armed: false change nothing", async () => {
     localStorage.clear()
     const { connection, puts } = fakeBridge()
     const drive = new Drive(connection, go2)
     drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
-    drive.applyEvent({ armed: true, armedBy: "agent", command: null })
-    assertEquals([drive.state.get().armed, drive.state.get().armedBy], [true, "agent"])
+    const command = { key: "dimos/cmd_vel/geometry_msgs.Twist", linear: [0.3, 0, 0] as [number, number, number], angular: [0, 0, 0] as [number, number, number], seconds: 1, dryRun: true, source: "agent" }
+    drive.applyEvent({ command })
+    assertEquals(drive.state.get().command, command)
+    drive.applyEvent({ armed: false, command: null } as never)
     drive.setAxes("keys", { forward: 1 })
     await wait(150)
-    assert(puts.length > 0, "keys drive once armed elsewhere")
-    const command = { key: "dimos/cmd_vel/geometry_msgs.Twist", linear: [0.3, 0, 0] as [number, number, number], angular: [0, 0, 0] as [number, number, number], seconds: 1, dryRun: true, source: "agent" }
-    drive.applyEvent({ armed: true, armedBy: "agent", command })
-    assertEquals(drive.state.get().command, command)
-    drive.applyEvent({ armed: false, armedBy: null, command: null })
-    assertEquals([drive.state.get().armed, drive.state.get().command], [false, null])
-    const count = puts.length
-    await wait(200)
-    assertEquals(puts.length, count, "disarmed: quiet")
+    assert(puts.length > 0, "keys always drive")
     drive.dispose()
 })

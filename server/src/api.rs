@@ -2,8 +2,8 @@
 //! ones (the served agent.json, and dimos.yaml's `agent:`, which `deno task check-endpoints` keeps equal). What only
 //! the page can do (render its view, read the camera, locate from an image box) the backend asks the page for with an
 //! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the bridge with
-//! its deadman; `POST api/drive` is the endpoint way to drive. Both need driving armed (`POST api/drive/arm`), which
-//! is held here so every page and the agent see one switch.
+//! its deadman; `POST api/drive` is the endpoint way to drive. Neither needs arming (`POST api/drive/arm` is a no-op
+//! kept so older callers don't 404).
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -20,7 +20,7 @@ use crate::recorder;
 use crate::routes::Routes;
 use crate::settings::{self, Settings};
 
-pub const DESCRIPTION: &str = "Controller: drive the running robot (arm, keyboard / sticks, velocity commands, stop) while watching its live 3D view \
+pub const DESCRIPTION: &str = "Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D view \
 (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D annotations (boxes with labels every \
 open page shows), and the view's settings (layers, styles, fixed frame, follow). Coordinates are meters in the world frame, +z up. GET \
 api/status is the overview; GET api/view what the user sees.";
@@ -102,7 +102,7 @@ pub fn routes() -> Routes<Api> {
         "note": s("a second line under the label, e.g. \"1.76 m tall\""),
     });
     Routes::new()
-        .endpoint("GET", "api/status", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (armed and by whom, the command being sent, speeds and topic), annotations and location labels, and how many pages are open.", json!({}), status)
+        .endpoint("GET", "api/status", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (the command being sent, speeds and topic), annotations and location labels, and how many pages are open.", json!({}), status)
         .role("context")
         .endpoint("GET", "api/view", "What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the robot's pose, the annotations, and the fixed frame.", json!({}), annotations::view)
         .role("view")
@@ -131,9 +131,9 @@ pub fn routes() -> Routes<Api> {
         .endpoint("DELETE", "api/annotations", "Remove every annotation.", json!({}), annotations::clear_annotations)
         .endpoint("POST", "api/locate", "Find an object in 3D from a box around it in the robot camera image (pixel coordinates of the image GET api/view returns): uses the lidar points inside that box (else where the box's bottom meets the floor) and returns its 3D box and height. add=true also adds it as an annotation.", json!({ "bbox": required(json!({ "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "[x1, y1, x2, y2] pixels in the camera image" })), "label": s(""), "add": b(""), "id": s("") }), annotations::locate)
         // driving
-        .endpoint("POST", "api/drive/arm", "Arm or disarm driving, for the page's keys and sticks and for api/drive alike (every open page shows it). Disarming stops the robot. A restart comes up disarmed.", json!({ "armed": required(b("")), "source": s("who: agent (default) or page") }), arm)
-        .endpoint("POST", "api/drive", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. Needs driving armed (POST api/drive/arm), else 409. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send (armed or not). A new command or a stop replaces a running one; every open page shows it.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
-        .endpoint("POST", "api/drive/stop", "Stop driving (armed or not): cancels a running drive command and sends a second of zeros.", json!({ "topic": s("default as for api/drive"), "dryRun": b("") }), stop_robot)
+        .endpoint("POST", "api/drive/arm", "No-op, kept for older callers: driving needs no arming (always armed). Use api/drive/stop to stop.", json!({ "armed": b("ignored"), "source": s("ignored") }), arm)
+        .endpoint("POST", "api/drive", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. No arming needed. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a running one; every open page shows it.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
+        .endpoint("POST", "api/drive/stop", "Stop driving: cancels a running drive command and sends a second of zeros.", json!({ "topic": s("default as for api/drive"), "dryRun": b("") }), stop_robot)
         // the page's plumbing: its event socket, its reports, its answers to the backend's capture requests
         .plumbing("POST", "api/pages/{page}", annotations::report_page)
         .plumbing("POST", "api/pages/{page}/close", annotations::close_page)
@@ -152,8 +152,7 @@ async fn status(Extract(api): Extract<Api>) -> Response {
         "layersEnabled": api.settings.get("lv.layers.enabled"),
         "rendering": api.settings.get("lv.rendering.v2"),
         "drive": api.settings.get(&format!("lv.drive.{profile}")),
-        "armed": api.drive.armed_by().is_some(),
-        "armedBy": api.drive.armed_by(),
+        "armed": true,
         "driving": api.drive.running(),
         "annotations": api.annotations.list(),
         "labels": api.recorder.labels.list(),
@@ -254,34 +253,19 @@ fn source(body: &Value) -> String {
         .collect()
 }
 
-/// Tells every page what driving is doing: armed or not, and the command just sent (or dry-run) or stopped.
+/// Tells every page what driving is doing: the command just sent (or dry-run) or stopped.
 fn announce(api: &Api, command: Option<Value>) {
-    let by = api.drive.armed_by();
-    api.annotations.broadcast(
-        json!({ "type": "drive", "armed": by.is_some(), "armedBy": by, "command": command }),
-    );
+    api.annotations
+        .broadcast(json!({ "type": "drive", "armed": true, "command": command }));
 }
 
-async fn arm(Extract(api): Extract<Api>, Body(body): Body) -> Response {
-    let Some(armed) = body["armed"].as_bool() else {
-        return error_response(StatusCode::BAD_REQUEST, "armed: true or false");
-    };
-    if api.drive.set_armed(armed, &source(&body)) {
-        let topic = default_topic(&api).await;
-        api.drive.stop(api.recorder.clone(), &topic, false);
-    }
-    announce(&api, None);
-    Json(json!({ "armed": armed, "armedBy": api.drive.armed_by() })).into_response()
+/// No arming any more: answers as always armed, so older callers keep working.
+async fn arm() -> Response {
+    Json(json!({ "armed": true, "note": "driving needs no arming; this endpoint does nothing" })).into_response()
 }
 
 async fn drive_robot(Extract(api): Extract<Api>, Body(body): Body) -> Response {
     let dry_run = body["dryRun"].as_bool().unwrap_or(false);
-    if !dry_run && api.drive.armed_by().is_none() {
-        return error_response(
-            StatusCode::CONFLICT,
-            "driving is disarmed: POST api/drive/arm {armed: true} first (or dryRun: true)",
-        );
-    }
     let fallback = if body["topic"].as_str().is_some_and(|t| !t.is_empty()) {
         String::new()
     } else {
@@ -561,38 +545,16 @@ mod tests {
             .0,
             StatusCode::OK
         );
-        // disarmed: a real command is refused, the page hears arming
-        let (status, refused) = call(
-            &router,
-            "POST",
-            "/api/drive",
-            Some(json!({ "linear": [0.3, 0, 0], "topic": "/cmd_vel" })),
-        )
-        .await;
-        assert_eq!(status, StatusCode::CONFLICT, "{refused}");
+        // no arming: api/drive/arm is a no-op that always answers armed
         while events.try_recv().is_ok() {}
-        assert_eq!(
-            call(&router, "POST", "/api/drive/arm", Some(json!({})))
-                .await
-                .0,
-            StatusCode::BAD_REQUEST
-        );
         let (status, armed) = call(
             &router,
             "POST",
             "/api/drive/arm",
-            Some(json!({ "armed": true, "source": "page" })),
+            Some(json!({ "armed": false })),
         )
         .await;
-        assert_eq!(
-            (status, armed["armedBy"].as_str()),
-            (StatusCode::OK, Some("page"))
-        );
-        let heard = events.try_recv().unwrap();
-        assert_eq!(
-            (heard["type"].as_str(), heard["armed"].as_bool()),
-            (Some("drive"), Some(true))
-        );
+        assert_eq!((status, armed["armed"].as_bool()), (StatusCode::OK, Some(true)));
         assert_eq!(
             call(&router, "GET", "/api/status", None).await.1["armed"],
             true
@@ -612,21 +574,6 @@ mod tests {
             events.try_recv().unwrap()["command"]["dryRun"],
             true,
             "pages see dry runs too"
-        );
-        assert_eq!(
-            call(
-                &router,
-                "POST",
-                "/api/drive/arm",
-                Some(json!({ "armed": false }))
-            )
-            .await
-            .1["armed"],
-            false
-        );
-        assert_eq!(
-            call(&router, "GET", "/api/status", None).await.1["armedBy"],
-            Value::Null
         );
         let (status, made) = call(
             &router,

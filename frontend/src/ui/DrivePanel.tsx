@@ -1,7 +1,7 @@
-// Drive settings: arm, which Twist topics (auto or a list), speeds, and the profile's extra controls.
+// Drive settings: which Twist topics (auto or a list), speeds, and the profile's extra controls.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { Field, Slider, Toggle } from "./controls.tsx"
+import { Field, Slider } from "./controls.tsx"
 
 export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
@@ -16,9 +16,6 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
         .map(([code, action]) => `${code.replace(/^Key/, "")} ${"axis" in action ? `${action.axis} ${action.value > 0 ? "+" : "−"}` : `${action.control} ${(action.step ?? 0) > 0 ? "+" : "−"}`}`)
     return (
         <div className="drive-panel">
-            <div className={`arm-row ${state.armed ? "armed" : ""}`}>
-                <Toggle value={state.armed} onChange={(armed) => drive.setArmed(armed)} label={state.armed ? "Armed: keys and sticks move the robot" : "Disarmed: nothing is sent"} />
-            </div>
             <Field
                 label="Topics"
                 hint="Auto: each running blueprint's cmd_vel entry point (one per module that takes velocity commands, never a mux's own output), else /cmd_vel and /tele_cmd_vel. One topic per line; add TwistStamped after a name for a stamped one."
@@ -64,7 +61,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                                     <Slider min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
                                 </Field>
                             )
-                            : <button key={control.id} type="button" className="dim-btn sm" disabled={!state.armed} onClick={() => drive.pressButton(control.id)}>{control.label}</button>
+                            : <button key={control.id} type="button" className="dim-btn sm" onClick={() => drive.pressButton(control.id)}>{control.label}</button>
                     )}
                 </section>
             )}

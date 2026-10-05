@@ -17,7 +17,6 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
     const connection = useStore(app.connection.status)
     const stats = useStore(app.viewer.stats)
     const tf = useStore(app.tf.summary)
-    const drive = useStore(app.drive.state)
     const fallback = useStore(splatFallback)
     const live = connection.state === "connected"
     return (
@@ -37,7 +36,6 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
                     splats → cubes ({fallback.frameMs.toFixed(0)} ms)
                 </button>
             )}
-            {drive.armed && <span className="dim-badge solid danger">ARMED</span>}
             <span className="spacer" />
             <ThemeToggle className="theme-toggle" />
             <nav className="dim-tabs tabs">

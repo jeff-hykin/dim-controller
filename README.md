@@ -2,7 +2,7 @@
 
 A [dimOS Desktop](https://github.com/dimensionalOS/dimos-desktop) app for driving a running dimOS robot while watching
 it: a low-latency 3D view placed by TF (point clouds, costmap, pose, planned path), live cameras, driving (keyboard, or
-sticks on a phone, armed and with a deadman), jogging a robot arm (joints, end effector, gripper) and an mcap recorder. It is the one canonical controller: it replaces
+sticks on a phone, with a deadman), jogging a robot arm (joints, end effector, gripper) and an mcap recorder. It is the one canonical controller: it replaces
 web_ctrl, the Live Viewer (its old name), `dimos-controller` and `dim-app-minimal-kb-control` (Teleop), and is meant to
 be **forked per robot** (see [Fork this for your robot](#fork-this-for-your-robot)).
 
@@ -98,9 +98,7 @@ starts from its old profile's, e.g. `lv.drive.Unitree Go2`).
 
 ## Driving
 
-Driving is **off until armed** (the ARM button, or `POST api/drive/arm`). Arming is held by the backend: one switch for
-every open page and the agent, shown on each, and a restart comes up disarmed. Escape or hiding the page disarms, and
-disarming stops the robot. Armed, W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
+There is no arming: whenever the Controller has the keyboard (click or tap the view to give it), W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
 and halves turning, Space stops (the agent's command too). Linear and angular speeds are in Settings → Drive. Commands go
 straight to the output topics through Desktop's bridge, each with its own deadman: if the page goes quiet or
 disconnects, the bridge sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
@@ -130,7 +128,7 @@ so driving won't do anything") with a button to the Launcher filtered to bluepri
 view" hides it until what's running changes. It follows Desktop's `runs` / `launch` events, so it updates as runs
 start and stop. The agent's `POST api/drive` still sends to one topic (its `topic`, else the first of the list).
 
-The agent drives with `POST api/drive` (refused while disarmed, except `dryRun`); the drive HUD shows its command, and
+The agent drives with `POST api/drive` (no arming needed; `dryRun` sends nothing); the drive HUD shows its command, and
 "dry run · nothing sent" for a dry run.
 
 On a phone the panels become a bottom sheet and driving moves to on-screen sticks (left: drive and turn; right: strafe,
@@ -181,10 +179,9 @@ With the robot type **arm**, Settings' first section is the arm panel and the bo
   Q/E z, R/F roll, T/G pitch, Y/H yaw); linear and angular speed are sliders.
 - **Gripper**: Open / Close (`[` / `]`) and an opening slider; with more than one gripper topic, each on its own too.
 
-It is armed with the same switch as driving, and as safe:
+Like driving it needs no arming, and it is as safe:
 
-- disarmed, nothing is sent; Escape or hiding the page disarms, and disarming stops (one hold / zero twist, then
-  nothing);
+- Space, Escape, a key release or leaving the page stops (one hold / zero twist, then nothing);
 - a held joint jog's target creeps ahead at the joint speed but never more than 0.25 s of motion past where the joint is,
   so if the page dies the joint stops within that; letting go sends "stay where you are" (the measured position);
 - the end-effector jog is a TwistStamped at 20 Hz with the bridge's deadman set to a zero twist (zero = hold), and a
@@ -260,7 +257,6 @@ keys: { ...turnKeys, KeyQ: { axis: "vertical", value: -1 }, KeyE: { axis: "verti
 ```
 
 A profile can also replace how the axes become a Twist (`drive.twist`), e.g. for a robot that steers differently.
-Controls only publish while drive is armed.
 
 **A new message type** is one file too: copy the closest layer in `frontend/src/layers/` (e.g. `path.tsx`), change its
 `types` and drawing, and import it in `layers/index.ts`. A layer registered later for the same type wins, so a fork can

@@ -1,6 +1,6 @@
 // Arm control against a fake bridge: which topics (real Desktop metadata of dimos arm blueprints), the messages (dimos's
 // LCM types: JointState on joint_command, TwistStamped on ee_twist_command, Float32 on gripper_command), and the safety
-// rules: nothing while disarmed, a joint jog's target never runs more than LEAD_S ahead, a release holds, the twist has a
+// rules: a joint jog's target never runs more than LEAD_S ahead, a release holds, the twist has a
 // zero deadman, disarming stops.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import { ArmControl, eeTwist, jointCommand, LEAD_S } from "../src/core/arm.ts"
@@ -89,22 +89,8 @@ Deno.test("messages are dimos's LCM types, and round-trip", () => {
     assertEquals(twist.header.frame_id, "")
 })
 
-Deno.test("disarmed: jogging, sliders, home and the gripper send nothing", async () => {
-    const { arm, puts, dispose } = setup(keyboardXarm7)
-    arm.jogJoint("arm/joint1", 1)
-    arm.setJoint("arm/joint2", 1)
-    arm.home("zero")
-    arm.setGripper(0)
-    arm.setEe("keys", { x: 1 })
-    await wait(150)
-    assertEquals(puts.length, 0)
-    assertEquals(arm.state.get().error, "arm to send commands")
-    dispose()
-})
-
 Deno.test("a held joint jog: the target creeps ahead but never more than LEAD_S of motion; a release holds where it is", async () => {
-    const { arm, drive, puts, sendState, dispose } = setup()
-    drive.setArmed(true)
+    const { arm, puts, sendState, dispose } = setup()
     arm.jogJoint("arm/joint2", 1)
     await wait(400)
     const targets = puts.filter((put) => put.key === "dimos/joint_command/sensor_msgs.JointState").map((put) => decode("sensor_msgs.JointState", put.bytes))
@@ -124,8 +110,7 @@ Deno.test("a held joint jog: the target creeps ahead but never more than LEAD_S 
 })
 
 Deno.test("sliders and home send JointState targets; home zero skips no arm joint", () => {
-    const { arm, drive, puts, dispose } = setup()
-    drive.setArmed(true)
+    const { arm, puts, dispose } = setup()
     arm.setJoint("arm/joint3", 9) // past the range: clamped to +π
     assertAlmostEquals(decode("sensor_msgs.JointState", puts.at(-1)!.bytes).position[0], Math.PI)
     arm.home("zero")
@@ -136,8 +121,7 @@ Deno.test("sliders and home send JointState targets; home zero skips no arm join
 })
 
 Deno.test("end effector: TwistStamped at the speeds while held, a zero deadman, zeros after release, then quiet", async () => {
-    const { arm, drive, puts, deadmen, dispose } = setup(keyboardXarm7)
-    drive.setArmed(true)
+    const { arm, puts, deadmen, dispose } = setup(keyboardXarm7)
     arm.setEe("keys", { z: 1, yaw: -1 })
     await wait(150)
     const key = "dimos/ee_twist_command/geometry_msgs.TwistStamped"
@@ -158,8 +142,7 @@ Deno.test("end effector: TwistStamped at the speeds while held, a zero deadman, 
 })
 
 Deno.test("gripper: Float32 0 closed … 1 open on every gripper topic, or one", () => {
-    const { arm, drive, puts, dispose } = setup(teleopXarm7)
-    drive.setArmed(true)
+    const { arm, puts, dispose } = setup(teleopXarm7)
     arm.setGripper(0)
     assertEquals(puts.map((put) => put.key), ["dimos/gripper_command/std_msgs.Float32", "dimos/left_gripper_command/std_msgs.Float32", "dimos/right_gripper_command/std_msgs.Float32"])
     assertEquals(decode("std_msgs.Float32", puts[0].bytes).data, 0)
@@ -169,26 +152,8 @@ Deno.test("gripper: Float32 0 closed … 1 open on every gripper topic, or one",
     dispose()
 })
 
-Deno.test("disarming mid-jog stops it once (joint held, end effector zeroed), then nothing", async () => {
-    const { arm, drive, puts, dispose } = setup(keyboardXarm7)
-    drive.setArmed(true)
-    arm.jogJoint("arm/joint1", -1)
-    arm.setEe("keys", { x: 1 })
-    await wait(120)
-    drive.setArmed(false)
-    const stops = puts.slice(-2).map((put) => put.key)
-    assert(stops.includes("dimos/ee_twist_command/geometry_msgs.TwistStamped"))
-    assert(stops.includes("dimos/joint_command/sensor_msgs.JointState"))
-    const count = puts.length
-    await wait(200)
-    assertEquals(puts.length, count)
-    assertEquals(arm.state.get().jogging, null)
-    dispose()
-})
-
 Deno.test("a command that moves nothing is reported", async () => {
-    const { arm, drive, sendState, dispose } = setup()
-    drive.setArmed(true)
+    const { arm, sendState, dispose } = setup()
     arm.setJoint("arm/joint1", 0.3)
     await wait(1700)
     assertEquals(arm.state.get().response, "no-response")

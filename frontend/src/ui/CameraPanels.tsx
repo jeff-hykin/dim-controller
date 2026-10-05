@@ -21,6 +21,8 @@ export interface PanelState {
     y: number
     width: number
     height: number
+    /** the user resized it: keep that size (else it fits the image's aspect) */
+    sized?: boolean
     /** depth topics: colormap and fixed range (null = auto) */
     depth?: DepthLook
 }
@@ -62,6 +64,14 @@ function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
     return images.find((topic) => !isDepthTopic(topic)) ?? images[0] ?? null
 }
 
+/** The camera header's height: a panel is this plus the image. */
+const HEAD_PX = 33
+/** The size before the image's is known (and for panels saved at the old 360×240 default): ~38% of the window, 16:9. */
+function defaultSize() {
+    const width = Math.round(Math.max(320, Math.min(760, (globalThis.innerWidth || 1280) * 0.38)))
+    return { width, height: Math.round(width * 9 / 16) + HEAD_PX }
+}
+
 export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: Store<CameraLayout>; mobile: boolean }) {
     const { panels, main, seeded } = useStore(layout)
     const { topics } = useStore(app.connection.status)
@@ -73,7 +83,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         }
         const first = pickDefault(app, topics)
         if (first) {
-            layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+            layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize() }] })
         }
     }, [topics, panels.length, seeded, app, layout])
 
@@ -106,7 +116,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
             const first = pickDefault(app, latest)
             if (first) {
                 const id = Math.max(0, ...now.panels.map((panel) => panel.id)) + 1
-                layout.update({ seeded: true, auto: true, autoPanel: id, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+                layout.update({ seeded: true, auto: true, autoPanel: id, main: id, panels: [...now.panels, { id, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize() }] })
             }
         }, SETTLE_MS)
         return () => clearTimeout(timer)
@@ -126,7 +136,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         const used = new Set(panels.map((panel) => panel.key))
         const next = topics.filter(isImage).find((topic) => !used.has(topic.key)) ?? pickDefault(app, topics)
         const id = Math.max(0, ...panels.map((panel) => panel.id)) + 1
-        layout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "", x: -1, y: -1, width: 360, height: 240 }] })
+        layout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "", x: -1, y: -1, ...defaultSize() }] })
     }
 
     return (
@@ -268,6 +278,25 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         addEventListener("pointerup", up)
     }
 
+    // a panel the user hasn't resized fits the image's aspect (no bars); one at the old 360×240 default grows first
+    useEffect(() => {
+        if (isMain || mobile || panel.sized) {
+            return
+        }
+        const width = panel.width === 360 && panel.height === 240 ? defaultSize().width : panel.width
+        if (!size.width || !size.height) {
+            if (width !== panel.width) {
+                onChange(defaultSize())
+            }
+            return
+        }
+        const head = element.current?.querySelector<HTMLElement>(".camera-head")?.offsetHeight ?? HEAD_PX
+        const height = Math.round(width * size.height / size.width) + head
+        if (width !== panel.width || Math.abs(height - panel.height) > 2) {
+            onChange({ width, height })
+        }
+    }, [isMain, mobile, panel.sized, panel.width, panel.height, size.width, size.height])
+
     // remember a resize
     useEffect(() => {
         const box = element.current
@@ -279,7 +308,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
             clearTimeout(timer)
             timer = setTimeout(() => {
                 if (Math.abs(box.offsetWidth - panel.width) > 2 || Math.abs(box.offsetHeight - panel.height) > 2) {
-                    onChange({ width: box.offsetWidth, height: box.offsetHeight })
+                    onChange({ width: box.offsetWidth, height: box.offsetHeight, sized: true })
                 }
             }, 300)
         })
@@ -290,11 +319,14 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
     const floating = !isMain
     const style: React.CSSProperties = floating && !mobile
         ? { width: panel.width, height: panel.height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * (panel.height + 12) }) }
+        : mobile && floating && size.width && size.height
+        ? { height: `calc(42vw * ${(size.height / size.width).toFixed(4)} + ${HEAD_PX}px)` }
         : {}
+    const info = size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     return (
         <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
-            <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain}>
+            <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
                 <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value })} aria-label="Camera topic">
                     {!topic && <option value={panel.key}>{panel.key ? "(gone) " + panel.key : "pick a camera"}</option>}
                     {topics.filter(isImage).map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
@@ -314,7 +346,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                         <input className="dim-input number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
                     </>
                 )}
-                <span className="camera-info">{size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : "…"}</span>
+                <span className="camera-info">{info || "…"}</span>
                 <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
                 <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
             </div>

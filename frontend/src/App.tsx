@@ -1,6 +1,6 @@
 // The page: the 3D view (or a camera) fills the screen; panels float over it. On a phone the panels become a
 // bottom sheet and driving moves to on-screen sticks.
-import { useEffect, useMemo, useRef, useState } from "react"
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { persistentStore, Store, useStore } from "./core/store.ts"
 import { TopBar } from "./ui/TopBar.tsx"
@@ -60,7 +60,7 @@ export function App() {
     const view = useMemo(() => ({ mobile, mainCamera }), [mobile, mainCamera])
 
     return (
-        <div className={`app ${view.mobile ? "mobile" : "desktop"} ${view.mainCamera ? "camera-main" : "scene-main"}`}>
+        <div className={`app ${view.mobile ? "mobile" : "desktop"} ${view.mainCamera ? "camera-main" : "scene-main"}`} onPointerDownCapture={takeKeyboard}>
             <div className="scene-slot">
                 <div ref={host} className="scene" />
                 {app && !view.mainCamera && <ViewControls app={app} />}
@@ -84,6 +84,20 @@ export function App() {
             )}
         </div>
     )
+}
+
+/** A click or tap on the view (not in a field) gives the Controller the keyboard, so WASD drives right away, even inside
+ * Desktop's iframe. */
+function takeKeyboard(event: PointerEvent) {
+    const target = event.target as HTMLElement
+    if (target.closest("input, textarea, select, [contenteditable]")) {
+        return
+    }
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body && active.matches("input, textarea, select, [contenteditable]")) {
+        active.blur()
+    }
+    globalThis.focus()
 }
 
 /** The drive bar, or (until there's something to drive) the first-run message that says what's missing. */

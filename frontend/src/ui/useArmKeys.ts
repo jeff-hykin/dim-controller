@@ -1,6 +1,5 @@
 // The keyboard on an arm: the profile maps KeyboardEvent.code to end-effector axes (held) or a gripper opening
-// (pressed), as dimos's keyboard arm teleop does. Only while armed, never while typing; Space stops; leaving the page
-// releases everything (useDriveKeys disarms on Escape and when the page hides).
+// (pressed), as dimos's keyboard arm teleop does. Never while typing; Space stops; leaving the page releases everything.
 import { useEffect } from "react"
 import type { ArmControl } from "../core/arm.ts"
 import type { EeAxis, RobotProfile } from "../profile/types.ts"
@@ -35,7 +34,7 @@ export function useArmKeys(arm: ArmControl | null, profile: RobotProfile | null)
                 return
             }
             const action = keys[event.code]
-            if (!action || !arm.armed) {
+            if (!action) {
                 return
             }
             event.preventDefault()

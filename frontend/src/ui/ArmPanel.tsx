@@ -7,7 +7,7 @@ import { useStore } from "../core/store.ts"
 import { isGripperJoint } from "../core/armTopics.ts"
 import type { ArmControl, Joint } from "../core/arm.ts"
 import { EE_AXES, type EeAxis } from "../profile/types.ts"
-import { Field, Slider, Toggle } from "./controls.tsx"
+import { Field, Slider } from "./controls.tsx"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
 const shortName = (name: string) => name.replace(/^.*\//, "")
@@ -108,9 +108,6 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="arm-panel" data-testid="arm-panel">
-            <div className={`arm-row ${armed ? "armed" : ""}`}>
-                <Toggle value={armed} onChange={(next) => app.drive.setArmed(next)} label={armed ? "Armed: jogging moves the arm" : "Disarmed: nothing is sent"} />
-            </div>
             <p className="hint" data-testid="arm-topics">
                 {topics.jointState ? <>Joints from <code>{topics.jointState}</code>{ageMs !== null && ageMs < 2000 ? "" : " (nothing yet)"}</> : "No joint state topic yet."}
                 {" · "}sends {[topics.jointCommand, topics.eeTwist, ...topics.grippers].filter(Boolean).join(", ") || "nothing (no arm inputs running)"}
@@ -175,7 +172,7 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
             </div>
             {state.response === "no-response" && <p className="warn-text" data-testid="arm-no-response">Sent, but no joint moved. The running blueprint may not act on that input (a coordinator only does when one of its tasks takes it).</p>}
             {state.error && <p className="problem">{state.error}</p>}
-            <p className="hint">dimos publishes no joint limits: sliders span ±180° unless a joint is past that. Space stops, Esc disarms.</p>
+            <p className="hint">dimos publishes no joint limits: sliders span ±180° unless a joint is past that. Space or Esc stops.</p>
         </div>
     )
 }

@@ -1,8 +1,7 @@
 //! Driving from an endpoint (the agent's way; the page's keys and stick publish through the bridge at 20 Hz with the
 //! bridge's deadman): a Twist on `dimos/<topic>/geometry_msgs.Twist` at 10 Hz for a few seconds, then a second of
 //! zeros so the stop is heard. `dryRun` says what would be sent and sends nothing. A new command or a stop replaces
-//! the one running. Driving is armed or disarmed here, for every page and the agent alike: commands are refused while
-//! disarmed, and disarming stops a running one. A restart comes up disarmed.
+//! the one running. There is no arming (since 2026-10-05): commands always go out (api/drive/arm is a no-op).
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -19,8 +18,6 @@ const HZ: u64 = 10;
 pub struct Drive {
     /// bumped by every command: a running one stops when it no longer matches
     generation: AtomicU64,
-    /// who armed driving (agent, page, ...), or None while disarmed
-    armed_by: Mutex<Option<String>>,
     /// the running command (what `send` described, plus source and `until`, ms since the epoch)
     running: Mutex<Option<Value>>,
 }
@@ -81,16 +78,6 @@ pub fn key(topic: &str) -> String {
 }
 
 impl Drive {
-    pub fn armed_by(&self) -> Option<String> {
-        self.armed_by.lock().unwrap().clone()
-    }
-
-    /// Arms (by `source`) or disarms; returns whether a running command has to be stopped.
-    pub fn set_armed(&self, armed: bool, source: &str) -> bool {
-        *self.armed_by.lock().unwrap() = armed.then(|| source.to_string());
-        !armed && self.running().is_some()
-    }
-
     /// The command being sent now, if any.
     pub fn running(&self) -> Option<Value> {
         let mut running = self.running.lock().unwrap();
@@ -205,17 +192,10 @@ mod tests {
     }
 
     #[test]
-    fn arming() {
+    fn running() {
         let drive = Drive::default();
-        assert_eq!(drive.armed_by(), None, "a restart comes up disarmed");
-        assert!(!drive.set_armed(true, "agent"));
-        assert_eq!(drive.armed_by().as_deref(), Some("agent"));
         *drive.running.lock().unwrap() = Some(json!({ "until": now_ms() + 5000 }));
-        assert!(
-            drive.set_armed(false, "page"),
-            "disarming stops a running command"
-        );
-        assert_eq!(drive.armed_by(), None);
+        assert!(drive.running().is_some());
         *drive.running.lock().unwrap() = Some(json!({ "until": 1 }));
         assert!(
             drive.running().is_none(),

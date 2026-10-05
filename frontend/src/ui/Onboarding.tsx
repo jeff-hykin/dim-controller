@@ -12,6 +12,22 @@ const LAUNCH_ARM = { kind: "blueprint" as const, stream: "joint_command" }
 const REPLAY_HINT = "No robot? Turn on replay in the Launcher to drive a recorded one."
 /** A lost connection is usually Desktop restarting or a network blip that heals by itself: warn only past this. */
 const LOST_WARN_AFTER_MS = 8000
+/** "No blueprint running" dismissed for this tab's session (a lidar alone, say): cleared once a blueprint runs. */
+const NO_BLUEPRINT_DISMISSED = "lv.onboard.noBlueprintDismissed"
+const readFlag = () => {
+    try {
+        return sessionStorage.getItem(NO_BLUEPRINT_DISMISSED) === "1"
+    } catch {
+        return false
+    }
+}
+const writeFlag = (on: boolean) => {
+    try {
+        on ? sessionStorage.setItem(NO_BLUEPRINT_DISMISSED, "1") : sessionStorage.removeItem(NO_BLUEPRINT_DISMISSED)
+    } catch {
+        // storage blocked: the dismissal lasts until reload
+    }
+}
 
 /** True once `on` has held for `ms` without a break. */
 function useSustained(on: boolean, ms: number): boolean {
@@ -51,6 +67,14 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     const arm = useStore(app.arm.state)
     const launch = isArm ? LAUNCH_ARM : LAUNCH_DRIVABLE
     const lostAWhile = useSustained(connection.state === "lost", LOST_WARN_AFTER_MS)
+    const [noBlueprintDismissed, setNoBlueprintDismissed] = useState(readFlag)
+    const anyRunning = runs.running.length > 0
+    useEffect(() => {
+        if (anyRunning && noBlueprintDismissed) {
+            writeFlag(false)
+            setNoBlueprintDismissed(false)
+        }
+    }, [anyRunning, noBlueprintDismissed])
 
     if (lostAWhile) {
         return {
@@ -100,6 +124,10 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     }
     // nothing the Launcher started, but robot data is flowing: a blueprint run from a terminal (dimos run / dtk run)
     const outside = runs.running.length === 0 && connection.topics.some((topic) => !/^\/rpc\b|^\/dimos\//.test(topic.name))
+    if (runs.running.length === 0 && !outside && noBlueprintDismissed) {
+        // dismissed: the 3D view shows whatever topics exist; there's nothing to drive, so no key guide
+        return { message: null, blocksDriving: true }
+    }
     if (runs.running.length === 0 && !outside) {
         return {
             blocksDriving: true,
@@ -110,7 +138,10 @@ export function useOnboarding(app: ViewerApp): Onboarding {
                 body: isArm
                     ? "A blueprint is the software that connects to a robot. No arm? coordinator-mock or keyboard-teleop-xarm7 run a simulated one."
                     : `A blueprint is the software that connects to a robot. ${REPLAY_HINT}`,
-                actions: [{ label: "Open the Launcher", app: "launcher", params: launch }],
+                actions: [
+                    { label: "Open the Launcher", app: "launcher", params: launch },
+                    { label: "Dismiss", onClick: () => (writeFlag(true), setNoBlueprintDismissed(true)), primary: false },
+                ],
             },
         }
     }

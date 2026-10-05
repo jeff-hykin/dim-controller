@@ -15,7 +15,7 @@ caches:
       key: "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ="
 agent:
     description: >-
-        Controller: drive the running robot (arm, keyboard / sticks, velocity commands, stop) while watching its live 3D
+        Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D
         view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D
         annotations (boxes with labels every open page shows), and the view's settings (layers, styles, fixed frame,
         follow). Coordinates are meters in the world frame, +z up. GET api/status is the overview; GET api/view what the
@@ -26,7 +26,7 @@ agent:
             path: api/status
             description: >-
                 The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot
-                type, fixed frame, follow), layers turned on or off, driving (armed and by whom, the command being sent,
+                type, fixed frame, follow), layers turned on or off, driving (the command being sent,
                 speeds and topic), annotations and location labels, and how many pages are open.
             role: context
         -
@@ -343,25 +343,21 @@ agent:
         -
             method: POST
             path: api/drive/arm
-            description: >-
-                Arm or disarm driving, for the page's keys and sticks and for api/drive alike (every open page shows
-                it). Disarming stops the robot. A restart comes up disarmed.
+            description: 'No-op, kept for older callers: driving needs no arming (always armed). Use api/drive/stop to stop.'
             params:
                 armed:
-                    description: ''
-                    required: true
+                    description: ignored
                     type: boolean
                 source:
-                    description: 'who: agent (default) or page'
+                    description: ignored
                     type: string
         -
             method: POST
             path: api/drive
             description: >-
                 Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10
-                Hz for seconds (default 1, at most 10), then a second of zeros. Needs driving armed (POST
-                api/drive/arm), else 409. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true
-                only says what it would send (armed or not). A new command or a stop replaces a running one; every open
+                Hz for seconds (default 1, at most 10), then a second of zeros. No arming needed. topic: default the
+                drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a running one; every open
                 page shows it.
             params:
                 angular:
@@ -393,7 +389,7 @@ agent:
         -
             method: POST
             path: api/drive/stop
-            description: 'Stop driving (armed or not): cancels a running drive command and sends a second of zeros.'
+            description: 'Stop driving: cancels a running drive command and sends a second of zeros.'
             params:
                 dryRun:
                     description: ''

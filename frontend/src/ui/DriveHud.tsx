@@ -1,6 +1,6 @@
-// Driving on screen. Desktop: an arm switch and the profile's keys lighting up as they're held. Phone: arm, a left
-// stick (forward/back + turn), a right stick (strafe, or up/down for profiles with a vertical axis), boost and STOP.
-// Both show who armed it and the agent's commands (POST api/drive), dry runs included.
+// Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
+// in the bottom-left corner. Phone: a left stick (forward/back + turn), a right stick (strafe, or up/down for profiles
+// with a vertical axis), boost and STOP. Both show the agent's commands (POST api/drive), dry runs included.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
@@ -17,27 +17,16 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`
     const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
 
-    const arm = (
-        <button type="button" className={`dim-btn lg arm-button ${state.armed ? "danger armed" : ""}`} onClick={() => drive.setArmed(!state.armed)} title={state.armed ? "Disarm: stop sending commands" : "Arm: keys and sticks drive the robot"}>
-            {state.armed ? "ARMED" : "ARM"}
-        </button>
-    )
-
     if (mobile) {
         return (
-            <div className={`drive-hud mobile ${state.armed ? "armed" : ""}`}>
-                {state.armed && <Joystick label="drive" onMove={(x, y) => drive.setAxes("left-stick", { forward: y, turn: -x })} />}
+            <div className="drive-hud mobile">
+                <Joystick label="drive" onMove={(x, y) => drive.setAxes("left-stick", { forward: y, turn: -x })} />
                 <div className="hud-center">
                     {command && <span className="dim-badge hud-note">{command.dryRun ? "dry run" : command.source} · {velocity(command.linear, command.angular)}</span>}
-                    {arm}
-                    {state.armed && (
-                        <>
-                            <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST" : "fast"}</button>
-                            <button type="button" className="dim-btn danger lg stop-button" onClick={() => drive.stop()}>STOP</button>
-                        </>
-                    )}
+                    <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST" : "fast"}</button>
+                    <button type="button" className="dim-btn danger lg stop-button" onClick={() => drive.stop()}>STOP</button>
                 </div>
-                {state.armed && (usesVertical || usesStrafe) && (
+                {(usesVertical || usesStrafe) && (
                     <Joystick label={usesVertical ? "up / down" : "strafe"} onMove={(x, y) => drive.setAxes("right-stick", usesVertical ? { vertical: y, strafe: 0 } : { strafe: -x })} />
                 )}
             </div>
@@ -49,8 +38,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         return key ? <span className={`key ${lit(axis, sign) ? "down" : ""}`}>{key}</span> : <span className="key empty" />
     }
     return (
-        <div className={`dim-panel glass drive-hud ${state.armed ? "armed" : ""}`}>
-            {arm}
+        <div className={`dim-panel glass drive-hud corner ${state.publishing ? "moving" : ""}`} data-testid="drive-hud">
             <div className="keys" aria-label="drive keys">
                 <div>{usesStrafe ? cell("strafe", 1) : usesVertical ? cell("vertical", -1) : <span className="key empty" />}{cell("forward", 1)}{usesStrafe ? cell("strafe", -1) : usesVertical ? cell("vertical", 1) : <span className="key empty" />}</div>
                 <div>{cell("turn", 1)}{cell("forward", -1)}{cell("turn", -1)}</div>
@@ -59,9 +47,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
             <div className="hud-readout" data-testid="drive-readout">
                 {command
                     ? <>{command.dryRun ? "dry run · nothing sent" : `${command.source} driving`}<br /><span className="dim">{velocity(command.linear, command.angular)} · {command.seconds} s</span></>
-                    : state.armed
-                    ? <>{velocity(state.twist.linear, state.twist.angular)}<br /><span className="dim">{state.armedBy && state.armedBy !== "page" ? `armed by ${state.armedBy} · ` : ""}→ {state.topic}</span></>
-                    : <span className="dim">disarmed · nothing is sent</span>}
+                    : <>{velocity(state.twist.linear, state.twist.angular)}<br /><span className="dim">→ {state.topic || "nothing"}</span></>}
             </div>
         </div>
     )

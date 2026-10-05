@@ -104,7 +104,6 @@ export class AgentLink {
 
     /** Snapshot + live: what the events change, read again on connect and reconnect (events sent meanwhile are gone). */
     #resync() {
-        this.#syncDrive()
         fetch(this.#url("api/annotations"))
             .then((response) => response.json())
             .then((body) => {
@@ -117,16 +116,6 @@ export class AgentLink {
             .then((body) => this.app.labels.apply(body.labels ?? []))
             .catch(() => {})
         loadSettings()
-    }
-
-    /** Arming lives in the backend (a restart comes up disarmed): read it on every (re)connect. */
-    async #syncDrive() {
-        try {
-            const status = await (await fetch(this.#url("api/status"))).json()
-            this.app.drive.applyEvent({ armed: !!status.armed, armedBy: status.armedBy ?? null, command: null })
-        } catch {
-            // the next reconnect tries again
-        }
     }
 
     /** Tells the server this page is open (every REPORT_MS) and when it's the one the user is looking at (it answers
