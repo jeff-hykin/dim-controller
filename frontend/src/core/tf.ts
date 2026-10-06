@@ -1,7 +1,6 @@
 // The transform tree from tf / tf_static. Everything drawn is placed by looking its header's frame_id up here,
 // relative to the fixed frame the view is in; a frame with no path to it is reported, never drawn at the origin.
 import { Matrix4, Quaternion, Vector3 } from "three"
-import { Store } from "./store.ts"
 
 interface Edge {
     parent: string
@@ -44,8 +43,6 @@ export class TfTree {
     #cacheFixed = ""
     /** bumped on every change, so layers know when to re-place what they drew */
     version = 0
-    /** a summary for the UI, refreshed by `snapshot()` */
-    readonly summary = new Store<{ frames: number; problems: number; fixedFrame: string }>({ frames: 0, problems: 0, fixedFrame: "" })
 
     set(parent: string, child: string, translation: [number, number, number], rotation: [number, number, number, number], isStatic: boolean) {
         if (!parent || !child || parent === child) {
@@ -168,11 +165,6 @@ export class TfTree {
             roots: this.#roots(),
             cycle: [...this.#edges.keys()].filter((child) => this.#toRoot(child) === null),
             stale: edges.filter((edge) => !edge.isStatic && edge.ageMs > STALE_MS).map((edge) => edge.child),
-        }
-        const count = problems.doubleParent.length + Math.max(0, problems.roots.length - 1) + problems.cycle.length + problems.stale.length
-        const summary = this.summary.get()
-        if (summary.frames !== frames.size || summary.problems !== count || summary.fixedFrame !== fixedFrame) {
-            this.summary.set({ frames: frames.size, problems: count, fixedFrame })
         }
         return { frames: [...frames].sort(), edges, problems }
     }

@@ -16,7 +16,7 @@ const TABS: { tab: Tab; icon: string; label: string }[] = [
 export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; onTab: (tab: Tab) => void }) {
     const connection = useStore(app.connection.status)
     const stats = useStore(app.viewer.stats)
-    const tf = useStore(app.tf.summary)
+    const { issues: tfIssues } = useStore(app.tfIssues)
     const fallback = useStore(splatFallback)
     const live = connection.state === "connected"
     return (
@@ -43,7 +43,7 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
                     <button type="button" key={item.tab} className={`dim-tab tab ${tab === item.tab ? "active" : ""}`} aria-selected={tab === item.tab} title={item.label} aria-label={item.label} onClick={() => onTab(item.tab)}>
                         <Icon name={item.icon} />
                         <span className="tab-label">{item.label}</span>
-                        {item.tab === "tf" && tf.problems > 0 && <span className="dim-badge warn tab-badge">{tf.problems}</span>}
+                        {item.tab === "tf" && tfIssues.length > 0 && <span className="dim-badge warn tab-badge">{tfIssues.length}</span>}
                     </button>
                 ))}
                 <button
