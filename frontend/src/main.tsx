@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client"
-// Portal (dark) / Research (light) by prefers-color-scheme or the app's saved choice; set before the first render
+// Portal (dark) / Research (light), following dimOS Desktop's theme; set before the first render
 import { initTheme } from "./dim-app/theme.js"
 import "./dim-app/theme.css"
 import "./styles.css"

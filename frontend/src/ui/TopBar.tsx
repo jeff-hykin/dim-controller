@@ -3,7 +3,6 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
-import { ThemeToggle } from "./ThemeToggle.tsx"
 import type { Tab } from "./SidePanel.tsx"
 
 // driving's settings are Settings' first section; recording is the Record button at the top left (RecordControl)
@@ -37,7 +36,6 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
                 </button>
             )}
             <span className="spacer" />
-            <ThemeToggle className="theme-toggle" />
             <nav className="dim-tabs tabs">
                 {TABS.map((item) => (
                     <button type="button" key={item.tab} className={`dim-tab tab ${tab === item.tab ? "active" : ""}`} aria-selected={tab === item.tab} title={item.label} aria-label={item.label} onClick={() => onTab(item.tab)}>

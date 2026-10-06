@@ -352,9 +352,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .scene-menu-edit .dim-input { flex: 1; }
 .scene-note { position: fixed; z-index: 30; left: 50%; bottom: calc(24px + var(--dim-inset-bottom)); transform: translateX(-50%); padding: 8px 14px; font-size: 12px; box-shadow: var(--shadow-lg); }
 
-/* the Portal / Research switch in the top bar; on a phone the tabs need the room */
-.mobile .theme-toggle { display: none; }
-
 /* robot type (Settings) */
 .robot-type-row { display: flex; align-items: center; gap: 10px; }
 .robot-type-row .dim-select { flex: 1; }
