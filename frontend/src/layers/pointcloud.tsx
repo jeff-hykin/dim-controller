@@ -174,7 +174,7 @@ class CloudLayer {
         if (accumulate) {
             transform = this.context.tf.lookup(this.#frame, this.context.viewer.fixedFrame)
             if (!transform) {
-                this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"` })
+                this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"`, frame: this.#frame })
                 return
             }
         }

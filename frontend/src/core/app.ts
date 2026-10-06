@@ -4,6 +4,7 @@ import * as THREE from "three"
 import { Connection } from "./transport.ts"
 import { TfTree } from "./tf.ts"
 import { feedTf } from "./tfFeed.ts"
+import { checkTf, confirmed, type TfIssue } from "./tfCheck.ts"
 import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "./render/viewer.ts"
 import { FrameHighlight } from "./render/frameHighlight.ts"
@@ -57,6 +58,9 @@ export class ViewerApp {
     readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
+    /** what's wrong with the TF tree (core/tfCheck.ts), checked every 2 s; a problem shows once two checks in a row see it */
+    readonly tfIssues = new Store<{ issues: TfIssue[] }>({ issues: [] })
+    #tfSeen: TfIssue[] = []
     /** the robot's pose in the fixed frame, or null (updated every frame) */
     robotMatrix: THREE.Matrix4 | null = null
     #framed = false
@@ -91,6 +95,7 @@ export class ViewerApp {
             this.#loadRobots()
         })
         this.runs.start()
+        setInterval(() => this.#checkTf(), 2000)
         this.connection.status.subscribe(() => this.#updateRobot())
         // Settings → Robot here, in another viewer or by the agent
         this.settings.subscribe(() => this.#updateRobot())
@@ -167,6 +172,21 @@ export class ViewerApp {
         const info = this.frameInfo.get()
         if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position) {
             this.frameInfo.set({ fixedFrame, robotFound: !!position })
+        }
+    }
+
+    #checkTf() {
+        const fixedFrame = this.viewer.fixedFrame
+        const next = checkTf({
+            snapshot: this.tf.snapshot(fixedFrame),
+            fixedFrame,
+            layers: this.layers.entries.get().list.filter((entry) => entry.enabled && entry.status.frame).map((entry) => ({ name: entry.topic.name, frame: entry.status.frame! })),
+            placed: (frame) => this.tf.lookup(frame, fixedFrame) !== null,
+        })
+        const issues = confirmed(this.#tfSeen, next)
+        this.#tfSeen = next
+        if (JSON.stringify(issues) !== JSON.stringify(this.tfIssues.get().issues)) {
+            this.tfIssues.set({ issues })
         }
     }
 

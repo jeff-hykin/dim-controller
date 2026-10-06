@@ -16,6 +16,7 @@ import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
 import { ViewControls } from "./ui/ViewControls.tsx"
+import { TfFootnote } from "./ui/TfFootnote.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 
 const noRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
@@ -64,6 +65,7 @@ export function App() {
             <div className="scene-slot">
                 <div ref={host} className="scene" />
                 {app && !view.mainCamera && <ViewControls app={app} />}
+                {app && !view.mainCamera && <TfFootnote app={app} onOpen={() => setTab("tf")} />}
                 {view.mainCamera && (
                     <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => {
                         chooseLayout()

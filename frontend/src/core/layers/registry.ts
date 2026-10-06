@@ -29,6 +29,8 @@ export interface LayerStatus {
     info?: string
     /** why it isn't drawn as expected, e.g. "no TF from lidar_link to world" */
     problem?: string | null
+    /** the frame_id its data is in (for the TF check: a frame with no path to the fixed frame is flagged) */
+    frame?: string
 }
 
 export interface LayerInstance {

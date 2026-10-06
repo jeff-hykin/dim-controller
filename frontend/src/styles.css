@@ -31,6 +31,14 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
 .view-controls { position: absolute; right: 12px; bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 6px; }
 .view-control { width: 36px; height: 36px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
 .mobile .view-controls { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: 8px; }
+/* the broken-TF note: one quiet line over the view's bottom-right corner, above recenter / top-down */
+.tf-footnote { position: absolute; right: calc(12px + var(--dim-inset-right)); bottom: calc(148px + var(--dim-inset-bottom)); z-index: 4; max-width: min(46vw, 440px);
+    display: flex; align-items: center; gap: 5px; padding: 3px 8px; border: 0; border-radius: 6px; cursor: pointer; font: 500 11px/1.4 var(--sans); color: var(--warn);
+    background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(6px); }
+.tf-footnote svg { flex: none; }
+.tf-footnote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-footnote:hover span { text-decoration: underline; }
+.mobile .tf-footnote { bottom: auto; top: calc(62px + 28vw + 86px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); max-width: calc(100vw - 16px - var(--dim-inset-right)); }
 .scene-label.frame-highlight { font-size: 12.5px; font-weight: 700; color: var(--primary-fg); background: var(--primary); border-left-color: var(--fg); z-index: 2; }
 
 .scene-label { font: 600 11px/1.2 var(--sans); color: var(--fg); padding: 2px 6px; border-radius: 4px; white-space: nowrap;
@@ -167,6 +175,7 @@ h3.dim-label.first { margin-top: 4px; }
 .tf-frame { display: flex; justify-content: space-between; padding: 1px 4px; margin: 0 -4px; border-radius: 4px; cursor: default; }
 .tf-frame:hover, .tf-frame.highlighted { background: color-mix(in srgb, var(--primary) 16%, transparent); }
 .tf-frame.stale { color: var(--warn); }
+.tf-frame.flagged { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .tf-age { color: var(--muted-fg); }
 
 /* ── cameras ── */

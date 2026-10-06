@@ -253,6 +253,8 @@ class MarkerLayer {
         this.context.setStatus({
             info: `${this.#kept.size} markers`,
             problem: missing.size ? `no TF path to "${frame.fixedFrame}" from ${[...missing].map((name) => `"${name}"`).join(", ")}` : null,
+            // the TF check flags one frame per layer: the first unplaced one
+            frame: [...missing][0] ?? "",
         })
     }
 

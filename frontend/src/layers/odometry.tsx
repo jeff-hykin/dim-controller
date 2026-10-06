@@ -70,7 +70,7 @@ class PoseLayer {
         this.#count++
         const world = this.context.tf.lookup(this.#frame, this.context.viewer.fixedFrame)
         if (!world) {
-            this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"` })
+            this.context.setStatus({ problem: `no TF path from "${this.#frame}" to "${this.context.viewer.fixedFrame}"`, frame: this.#frame })
             return
         }
         const placed = world.clone().multiply(this.#pose)
@@ -107,7 +107,7 @@ class PoseLayer {
             this.#axes.visible = !!world
             if (world) {
                 this.#axes.matrix.multiplyMatrices(world, this.#pose).scale(new THREE.Vector3().setScalar(this.settings.get().axesSize))
-                this.context.setStatus({ problem: null })
+                this.context.setStatus({ problem: null, frame: this.#frame })
             }
         }
         if (frame.now - this.#since > 1000) {

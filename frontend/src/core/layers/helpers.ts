@@ -15,7 +15,7 @@ export function placeInFixedFrame(context: LayerContext, object: THREE.Object3D,
             object.visible = false
             context.viewer.requestRender()
         }
-        context.setStatus({ problem: `no TF path from "${frame}" to "${fixedFrame}"` })
+        context.setStatus({ problem: `no TF path from "${frame}" to "${fixedFrame}"`, frame })
         return false
     }
     if (!object.visible || !object.matrix.equals(matrix)) {
@@ -24,7 +24,7 @@ export function placeInFixedFrame(context: LayerContext, object: THREE.Object3D,
         object.visible = true
         context.viewer.requestRender()
     }
-    context.setStatus({ problem: frame === "" ? "no frame_id: drawn in the fixed frame" : null })
+    context.setStatus({ problem: frame === "" ? "no frame_id: drawn in the fixed frame" : null, frame })
     return true
 }
 

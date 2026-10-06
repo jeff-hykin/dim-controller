@@ -111,7 +111,7 @@ export class LayerManager {
             },
             setStatus: (status: LayerStatus) => {
                 const current = this.entries.get().list.find((other) => other.topic.key === key)?.status
-                if (current?.info !== status.info || current?.problem !== status.problem) {
+                if (!current || (Object.keys(status) as (keyof LayerStatus)[]).some((field) => current[field] !== status[field])) {
                     this.#patch(key, { status: { ...current, ...status } })
                 }
             },
