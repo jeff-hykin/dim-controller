@@ -1,4 +1,4 @@
-// Recording, floating at the top left of the view (a panel opens below it): a Record button (while recording: its time, size and stream count) and "…", which opens
+// Recording, floating at the top left of the view (a panel opens below it): a red Record button (while recording: "Stop recording", its time, size and stream count) and "…", which opens
 // the options: the folder, the biggest streams by live bandwidth (each can be left out), See recordings, and an
 // Advanced section (image format, chunk compression, new topics, dimos logs, every stream with its rate and a max
 // rate). Every topic is recorded unless turned off; the options are saved in the backend (lv.record.options).
@@ -64,9 +64,10 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                         <span className="record-dot" />
                         {active
                             ? (
-                                <span className="record-live dim-mono" data-testid="record-live">
-                                    <span className="record-clock">{formatClock(status.recording.seconds)}</span>
-                                    <span className="record-extra"> · {formatBytes(status.recording.bytes)} · {status.keys.length} streams</span>
+                                <span className="record-live" data-testid="record-live">
+                                    <span className="record-label">{busy ? "Stopping…" : "Stop recording"}</span>
+                                    <span className="record-clock dim-mono">{formatClock(status.recording.seconds)}</span>
+                                    <span className="record-extra dim-mono">· {formatBytes(status.recording.bytes)} · {status.keys.length} streams</span>
                                 </span>
                             )
                             : <span className="record-label">{busy ? "Starting…" : "Record"}</span>}

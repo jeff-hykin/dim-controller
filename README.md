@@ -142,7 +142,7 @@ had in its map panel.
 
 ## Recording
 
-**Record** in the top bar writes an mcap of every stream on the bus (while recording it shows the time, size and how
+The red **Record** button (top left) writes an mcap of every stream on the bus (while recording it reads **Stop recording** with the time, size and how
 many streams); streams that appear mid-recording join it (the backend finds them, so `POST api/recorder/start` with no
 keys records the same set). **…** opens the options: the folder (Desktop's shared recordings folder by default, under
 `controller/`, or `live-viewer/` if that exists from before the rename; else `recordings` in the app's data dir), the
