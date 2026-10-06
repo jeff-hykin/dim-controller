@@ -11,7 +11,7 @@ import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
 import { ArmHud } from "./ui/ArmHud.tsx"
-import { useMobile } from "./ui/useMobile.ts"
+import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
@@ -32,6 +32,7 @@ export function App() {
     const host = useRef<HTMLDivElement>(null)
     const [app, setApp] = useState<ViewerApp | null>(null)
     const mobile = useMobile()
+    useLockedViewport(mobile)
     // no panel open at first: the 3D view gets the whole screen, and the Record button the top-left corner
     const [tab, setTab] = useState<Tab | null>(null)
 

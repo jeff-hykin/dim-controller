@@ -2,6 +2,7 @@
 // screen, which shrinks the 3D view into a picture-in-picture. Depth is drawn as a colormap; 2D detections can be
 // overlaid on any panel.
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
@@ -10,6 +11,7 @@ import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
 import { Icon } from "./icons.tsx"
+import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 
 export interface PanelState {
     id: number
@@ -287,49 +289,68 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         addEventListener("pointerup", up)
     }
 
-    // a panel the user hasn't resized fits the image's aspect (no bars); one saved before (often tiny) starts at the default
-    useEffect(() => {
-        if (isMain || mobile || panel.sized) {
-            return
-        }
-        const width = panel.fitted ? panel.width : defaultSize().width
-        if (!size.width || !size.height) {
-            if (!panel.fitted) {
-                onChange({ ...defaultSize(), fitted: true })
+    // size: this viewer's width (dragged with the corner handle, kept in localStorage), the height from the image's
+    // aspect, so there are never bars; until the image's size is known, the default 16:9
+    const [viewerWidth, setViewerWidth] = useState<number | null>(() => loadPanelWidth(panel.id))
+    const aspect = size.width && size.height ? size.height / size.width : 9 / 16
+    const width = clampWidth(viewerWidth ?? (panel.fitted ? panel.width : defaultSize().width), aspect)
+    const height = Math.round(width * aspect) + HEAD_PX
+    // the handle sits on the corner facing into the screen: bottom-left for a panel on the right half (the default)
+    const handleLeft = panel.x < 0 || panel.x + width / 2 > (globalThis.innerWidth || 1280) / 2
+    const startResize = (event: React.PointerEvent) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const box = element.current!.getBoundingClientRect()
+        const startX = event.clientX, startWidth = box.width
+        const handle = event.currentTarget as HTMLElement
+        handle.setPointerCapture(event.pointerId)
+        let latest = startWidth
+        const move = (moved: PointerEvent) => {
+            const grown = handleLeft ? startX - moved.clientX : moved.clientX - startX
+            latest = clampWidth(startWidth + grown, aspect)
+            // the far edge stays put: growing to the left moves the left edge
+            element.current!.style.width = `${latest}px`
+            element.current!.style.height = `${Math.round(latest * aspect) + HEAD_PX}px`
+            if (handleLeft && panel.x >= 0) {
+                element.current!.style.left = `${box.right - latest}px`
             }
-            return
         }
-        const head = element.current?.querySelector<HTMLElement>(".camera-head")?.offsetHeight ?? HEAD_PX
-        const height = Math.round(width * size.height / size.width) + head
-        if (!panel.fitted || width !== panel.width || Math.abs(height - panel.height) > 2) {
-            onChange({ width, height, fitted: true })
+        const up = () => {
+            handle.removeEventListener("pointermove", move)
+            handle.removeEventListener("pointerup", up)
+            handle.removeEventListener("pointercancel", up)
+            setViewerWidth(latest)
+            savePanelWidth(panel.id, latest)
+            if (handleLeft && panel.x >= 0) {
+                onChange({ x: box.right - latest })
+            }
         }
-    }, [isMain, mobile, panel.sized, panel.fitted, panel.width, panel.height, size.width, size.height])
+        handle.addEventListener("pointermove", move)
+        handle.addEventListener("pointerup", up)
+        handle.addEventListener("pointercancel", up)
+    }
 
-    // remember a resize
+    // the quality menu (gear over the picture)
+    const [qualityOpen, setQualityOpen] = useState(false)
+    const quality = useQuality(app, topic, depth)
     useEffect(() => {
-        const box = element.current
-        if (!box || isMain || mobile) {
+        if (!qualityOpen) {
             return
         }
-        let timer: ReturnType<typeof setTimeout>
-        const observer = new ResizeObserver(() => {
-            clearTimeout(timer)
-            timer = setTimeout(() => {
-                if (Math.abs(box.offsetWidth - panel.width) > 2 || Math.abs(box.offsetHeight - panel.height) > 2) {
-                    onChange({ width: box.offsetWidth, height: box.offsetHeight, sized: true })
-                }
-            }, 300)
-        })
-        observer.observe(box)
-        return () => observer.disconnect()
-    }, [isMain, mobile, panel.width, panel.height])
+        const close = (event: Event) => {
+            if (!(event.target as HTMLElement).closest?.(".camera-quality, .quality-menu")) {
+                setQualityOpen(false)
+            }
+        }
+        addEventListener("pointerdown", close, true)
+        return () => removeEventListener("pointerdown", close, true)
+    }, [qualityOpen])
 
     const floating = !isMain
     const style: React.CSSProperties = floating && !mobile
-        ? { width: panel.width, height: panel.height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * (panel.height + 12) }) }
+        ? { width, height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * (height + 12) }) }
         : mobile && floating && size.width && size.height
-        ? { height: `calc(42vw * ${(size.height / size.width).toFixed(4)} + ${HEAD_PX}px)` }
+        ? { "--cam-aspect": (size.height / size.width).toFixed(4) } as React.CSSProperties
         : {}
     const info = size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
@@ -362,7 +383,82 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
                 {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}
                 <canvas ref={overlayCanvas} className="camera-overlay" />
+                {topic && !depth && (!mobile || isMain) && (
+                    <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+                        <button type="button" className="dim-btn icon quality-gear" title={`Video quality: ${presetFor(quality).label}`} aria-label="Video quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
+                            <Icon name="settings" size={14} />
+                        </button>
+                        {qualityOpen && createPortal(
+                            <div className="dim-panel quality-menu" role="menu" aria-label="Video quality" style={menuPosition(element.current)} onClick={(event) => event.stopPropagation()}>
+                                <div className="quality-title">Video quality</div>
+                                {QUALITY_PRESETS.map((preset) => (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        role="menuitemradio"
+                                        aria-checked={quality === preset.id}
+                                        className={`quality-option ${quality === preset.id ? "on" : ""}`}
+                                        onClick={() => {
+                                            app.video.setQuality(topic, preset.id)
+                                            setQualityOpen(false)
+                                        }}
+                                    >
+                                        <span className="quality-name">{preset.label}</span>
+                                        <span className="quality-about">{preset.about}</span>
+                                    </button>
+                                ))}
+                            </div>,
+                            document.body,
+                        )}
+                    </div>
+                )}
             </div>
+            {floating && !mobile && (
+                <div className={`camera-resize ${handleLeft ? "left" : "right"}`} title="Drag to resize" aria-label="Resize the camera" onPointerDown={startResize} />
+            )}
         </div>
     )
+}
+
+/** The smallest and largest a floating camera gets: at least 200 px wide, at most the window between the top bar and
+ * the drive guide (so the handle in the corner stays reachable). */
+function clampWidth(width: number, aspect: number) {
+    const maxWidth = Math.min((globalThis.innerWidth || 1280) - 24, ((globalThis.innerHeight || 800) - 60 - 110 - HEAD_PX) / aspect)
+    return Math.round(Math.max(Math.min(200, maxWidth), Math.min(maxWidth, width)))
+}
+
+/** panel id → width this viewer dragged it to (per viewer: a phone and a desktop don't share it) */
+const SIZE_KEY = "lv.cameras.width"
+const loadPanelWidth = (id: number): number | null => readLocal<Record<string, number>>(SIZE_KEY, {})[id] ?? null
+const savePanelWidth = (id: number, width: number) => writeLocal(SIZE_KEY, { ...readLocal<Record<string, number>>(SIZE_KEY, {}), [id]: width })
+
+/** The topic's quality preset as the shared source has it (changes in another panel of the same topic show here). */
+function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQuality {
+    const [quality, setQuality] = useState<VideoQuality>("auto")
+    useEffect(() => {
+        if (!topic || depth) {
+            return
+        }
+        const source = app.video.acquire(topic)
+        const apply = () => setQuality(source.quality.get().quality)
+        apply()
+        const unsubscribe = source.quality.subscribe(apply)
+        return () => {
+            unsubscribe()
+            app.video.release(topic)
+        }
+    }, [app, topic?.key, depth])
+    return quality
+}
+
+/** The quality menu hangs from the panel's top-right corner, kept inside the window (a portal: the panel clips). */
+function menuPosition(panel: HTMLElement | null): React.CSSProperties {
+    const box = panel?.getBoundingClientRect()
+    if (!box) {
+        return {}
+    }
+    const menuWidth = 236
+    const left = Math.max(8, Math.min(box.right - menuWidth - 6, innerWidth - menuWidth - 8))
+    const top = Math.min(box.top + 33 + 38, innerHeight - 220)
+    return { position: "fixed", left, top, zIndex: 40 }
 }

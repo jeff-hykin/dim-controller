@@ -1,7 +1,8 @@
 // Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription.
-// Color images arrive as the bridge's H.264 track; depth arrives lossless as fields (16UC1 mm / 32FC1 m).
+// Color images arrive as the bridge's H.264 track, sized and paced by the viewer's quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
 import type { Connection, Topic } from "./transport.ts"
+import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
 
 export interface VideoState {
     stream: MediaStream | null
@@ -25,6 +26,8 @@ interface Source {
     stop: () => void
     video: Store<VideoState>
     depth: Store<{ image: DepthImage | null }>
+    /** this viewer's quality preset (core/videoQuality.ts): the bridge's size / rate tradeoff */
+    quality: Store<{ quality: VideoQuality }>
     /** a playing element for textures (the 3D projection), made on first use */
     element: HTMLVideoElement | null
 }
@@ -41,16 +44,26 @@ export class VideoSources {
         }
         const video = new Store<VideoState>({ stream: null, width: 0, height: 0, fps: 0 })
         const depth = new Store<{ image: DepthImage | null }>({ image: null })
+        const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "auto" : loadQuality(topic.key) })
+        source = { users: 1, stop: () => {}, video, depth, quality, element: null }
+        this.#open(topic, source)
+        this.#sources.set(topic.key, source)
+        return source
+    }
+
+    /** Subscribes with the source's quality preset (color) or the lossless depth codec. */
+    #open(topic: Topic, source: Source) {
+        const { video, depth } = source
         const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos-compressed-" : "dimos-"
         let frames = 0
         let since = performance.now()
-        const stop = isDepthTopic(topic)
+        source.stop = isDepthTopic(topic)
             ? this.connection.subscribe(topic.key, { delivery: "latest", maxHz: 15, codec: `${prefix}depth` }, (message) => {
                 if (message.decoded) {
                     depth.set({ image: message.decoded as DepthImage })
                 }
             })
-            : this.connection.subscribe(topic.key, { delivery: "latest", maxHz: 30, codec: `${prefix}image` }, (message) => {
+            : this.connection.subscribe(topic.key, { delivery: "latest", ...presetFor(source.quality.get().quality).options, codec: `${prefix}image` }, (message) => {
                 frames++
                 const now = performance.now()
                 const state = video.get()
@@ -66,9 +79,18 @@ export class VideoSources {
                     video.set({ stream: message.mediaStream ?? state.stream, width, height, fps })
                 }
             })
-        source = { users: 1, stop, video, depth, element: null }
-        this.#sources.set(topic.key, source)
-        return source
+    }
+
+    /** Another quality preset for a color topic: saved for this viewer, and the bridge subscription reopened with it. */
+    setQuality(topic: Topic, quality: VideoQuality) {
+        saveQuality(topic.key, quality)
+        const source = this.#sources.get(topic.key)
+        if (!source || isDepthTopic(topic) || source.quality.get().quality === quality) {
+            return
+        }
+        source.quality.set({ quality })
+        source.stop()
+        this.#open(topic, source)
     }
 
     /** A muted, playing <video> of the stream (not in the document), for VideoTexture. */

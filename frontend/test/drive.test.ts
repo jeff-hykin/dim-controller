@@ -97,3 +97,21 @@ Deno.test("the backend's drive events carry the agent's commands; older events w
     assert(puts.length > 0, "keys always drive")
     drive.dispose()
 })
+
+Deno.test("a release sends a zero at once, not at the next tick", async () => {
+    localStorage.clear()
+    const { connection, puts } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
+    drive.setAxes("left-stick", { forward: 0.5, strafe: -0.5 })
+    await wait(120)
+    assert(puts.at(-1)!.twist.linear.x > 0)
+    const before = puts.length
+    drive.setAxes("left-stick", { forward: 0, strafe: 0 })
+    assertEquals(puts.length, before + 1, "published synchronously on release")
+    assertEquals(puts.at(-1)!.twist.linear, { x: 0, y: 0, z: 0 })
+    drive.setAxes("right-stick", { turn: 1 })
+    drive.stop()
+    assertEquals(puts.at(-1)!.twist.angular.z, 0, "STOP is heard at once too")
+    drive.dispose()
+})

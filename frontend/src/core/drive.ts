@@ -200,7 +200,12 @@ export class Drive {
             vertical: settings.vertical * (boosted ? boost.linear : 1),
         }
         const twist = (this.profile.drive.twist ?? defaultTwist)(axes, speeds)
+        const wasMoving = isMoving(this.state.get().twist)
         this.state.update({ axes, twist })
+        // a release (or stop) is heard now, not at the next tick: the zero goes out at once, then the usual flush
+        if (wasMoving && !isMoving(twist)) {
+            this.#tick()
+        }
     }
 
     #closeAll() {
@@ -240,7 +245,7 @@ export class Drive {
     #tick() {
         const state = this.state.get()
         const { twist } = state
-        const moving = [...twist.linear, ...twist.angular].some((value) => value !== 0)
+        const moving = isMoving(twist)
         if (moving) {
             this.#stopFlush = Math.round(this.profile.drive.publishHz)
         } else if (this.#stopFlush > 0) {
@@ -327,6 +332,8 @@ export class Drive {
         this.#controlPublishers.forEach((publisher) => publisher.close())
     }
 }
+
+const isMoving = (twist: Twist) => [...twist.linear, ...twist.angular].some((value) => value !== 0)
 
 const xyz = ([x, y, z]: [number, number, number]) => ({ x, y, z })
 

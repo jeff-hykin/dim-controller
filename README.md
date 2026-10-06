@@ -59,7 +59,15 @@ something changed. Settings → Stats shows fps, CPU per frame and bridge-to-scr
 ## Cameras
 
 One camera panel opens on the profile's preferred camera; `+` adds more, each with its own topic and an optional 2D
-detection overlay. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back). With no point
+detection overlay. Drag a floating panel's inner corner (bottom-left for one on the right) to resize it; the
+picture keeps its aspect, between 200 px wide and the window. The size is this viewer's (localStorage), not a shared
+setting.
+
+The gear over a camera (on hover) picks its quality, also per viewer: **Auto** (the bridge decides, up to 30 fps),
+**Smooth** (fits 640×360, up to 30 fps, keeps the rate when bandwidth is short), **Balanced** (up to 720p, 20 fps) or
+**Sharp** (full size, never shrunk, up to 10 fps, drops frames before detail). They are bridge subscription options
+(`maxHz`, `maxResolution`, `minResolutionScale`, `minQuality`, `qualityToHzTradeoff`), so the bridge encodes and sends
+less; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back). With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
 
@@ -131,8 +139,14 @@ start and stop. The agent's `POST api/drive` still sends to one topic (its `topi
 The agent drives with `POST api/drive` (no arming needed; `dryRun` sends nothing); the drive HUD shows its command, and
 "dry run · nothing sent" for a dry run.
 
-On a phone the panels become a bottom sheet and driving moves to on-screen sticks (left: drive and turn; right: strafe,
-or up/down for a profile with a vertical axis), with FAST and STOP buttons.
+On a phone the panels become a bottom sheet and driving moves to two thumb sticks: the left translates (forward/back,
+plus strafe for a profile that strafes), the right turns (plus up/down for a profile with a vertical axis), with a big
+STOP between them and FAST. Each stick's zone is a big share of the screen's bottom and the stick centers where the
+thumb lands. The output has a dead zone and an expo curve, and eases toward the thumb while held
+([core/stick.ts](frontend/src/core/stick.ts)); letting go is never eased: a lift, a touch cancel, a lost pointer, the
+page losing focus or hiding, a rotation or STOP zero the stick at once, and the zero is published right then, not at the
+next tick. STOP also lets go of a held thumb (it has to lift to drive again). The page doesn't scroll, pan or zoom while
+driving. Sticks publish through the same drive loop and topics as the keys.
 
 ## Costmap
 

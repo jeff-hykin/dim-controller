@@ -25,7 +25,7 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
     inset: auto 16px 96px auto; width: min(36vw, 420px); height: min(26vw, 300px); z-index: 6;
     border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
 }
-.mobile.camera-main .scene-slot { width: 42vw; height: 30vw; bottom: calc(176px + env(safe-area-inset-bottom) + var(--dim-inset-bottom)); right: 10px; }
+.mobile.camera-main .scene-slot { width: 42vw; height: 30vw; bottom: calc(min(40vh, 330px) + 28px + env(safe-area-inset-bottom) + var(--dim-inset-bottom)); right: 10px; }
 .pip-expand { position: absolute; top: 6px; right: 6px; z-index: 2; }
 /* recenter / top-down, over the view's bottom-right corner (above the add-camera button) */
 .view-controls { position: absolute; right: 12px; bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 6px; }
@@ -169,6 +169,9 @@ body.dark .record-split { box-shadow: var(--record-glow); }
 .record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
 .record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
 .mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: calc(8px + var(--dim-inset-left)); padding: 4px; }
+/* a camera on the whole screen keeps its header (topic picker) clear of Record */
+.mobile.camera-main .record-control { top: calc(92px + env(safe-area-inset-top)); }
+.mobile.camera-main .record-options { top: calc(138px + env(safe-area-inset-top)); }
 .mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
 .mobile .record-extra { display: none; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 8px; }
@@ -191,7 +194,31 @@ h3.dim-label.first { margin-top: 4px; }
 .camera-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 /* black = the video's letterbox, in either theme */
 .camera-panel { pointer-events: auto; display: flex; flex-direction: column; overflow: hidden; background: #000; }
-.camera-panel.floating { position: absolute; resize: both; min-width: 180px; min-height: 120px; }
+.camera-panel.floating { position: absolute; min-width: 180px; min-height: 120px; }
+/* drag-to-resize: the corner facing into the screen (bottom-left for a panel on the right), aspect kept (CameraPanels.tsx) */
+.camera-resize { position: absolute; bottom: 0; width: 22px; height: 22px; z-index: 3; touch-action: none; }
+.camera-resize.left { left: 0; cursor: nesw-resize; }
+.camera-resize.right { right: 0; cursor: nwse-resize; }
+.camera-resize::before { content: ""; position: absolute; bottom: 4px; width: 11px; height: 11px; border-bottom: 2px solid rgba(255, 255, 255, 0.55); opacity: 0.7;
+    transition: opacity 0.15s, border-color 0.15s, filter 0.15s; }
+.camera-resize.left::before { left: 4px; border-left: 2px solid rgba(255, 255, 255, 0.55); }
+.camera-resize.right::before { right: 4px; border-right: 2px solid rgba(255, 255, 255, 0.55); }
+.camera-panel:hover .camera-resize::before { opacity: 1; }
+.camera-resize:hover::before, .camera-resize:active::before { border-color: #fff; filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.8)); }
+/* the quality gear: over the picture's top-right corner, on hover (always on a touch screen) */
+.camera-quality { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.quality-gear.dim-btn.icon { width: 26px; height: 26px; padding: 0; color: #fff; background: rgba(5, 7, 13, 0.55); border-color: rgba(255, 255, 255, 0.35);
+    opacity: 0; transition: opacity 0.15s, box-shadow 0.15s; }
+.camera-panel:hover .quality-gear, .camera-quality.open .quality-gear, .quality-gear:focus-visible { opacity: 1; }
+@media (hover: none) { .quality-gear.dim-btn.icon { opacity: 0.85; } }
+.quality-gear.dim-btn.icon:hover, .camera-quality.open .quality-gear { border-color: #fff; box-shadow: 0 0 8px rgba(255, 255, 255, 0.45); background: rgba(5, 7, 13, 0.75); }
+.quality-menu { width: 236px; padding: 4px; display: flex; flex-direction: column; box-shadow: var(--shadow-md); }
+.quality-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-fg); padding: 4px 8px 6px; }
+.quality-option { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border: 1px solid transparent; }
+.quality-option:hover, .quality-option:focus-visible { background: var(--accent); border-color: var(--border-strong); }
+.quality-option.on { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+.quality-name { font-size: 12px; font-weight: 600; color: var(--fg); }
+.quality-about { font-size: 10.5px; color: var(--muted-fg); line-height: 1.3; }
 .camera-panel.main { position: absolute; inset: 48px 0 0 0; border-radius: 0; border: 0; z-index: 1; }
 .camera-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: move; flex: none;
     background: color-mix(in srgb, var(--card) 88%, transparent); border-bottom: 1px solid var(--border); }
@@ -226,21 +253,56 @@ h3.dim-label.first { margin-top: 4px; }
 .key.shift { width: 30px; }
 .hud-readout { font: 11px var(--mono); min-width: 190px; }
 
-.drive-hud.mobile { left: 0; right: 0; bottom: var(--dim-inset-bottom); transform: none; border-radius: 0; justify-content: space-between; align-items: flex-end;
-    background: none; border: 0; box-shadow: none; backdrop-filter: none; padding: 10px 14px calc(14px + env(safe-area-inset-bottom)); pointer-events: none; }
-.drive-hud.mobile > * { pointer-events: auto; }
-.hud-center { display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.joystick { position: relative; border-radius: 50%; touch-action: none; user-select: none; -webkit-user-select: none;
-    background: radial-gradient(circle, color-mix(in srgb, var(--card) 55%, transparent), color-mix(in srgb, var(--card) 80%, transparent));
-    border: 1px solid var(--border); box-shadow: var(--shadow-md); backdrop-filter: blur(8px); }
-.joystick-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%;
-    background: var(--primary); box-shadow: var(--shadow-md); pointer-events: none; }
-.joystick-label { position: absolute; top: -18px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.1em; }
+/* phone: two thumb zones filling the bottom of the screen, STOP between them (ui/Joystick.tsx). The zones take the
+   thumb anywhere (the stick centers where it lands); nothing under them scrolls or zooms. */
+.drive-hud.mobile { left: 0; right: 0; bottom: var(--dim-inset-bottom); transform: none; border-radius: 0; padding: 0 0 env(safe-area-inset-bottom);
+    display: grid; grid-template-columns: 1fr 104px 1fr; align-items: stretch; gap: 0; height: min(40vh, 330px);
+    background: none; border: 0; box-shadow: none; backdrop-filter: none; pointer-events: none; touch-action: none;
+    --stick: clamp(112px, min(33vw, 26vh), 160px); --stick-white: rgba(255, 255, 255, 0.4); }
+.drive-hud.mobile > .stick-zone, .hud-center > * { pointer-events: auto; }
+/* the column between the sticks only takes taps on its buttons (a camera can sit above them) */
+.drive-hud.mobile > .hud-center { pointer-events: none; }
+.stick-zone { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; min-width: 0; }
+.stick-base { position: absolute; left: 50%; top: 55%; width: var(--stick); height: var(--stick); transform: translate(-50%, -50%); border-radius: 50%;
+    border: 1px solid var(--stick-white); background: radial-gradient(circle, color-mix(in srgb, var(--card) 35%, transparent), color-mix(in srgb, var(--card) 70%, transparent));
+    backdrop-filter: blur(6px); pointer-events: none; transition: border-color 0.12s, box-shadow 0.12s; }
+.stick-zone.active .stick-base { border-color: #fff; box-shadow: 0 0 14px rgba(255, 255, 255, 0.35), inset 0 0 10px rgba(255, 255, 255, 0.12); transition: none; }
+.stick-knob { position: absolute; left: 50%; top: 50%; width: 44%; height: 44%; margin: -22% 0 0 -22%; border-radius: 50%; pointer-events: none;
+    border: 1.5px solid rgba(255, 255, 255, 0.8); background: color-mix(in srgb, var(--primary) 55%, transparent); }
+.stick-zone.active .stick-knob { background: var(--primary); border-color: #fff; box-shadow: 0 0 12px rgba(255, 255, 255, 0.6); }
+/* which way it moves: a cross, or one bar for a single-axis stick */
+.stick-guide { position: absolute; inset: 18%; pointer-events: none; opacity: 0.35; }
+.stick-guide::before, .stick-guide::after { content: ""; position: absolute; background: #fff; }
+.stick-guide.xy::before, .stick-guide.y::before { left: 50%; top: 0; bottom: 0; width: 1px; }
+.stick-guide.xy::after, .stick-guide.x::after { top: 50%; left: 0; right: 0; height: 1px; }
+.stick-label { position: absolute; left: -20px; right: -20px; bottom: calc(100% + 6px); text-align: center; font: 600 10px var(--sans); color: var(--fg);
+    text-transform: uppercase; letter-spacing: 0.12em; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.hud-center { position: relative; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: flex-end; padding: 0 0 16px; min-width: 0; }
+/* the live velocity: above the sticks on a portrait phone (the center column is narrow), under FAST in landscape */
+.hud-note { font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drive-hud.mobile .hud-note { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); max-width: 92vw; background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--fg); }
+.app .drive-hud.mobile .stop-button { --stop: #e5484d; width: 100%; height: 72px; padding: 0; font: 800 20px var(--sans); letter-spacing: 0.08em;
+    color: #fff; background: var(--stop); border: 2px solid rgba(255, 255, 255, 0.85); box-shadow: 0 0 14px rgba(255, 70, 70, 0.55); touch-action: manipulation; }
+.app .drive-hud.mobile .stop-button:active, .app .drive-hud.mobile .stop-button:hover { background: #c62f34; box-shadow: 0 0 20px rgba(255, 255, 255, 0.6); }
+.app .drive-hud.mobile .boost-button { width: 100%; height: 40px; padding: 0; font-weight: 700; touch-action: manipulation; background: color-mix(in srgb, var(--card) 80%, transparent); }
+.drive-hud.mobile .boost-button.on { border-color: #fff; box-shadow: 0 0 10px rgba(255, 255, 255, 0.4); }
+/* landscape phone: the sticks sit in the lower corners, the center column stays narrow */
+@media (orientation: landscape) and (max-height: 520px) {
+    .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
+    .stick-base { top: 58%; }
+    .hud-center { padding-bottom: 8px; gap: 6px; }
+    .app .drive-hud.mobile .stop-button { height: 58px; width: min(100%, 150px); }
+    .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
+    .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; }
+}
 
 .stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(96px + var(--dim-inset-bottom)); z-index: 6; font-size: 11px; padding: 6px 9px; pointer-events: none; }
 .desktop .side-panel ~ .stats-overlay { left: calc(362px + var(--dim-inset-left)); }
 
 /* ── phone ── */
+/* no pan, pinch or double-tap zoom anywhere but the panels that scroll (ui/useMobile.ts does the same for iOS) */
+html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll-behavior: none; }
+.mobile .panel-body, .mobile .record-options, .mobile .record-topics { touch-action: pan-y; }
 .mobile .topbar { height: calc(44px + env(safe-area-inset-top)); gap: 6px; padding-left: 10px; padding-right: 4px; }
 .mobile .topbar .title, .mobile .stats-pill, .mobile .tab-label, .mobile .fullscreen-tab { display: none; }
 .mobile .topbar .dim-badge { padding: 3px 8px; }
@@ -249,7 +311,7 @@ h3.dim-label.first { margin-top: 4px; }
 .mobile .conn-pill { min-width: 0; flex-shrink: 1; overflow: hidden; }
 .mobile .tabs { flex-wrap: nowrap; flex-shrink: 0; }
 .mobile .tab { padding: 8px 7px; }
-.mobile .camera-panel.floating { position: absolute; top: calc(52px + env(safe-area-inset-top)); right: 8px; width: 42vw; height: calc(42vw * 9 / 16 + 33px); resize: none; }
+.mobile .camera-panel.floating { position: absolute; top: calc(52px + env(safe-area-inset-top)); right: 8px; --cam-w: 42vw; width: var(--cam-w); height: calc(var(--cam-w) * var(--cam-aspect, 0.5625) + 33px); }
 .mobile .camera-panel.floating ~ .camera-panel.floating { display: none; }
 .mobile .camera-panel.floating .camera-head select, .mobile .camera-panel.floating .camera-info { display: none; }
 .mobile .camera-panel.main { inset: calc(44px + env(safe-area-inset-top)) 0 0 0; }
@@ -315,3 +377,12 @@ h3.dim-label.first { margin-top: 4px; }
 .ok-text { color: var(--ok); }
 .warn-text { color: var(--warn); font-size: 12px; margin: 6px 0; }
 .arm-panel code, .drive-panel code { font: 11px var(--mono); }
+
+/* landscape phone: the camera sits top-center between the sticks; recenter / top-down move left, under Record */
+@media (orientation: landscape) and (max-height: 520px) {
+    .mobile .camera-panel.floating { right: auto; left: 50%; transform: translateX(-50%); --cam-w: min(30vw, 260px); }
+    .mobile .view-controls { top: calc(100px + env(safe-area-inset-top)); right: auto; left: calc(8px + var(--dim-inset-left)); flex-direction: row; }
+    .mobile .tf-footnote { top: calc(100px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); max-width: 30vw; }
+    /* with the camera main, the 3D picture-in-picture takes the same spot between the sticks */
+    .mobile.camera-main .scene-slot { top: calc(52px + env(safe-area-inset-top)); bottom: auto; right: auto; left: 50%; transform: translateX(-50%); width: min(30vw, 260px); height: min(18vw, 156px); }
+}

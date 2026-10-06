@@ -1,10 +1,10 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
-// in the bottom-left corner. Phone: a left stick (forward/back + turn), a right stick (strafe, or up/down for profiles
-// with a vertical axis), boost and STOP. Both show the agent's commands (POST api/drive), dry runs included.
+// in the bottom-left corner. Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
+// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
-import { Joystick } from "./Joystick.tsx"
+import { Joystick, releaseAllSticks } from "./Joystick.tsx"
 
 export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const drive = app.drive
@@ -18,17 +18,43 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
 
     if (mobile) {
+        const moving = state.publishing && [...state.twist.linear, ...state.twist.angular].some((value) => value !== 0)
         return (
-            <div className="drive-hud mobile">
-                <Joystick label="drive" onMove={(x, y) => drive.setAxes("left-stick", { forward: y, turn: -x })} />
+            <div className={`drive-hud mobile ${moving ? "moving" : ""}`} data-testid="drive-hud-mobile">
+                <Joystick
+                    side="left"
+                    label={usesStrafe ? "move" : "forward / back"}
+                    axes={usesStrafe ? "xy" : "y"}
+                    onMove={(x, y) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
+                />
                 <div className="hud-center">
-                    {command && <span className="dim-badge hud-note">{command.dryRun ? "dry run" : command.source} · {velocity(command.linear, command.angular)}</span>}
-                    <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST" : "fast"}</button>
-                    <button type="button" className="dim-btn danger lg stop-button" onClick={() => drive.stop()}>STOP</button>
+                    <span className="dim-badge hud-note" data-testid="drive-readout">
+                        {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
+                    </span>
+                    <button
+                        type="button"
+                        className="dim-btn stop-button"
+                        data-testid="stop-button"
+                        onPointerDown={() => {
+                            // on touch, not on the click after it: no 300 ms, and it works while a thumb holds a stick
+                            releaseAllSticks()
+                            drive.stop()
+                        }}
+                        onClick={() => {
+                            releaseAllSticks()
+                            drive.stop()
+                        }}
+                    >
+                        STOP
+                    </button>
+                    <button type="button" className={`dim-btn boost-button ${state.boost ? "on" : ""}`} aria-pressed={state.boost} onClick={() => drive.setBoost(!state.boost)}>{state.boost ? "FAST ON" : "FAST"}</button>
                 </div>
-                {(usesVertical || usesStrafe) && (
-                    <Joystick label={usesVertical ? "up / down" : "strafe"} onMove={(x, y) => drive.setAxes("right-stick", usesVertical ? { vertical: y, strafe: 0 } : { strafe: -x })} />
-                )}
+                <Joystick
+                    side="right"
+                    label={usesVertical ? "turn · up / down" : "turn"}
+                    axes={usesVertical ? "xy" : "x"}
+                    onMove={(x, y) => drive.setAxes("right-stick", { turn: -x, vertical: usesVertical ? y : 0 })}
+                />
             </div>
         )
     }
