@@ -100,6 +100,9 @@ export class VideoSources {
             element.muted = true
             element.playsInline = true
             element.autoplay = true
+            // attributes, not properties: Firefox honors the attribute but has no disablePictureInPicture property
+            element.setAttribute("disablepictureinpicture", "")
+            element.setAttribute("disableremoteplayback", "")
             const attach = () => {
                 const stream = source.video.get().stream
                 if (stream && element.srcObject !== stream) {

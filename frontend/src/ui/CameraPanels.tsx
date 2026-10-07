@@ -415,7 +415,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                 <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
             </div>
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
-                {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}
+                {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
                 <canvas ref={overlayCanvas} className="camera-overlay" />
                 {topic && !depth && (!mobile || isMain) && (
                     <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
