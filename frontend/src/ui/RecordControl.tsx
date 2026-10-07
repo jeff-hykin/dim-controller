@@ -10,7 +10,7 @@ import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolde
 import type { Topic } from "../core/transport.ts"
 import { Field, Select, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
-import { appInstalled, openApp, underDesktop } from "../dim-app/desktop.js"
+import { appInstalled, openApp, underDesktop } from "../dim-app/source/desktop.js"
 
 /** topic key → recorded or not; a topic not in it is recorded (so new ones are too) */
 export const recordedTopics = persistentStore<Record<string, boolean>>("lv.record.topics", {})

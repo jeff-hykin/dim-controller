@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { emptyState, type EmptyStateOptions } from "../dim-app/desktop.js"
+import { emptyState, type EmptyStateOptions } from "../dim-app/source/desktop.js"
 import { takesVelocity } from "../core/cmdvel.ts"
 
 const LAUNCH_DRIVABLE = { kind: "blueprint" as const, stream: "cmd_vel" }

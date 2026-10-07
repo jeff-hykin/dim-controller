@@ -2,7 +2,7 @@
 // topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
 import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type ZenohGateway } from "../vendor/zenoh_gateway/zenoh_gateway.ts"
-import { getZenoh } from "../dim-app/zenoh.js"
+import { getZenoh } from "../dim-app/source/zenoh.js"
 import { Store } from "./store.ts"
 
 export { Priority }

@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client"
 // Portal (dark) / Research (light), following dimOS Desktop's theme; set before the first render
-import { initTheme } from "./dim-app/theme.js"
-import "./dim-app/theme.css"
+import { initTheme } from "./dim-app/source/theme.js"
+import "./dim-app/source/theme.css"
 import "./styles.css"
 // every built-in layer type registers itself on import; a fork adds its own files to layers/index.ts
 import "./layers/index.ts"

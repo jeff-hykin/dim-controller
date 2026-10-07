@@ -3,7 +3,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
-import { inDesktopShell } from "../dim-app/desktop.js"
+import { inDesktopShell } from "../dim-app/source/desktop.js"
 import type { Tab } from "./SidePanel.tsx"
 
 // driving's settings are Settings' first section; recording is the Record button at the top left (RecordControl)

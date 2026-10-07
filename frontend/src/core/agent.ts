@@ -3,7 +3,7 @@
 // locating an object in 3D from a box around it in that frame (lidar points inside the box, else the floor). The
 // backend's events arrive on zenoh (dim-app's appEvents: the frontend topic `events`); this page GETs what they change
 // on load and whenever the connection comes back, and reports itself (POST api/pages/<id>) so captures come to it.
-import { themeColors } from "../dim-app/theme.js"
+import { themeColors } from "../dim-app/source/theme.js"
 import * as THREE from "three"
 import { decode, headerFrameId } from "./lcm/lcm.ts"
 import { LabelPool } from "./render/labels.ts"
@@ -11,7 +11,7 @@ import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
 import { cameraInfoFor } from "./video.ts"
 import { frontObject, groundLevel } from "./locate.ts"
-import { appEvents } from "../dim-app/events.js"
+import { appEvents } from "../dim-app/source/events.js"
 import type { LocationLabel } from "./labels.ts"
 import { applyRemoteSetting, loadSettings } from "./store.ts"
 import type { DriveEvent } from "./drive.ts"
