@@ -1,7 +1,7 @@
-// The page's one connection to Desktop's zenoh-web bridge (dim-app's getZenoh(): the backend's events ride it too), and
+// The page's one connection to Desktop's zenoh-gateway (dim-app's getZenoh(): the backend's events ride it too), and
 // topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
-import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type ZenohWeb } from "../vendor/zenoh_web/zenoh_web.ts"
+import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type ZenohGateway } from "../vendor/zenoh_gateway/zenoh_gateway.ts"
 import { getZenoh } from "../dim-app/zenoh.js"
 import { Store } from "./store.ts"
 
@@ -41,12 +41,12 @@ export interface ConnectionState {
     error: string | null
 }
 
-/** Ten beats a second; the bridge fires a publisher's deadman after `heartbeatMisses` silent beats. */
+/** Ten beats a second; the gateway fires a publisher's deadman after `heartbeatMisses` silent beats. */
 export const HEARTBEAT_HZ = 10
 const DISCOVERY_MS = 2000
 
 export class Connection {
-    client: ZenohWeb | null = null
+    client: ZenohGateway | null = null
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, error: null })
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
@@ -59,7 +59,7 @@ export class Connection {
     }
 
     async start() {
-        const client = (await this.#shared.ready).client as ZenohWeb
+        const client = (await this.#shared.ready).client as ZenohGateway
         this.client = client
         this.status.update({ state: "connected", error: null })
         client.onState((state) => this.status.update({ state }))
@@ -81,7 +81,7 @@ export class Connection {
                     this.status.update({ topics })
                 }
             } catch {
-                // the bridge is reconnecting; the next round tries again
+                // the gateway is reconnecting; the next round tries again
             }
             await new Promise((resolve) => setTimeout(resolve, DISCOVERY_MS))
         }
@@ -100,7 +100,7 @@ export class Connection {
         }
     }
 
-    /** Bridge clock now (ms), the clock message timestamps are in. */
+    /** Gateway clock now (ms), the clock message timestamps are in. */
     bridgeNow(): number {
         const client = this.client
         return client ? client.now() + (client.clockOffsetMs ?? 0) : performance.timeOrigin + performance.now()
@@ -110,7 +110,7 @@ export class Connection {
 class LiveSubscription {
     #handle: { close(): void } | null = null
     constructor(readonly key: string, readonly options: SubscribeOptions, readonly onMessage: (message: Message) => void) {}
-    open(client: ZenohWeb) {
+    open(client: ZenohGateway) {
         this.#handle = client.subscribe(this.key, this.options, this.onMessage)
     }
     close() {

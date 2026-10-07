@@ -1,5 +1,5 @@
 // Camera quality presets: the quality-vs-framerate tradeoff, applied at the source. Each preset is bridge subscription
-// options (zenoh-web's video policy: maxHz, maxResolution, minResolutionScale, minQuality, qualityToHzTradeoff), so
+// options (zenoh-gateway's video policy: maxHz, maxResolution, minResolutionScale, minQuality, qualityToHzTradeoff), so
 // the bridge encodes a smaller picture or sends fewer frames; nothing is thrown away in the browser.
 // The choice is per viewer (a phone on cellular wants Smooth, a desktop on the LAN Sharp): localStorage, not the
 // backend's shared settings.
@@ -15,7 +15,7 @@ export interface QualityPreset {
 }
 
 export const QUALITY_PRESETS: QualityPreset[] = [
-    { id: "auto", label: "Auto", about: "the bridge picks size and rate for the bandwidth (up to 30 fps)", options: { maxHz: 30 } },
+    { id: "auto", label: "Auto", about: "the gateway picks size and rate for the bandwidth (up to 30 fps)", options: { maxHz: 30 } },
     {
         id: "smooth",
         label: "Smooth",

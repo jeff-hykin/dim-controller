@@ -1,6 +1,6 @@
 //! Live annotations and the agent's view of the viewer. Annotations are ephemeral 3D boxes with labels (not zenoh
 //! topics): kept here, and every change is pushed to the pages on zenoh (frontend.rs: the frontend topic `events`; a page
-//! GETs api/annotations on load and when its zenoh-web connection comes back). The page also answers capture requests
+//! GETs api/annotations on load and when its zenoh-gateway connection comes back). The page also answers capture requests
 //! that arrive the same way (its 3D view, the camera image, locating an object from an image box), since only the page
 //! has the rendered view, the decoded clouds and the TF tree: a capture event names the page it's for (the one the user
 //! looked at last; pages report themselves with POST api/pages/{page} every few seconds), and the page answers with

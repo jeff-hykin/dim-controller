@@ -247,7 +247,7 @@ export class AgentLink {
             if (topic) {
                 this.#cloud = { positions: new Float32Array(), frame: null, at: 0 }
                 const cloud = this.#cloud
-                this.#stops.push(this.app.connection.subscribe(topic.key, { delivery: "latest", maxHz: 2, codec: "dimos-pointcloud2", minQuality: 1 }, (message) => {
+                this.#stops.push(this.app.connection.subscribe(topic.key, { delivery: "latest", maxHz: 2, encoding: "dimos_lcm_pointcloud2", minQuality: 1 }, (message) => {
                     const decoded = message.decoded as { positions?: Float32Array } | undefined
                     if (decoded?.positions) {
                         cloud.positions = decoded.positions
@@ -285,7 +285,7 @@ export class AgentLink {
         this.#ensureSources()
         const camera = this.#camera
         if (!camera) {
-            return { error: "no camera topic on the bridge" }
+            return { error: "no camera topic on the gateway" }
         }
         await this.#until(() => {
             this.#ensureSources()

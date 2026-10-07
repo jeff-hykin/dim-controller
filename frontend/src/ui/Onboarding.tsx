@@ -83,8 +83,8 @@ export function useOnboarding(app: ViewerApp): Onboarding {
                 testId: "onboard-bridge-lost",
                 tone: "warn",
                 label: "No connection",
-                title: "Can't reach the robot data bridge",
-                body: "Desktop or its zenoh-web bridge hasn't answered for a while (restarting, or blocked on this network), so no robot data can arrive. It keeps retrying by itself.",
+                title: "Can't reach the robot data gateway",
+                body: "Desktop or its zenoh-gateway hasn't answered for a while (restarting, or blocked on this network), so no robot data can arrive. It keeps retrying by itself.",
                 actions: [
                     { label: "Try again", onClick: () => location.reload() },
                     { label: "Open Settings", app: "settings", primary: false },

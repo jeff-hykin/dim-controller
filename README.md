@@ -16,10 +16,10 @@ start flowing; nothing is configured by topic name.
 Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: arming, driving,
 recording, labels, annotations, the camera, and every setting the panels change (layers on/off, layer styles, point
 style, fixed frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its
-description; that table is the served `/agent.json`, and `dimos.yaml`'s `agent:` repeats it (`deno task
+description; that table is the served `/agent.json`, and `dimos.yaml`'s `provides:` repeats it (`deno task
 check-endpoints [--write]`, checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the
 app's data dir), so a change from the agent or another window shows up in every open page. The one exception is
-continuous driving from the keys and sticks, which publishes through the bridge at 20 Hz with the bridge's deadman;
+continuous driving from the keys and sticks, which publishes through the gateway at 20 Hz with the gateway's deadman;
 `POST api/drive` is the endpoint way to drive (a Twist for up to 10 s, then zeros; `dryRun` sends nothing).
 
 **Renamed from dim-live-viewer.** GitHub redirects the old URL. An install under the new name starts from the old
@@ -54,7 +54,7 @@ settings to override): **Glow** (default: soft gaussian splats fading into the b
 lit balls) and **Squares**. Over 3M points a glow cloud draws a stable random subset, and if frames stay over 16 ms
 the viewer switches glow to cubes and says so in the top bar. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
 accumulating, aged out in the shader), so a new scan costs one partial buffer upload. The view only redraws when
-something changed. Settings → Stats shows fps, CPU per frame and bridge-to-screen latency.
+something changed. Settings → Stats shows fps, CPU per frame and gateway-to-screen latency.
 
 ## Cameras
 
@@ -63,10 +63,10 @@ detection overlay. Drag a floating panel's inner corner (bottom-left for one on 
 picture keeps its aspect, between 200 px wide and the window. The size is this viewer's (localStorage), not a shared
 setting.
 
-The gear over a camera (on hover) picks its quality, also per viewer: **Auto** (the bridge decides, up to 30 fps),
+The gear over a camera (on hover) picks its quality, also per viewer: **Auto** (the gateway decides, up to 30 fps),
 **Smooth** (fits 640×360, up to 30 fps, keeps the rate when bandwidth is short), **Balanced** (up to 720p, 20 fps) or
-**Sharp** (full size, never shrunk, up to 10 fps, drops frames before detail). They are bridge subscription options
-(`maxHz`, `maxResolution`, `minResolutionScale`, `minQuality`, `qualityToHzTradeoff`), so the bridge encodes and sends
+**Sharp** (full size, never shrunk, up to 10 fps, drops frames before detail). They are gateway subscription options
+(`maxHz`, `maxResolution`, `minResolutionScale`, `minQuality`, `qualityToHzTradeoff`), so the gateway encodes and sends
 less; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back). With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
@@ -108,8 +108,8 @@ starts from its old profile's, e.g. `lv.drive.Unitree Go2`).
 
 There is no arming: whenever the Controller has the keyboard (click or tap the view to give it), W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
 and halves turning, Space stops (the agent's command too). Linear and angular speeds are in Settings → Drive. Commands go
-straight to the output topics through Desktop's bridge, each with its own deadman: if the page goes quiet or
-disconnects, the bridge sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
+straight to the output topics through Desktop's gateway, each with its own deadman: if the page goes quiet or
+disconnects, the gateway sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
 of zeros, then silence), so a parked browser never drowns out other teleop.
 
 ### Driving: which topics
@@ -198,7 +198,7 @@ Like driving it needs no arming, and it is as safe:
 - Space, Escape, a key release or leaving the page stops (one hold / zero twist, then nothing);
 - a held joint jog's target creeps ahead at the joint speed but never more than 0.25 s of motion past where the joint is,
   so if the page dies the joint stops within that; letting go sends "stay where you are" (the measured position);
-- the end-effector jog is a TwistStamped at 20 Hz with the bridge's deadman set to a zero twist (zero = hold), and a
+- the end-effector jog is a TwistStamped at 20 Hz with the gateway's deadman set to a zero twist (zero = hold), and a
   second of zeros after a release, then silence;
 - if a command moves no joint within 1.5 s the panel says so: the running coordinator may have no task for that input.
 
@@ -230,9 +230,9 @@ Known gaps (none of these are on a topic in dimos today):
   preset differs).
 - **The arm in 3D** is what TF has: ManipulationModule publishes `world → <tip link>` only, and there is no
   `robot_description` topic, so the view shows those TF frames (Settings → Layers → TF), not a URDF mesh.
-- Arm commands are page → bridge like continuous driving; there is no agent endpoint for them yet.
+- Arm commands are page → gateway like continuous driving; there is no agent endpoint for them yet.
 
-Verified against dimos `main` @ 0861d853e3: with `dtk run coordinator-mock` on Desktop's bridge, Auto picked arm, a
+Verified against dimos `main` @ 0861d853e3: with `dtk run coordinator-mock` on Desktop's gateway, Auto picked arm, a
 held + moved `arm/joint1` 0.42 → 1.14 rad in 2 s and stopped on release, a slider target and Home were reached,
 disarming mid-jog stopped it and nothing was sent while disarmed; the JointState, TwistStamped and Float32 the page
 encodes decode with dimos's own message classes. Not verified on a running arm: the end-effector jog and the gripper
@@ -243,7 +243,7 @@ encodes decode with dimos's own message classes. Not verified on a running arm: 
 Everything robot-specific is in **one file**, a profile under `frontend/src/profile/`, one per robot type (`dog.ts`,
 `humanoid.ts`, `wheeled.ts`, `arm.ts`, `drone.ts`): which frame is the robot, which Twist topics to prefer, speeds,
 what each key does, an arm's jog speeds, keys and joint limits, and extra controls (sliders and buttons that publish a
-message). `src/core/` (bridge, TF, renderer, drive loop, arm control, recorder) never needs to change.
+message). `src/core/` (gateway, TF, renderer, drive loop, arm control, recorder) never needs to change.
 
 1. Edit the profile of your robot's type (e.g. `dog.ts` for a quadruped), or copy one and return it from `profileFor`
    in `frontend/src/profile/index.ts`.
@@ -294,10 +294,10 @@ weight normalized, restyled; the wheeled robot puts the humanoid's upper body on
 cd frontend && npm install && npm run dev      # vite on :5173, proxied to a Desktop on :7077 (DESKTOP_URL)
 npm run typecheck && npm test                  # types; LCM decoder tests (deno)
 cd ../server && cargo test                     # every endpoint; the recorder and driving over zenoh on loopback
-deno task check-endpoints [--write]            # dimos.yaml's agent: = the served agent.json
+deno task check-endpoints [--write]            # dimos.yaml's provides: endpoints = the served agent.json
 nix build .#dimosApp                           # what Desktop builds: bin/dimos-app-server serving the page
 ```
 
 `server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and every endpoint
-under `/apps/<name>/`, and talks zenoh itself only to record, find topics and drive. The page reaches Desktop's zenoh-web bridge at
-`../../zenoh-web`; its client is vendored at the commit Desktop embeds (`frontend/src/vendor/zenoh_web`, 0.4.1).
+under `/apps/<name>/`, and talks zenoh itself only to record, find topics and drive. The page reaches Desktop's zenoh-gateway at
+`../../zenoh-gateway`; its client is vendored at the commit Desktop embeds (`frontend/src/vendor/zenoh_gateway`, 0.5.0 @ 28c17f0).

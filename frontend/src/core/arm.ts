@@ -343,7 +343,7 @@ export class ArmControl {
     #publisher(key: string, priority: number): Publisher | null {
         const client = this.connection.client
         if (!client || client.state === "lost") {
-            this.state.update({ error: "not connected to the bridge" })
+            this.state.update({ error: "not connected to the gateway" })
             return null
         }
         let publisher = this.#publishers.get(key)

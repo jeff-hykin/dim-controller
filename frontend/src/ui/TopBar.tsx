@@ -24,10 +24,10 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
             <span className="title dim-title">Controller</span>
             <span className={`dim-badge dim-mono conn-pill ${live ? "ok" : connection.state === "degraded" ? "warn" : ""}`} title={connection.error ?? ""}>
                 <span className="dot" />
-                {live ? `${connection.topics.length} topics` : connection.state === "lost" ? "no bridge" : connection.state}
+                {live ? `${connection.topics.length} topics` : connection.state === "lost" ? "no gateway" : connection.state}
                 {connection.droppedPerSecond > 0 && <span className="pill-extra">{connection.droppedPerSecond} drop/s</span>}
             </span>
-            <span className="dim-badge dim-mono stats-pill" title="frames per second · bridge → screen latency (p50)">
+            <span className="dim-badge dim-mono stats-pill" title="frames per second · gateway → screen latency (p50)">
                 {stats.fps} fps{stats.latencyP50 !== null ? ` · ${Math.round(stats.latencyP50)} ms` : ""}
             </span>
             {fallback.active && (

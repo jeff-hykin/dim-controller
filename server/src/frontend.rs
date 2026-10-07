@@ -1,5 +1,5 @@
 //! Backend → page (Desktop's docs/events.md): every event for the pages goes out on zenoh, on this app's frontend topic
-//! `events` (`<DIMOS_APP.zenohPrefix>/frontend/events`), where the page's one zenoh-web connection hears it. This
+//! `events` (`<DIMOS_APP.zenohPrefix>/frontend/events`), where the page's one zenoh-gateway connection hears it. This
 //! server links zenoh, so it publishes there itself (on the recorder's session, opened at start); when that session
 //! can't be opened it sends the same JSON through Desktop's relay (`POST /desktop/frontend/<name>/events`). One task
 //! sends them, in order.

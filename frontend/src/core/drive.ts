@@ -264,7 +264,7 @@ export class Drive {
         }
         const targets = this.#publishersFor(state.topics)
         if (!targets) {
-            this.state.update({ error: "not connected to the bridge" })
+            this.state.update({ error: "not connected to the gateway" })
             return
         }
         const plain = { linear: xyz(twist.linear), angular: xyz(twist.angular) }

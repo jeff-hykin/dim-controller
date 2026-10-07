@@ -37,8 +37,9 @@ pub struct Args {
     port: Option<u16>,
     #[arg(long, env = "DIMOS_DESKTOP_URL", default_value = "")]
     desktop_url: String,
+    /// Desktop's zenoh-gateway (Desktop still names its env var ZENOH_WEB_URL)
     #[arg(long, env = "ZENOH_WEB_URL", default_value = "")]
-    zenoh_web_url: String,
+    zenoh_gateway_url: String,
     /// the zenoh endpoint dimos modules are on; empty = join the local network as a peer
     #[arg(long, env = "ZENOH_CONNECT", default_value = "")]
     zenoh_connect: String,
@@ -144,7 +145,10 @@ async fn main() -> Result<()> {
             args.socket = Some(PathBuf::from(socket));
         }
         set(&mut args.desktop_url, &app.desktop_url);
-        set(&mut args.zenoh_web_url, &app.zenoh_web_url);
+        set(
+            &mut args.zenoh_gateway_url,
+            &app.zenoh_gateway_url.clone().or_else(|| app.zenoh_web_url.clone()),
+        );
         set(&mut args.zenoh_connect, &app.zenoh_connect);
         set(&mut args.dimos_dir, &app.dimos_dir);
         set(&mut args.dimos_python, &app.dimos_python);

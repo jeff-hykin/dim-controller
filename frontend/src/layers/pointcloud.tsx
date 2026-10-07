@@ -1,4 +1,4 @@
-// sensor_msgs.PointCloud2: lidar scans and maps. The bridge's dimos-pointcloud2 codec sends quantized xyz (+ u8
+// sensor_msgs.PointCloud2: lidar scans and maps. The gateway's dimos_lcm_pointcloud2 encoding sends quantized xyz (+ u8
 // intensity); the points go straight into preallocated GPU buffers (a ring when accumulating) and are colored in
 // the shader, so a new scan costs one buffer upload and nothing is allocated per frame.
 import * as THREE from "three"
@@ -39,7 +39,7 @@ const DEFAULTS: CloudSettings = {
 
 const SPLAT_BUDGET = 3_000_000
 
-/** How often the cloud's frame_id is re-read from one raw message (the codec output carries no header). */
+/** How often the cloud's frame_id is re-read from one raw message (the encoding's output carries no header). */
 const FRAME_RECHECK_MS = 30_000
 
 class CloudLayer {
@@ -100,7 +100,7 @@ class CloudLayer {
         this.#stopStream?.()
         this.#stopStream = this.context.connection.subscribe(
             this.topic.key,
-            { delivery: "latest", maxHz: settings.maxHz, codec: "dimos-pointcloud2", ...(settings.detail === "full" ? { minQuality: 1 } : {}) },
+            { delivery: "latest", maxHz: settings.maxHz, encoding: "dimos_lcm_pointcloud2", ...(settings.detail === "full" ? { minQuality: 1 } : {}) },
             (message) => {
                 const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array } | undefined
                 if (decoded?.positions) {

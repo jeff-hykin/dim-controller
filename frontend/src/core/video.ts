@@ -51,19 +51,19 @@ export class VideoSources {
         return source
     }
 
-    /** Subscribes with the source's quality preset (color) or the lossless depth codec. */
+    /** Subscribes with the source's quality preset (color) or the lossless depth encoding. */
     #open(topic: Topic, source: Source) {
         const { video, depth } = source
-        const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos-compressed-" : "dimos-"
+        const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos_lcm_compressed_" : "dimos_lcm_"
         let frames = 0
         let since = performance.now()
         source.stop = isDepthTopic(topic)
-            ? this.connection.subscribe(topic.key, { delivery: "latest", maxHz: 15, codec: `${prefix}depth` }, (message) => {
+            ? this.connection.subscribe(topic.key, { delivery: "latest", maxHz: 15, encoding: `${prefix}depth` }, (message) => {
                 if (message.decoded) {
                     depth.set({ image: message.decoded as DepthImage })
                 }
             })
-            : this.connection.subscribe(topic.key, { delivery: "latest", ...presetFor(source.quality.get().quality).options, codec: `${prefix}image` }, (message) => {
+            : this.connection.subscribe(topic.key, { delivery: "latest", ...presetFor(source.quality.get().quality).options, encoding: `${prefix}image` }, (message) => {
                 frames++
                 const now = performance.now()
                 const state = video.get()

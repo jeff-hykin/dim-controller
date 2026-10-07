@@ -1,7 +1,7 @@
 //! Every Controller action as an HTTP endpoint (routes.rs): the page calls these, Desktop's agent calls the same
 //! ones (the served agent.json, and dimos.yaml's `agent:`, which `deno task check-endpoints` keeps equal). What only
 //! the page can do (render its view, read the camera, locate from an image box) the backend asks the page for with an
-//! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the bridge with
+//! event on zenoh (annotations.rs, frontend.rs). The page's continuous driving (keys, stick) publishes through the gateway with
 //! its deadman; `POST api/drive` is the endpoint way to drive. Neither needs arming (`POST api/drive/arm` is a no-op
 //! kept so older callers don't 404).
 use std::sync::Arc;

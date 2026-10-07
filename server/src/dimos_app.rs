@@ -13,6 +13,8 @@ pub struct DimosApp {
     pub path: Option<String>,
     pub data_dir: Option<String>,
     pub desktop_url: Option<String>,
+    pub zenoh_gateway_url: Option<String>,
+    /// deprecated: the gateway at its old path, /zenoh-web (Desktops before zenoh-gateway 0.5 set only this)
     pub zenoh_web_url: Option<String>,
     pub zenoh_connect: Option<String>,
     pub dimos_dir: Option<String>,
@@ -64,7 +66,7 @@ mod tests {
         assert_eq!(app.data_dir.as_deref(), Some("/d/b"));
         assert_eq!(app.desktop_url.as_deref(), Some("http://127.0.0.1:7341"));
         assert_eq!(app.zenoh_connect.as_deref(), Some(""));
-        assert_eq!(app.zenoh_web_url, None);
+        assert_eq!(app.zenoh_gateway_url, None);
         assert_eq!(app.zenoh_prefix.as_deref(), Some("ns/apps/b"));
         assert_eq!(app.zenoh_namespace.as_deref(), Some("ns"));
     }
