@@ -1,7 +1,7 @@
-// Camera quality presets (core/videoQuality.ts) reach the bridge as subscription options, and a change resubscribes.
+// Camera latency/quality presets (core/videoQuality.ts) reach the bridge as subscription options, and a change resubscribes.
 import { assertEquals } from "jsr:@std/assert@1"
 import { VideoSources } from "../src/core/video.ts"
-import { loadQuality, QUALITY_PRESETS } from "../src/core/videoQuality.ts"
+import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/core/videoQuality.ts"
 import type { Connection, SubscribeOptions } from "../src/core/transport.ts"
 
 function fakeConnection() {
@@ -24,15 +24,14 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it reope
     const sources = new VideoSources(connection)
     const source = sources.acquire(camera)
     assertEquals(subscriptions.length, 1)
-    assertEquals(subscriptions[0].options.maxHz, 30, "auto: what it always was")
-    assertEquals(subscriptions[0].options.encoding, "dimos_lcm_image")
-    sources.setQuality(camera, "smooth")
+    assertEquals(subscriptions[0].options, { delivery: "latest", maxHz: 30, encoding: "dimos_lcm_image" }, "balanced: what it always was")
+    sources.setQuality(camera, "latency")
     assertEquals(subscriptions[0].open, false)
-    const smooth = QUALITY_PRESETS.find((preset) => preset.id === "smooth")!.options
-    assertEquals(subscriptions[1].options, { delivery: "latest", ...smooth, encoding: "dimos_lcm_image" })
-    assertEquals(source.quality.get().quality, "smooth")
-    assertEquals(loadQuality(camera.key), "smooth")
-    sources.setQuality(camera, "sharp")
+    const latency = QUALITY_PRESETS.find((preset) => preset.id === "latency")!.options
+    assertEquals(subscriptions[1].options, { delivery: "latest", ...latency, encoding: "dimos_lcm_image" })
+    assertEquals(source.quality.get().quality, "latency")
+    assertEquals(loadQuality(camera.key), "latency")
+    sources.setQuality(camera, "quality")
     assertEquals(subscriptions[2].options.minResolutionScale, 1)
     assertEquals(subscriptions[2].options.qualityToHzTradeoff, 0)
     sources.release(camera)
@@ -40,7 +39,16 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it reope
     // the next viewer session starts on the saved preset
     const again = new VideoSources(connection)
     again.acquire(camera)
-    assertEquals(subscriptions.at(-1)!.options.maxHz, 10)
+    assertEquals(subscriptions.at(-1)!.options.minQuality, 0.6)
+})
+
+Deno.test("a saved preset from before the latency/quality axis maps to its nearest", () => {
+    localStorage.clear()
+    for (const [old, now] of [["auto", "balanced"], ["smooth", "latency"], ["sharp", "quality"], ["nonsense", "balanced"]]) {
+        saveQuality(camera.key, old as never)
+        assertEquals(loadQuality(camera.key), now)
+    }
+    assertEquals(presetFor(undefined).id, "balanced")
 })
 
 Deno.test("depth stays lossless whatever the preset", () => {
@@ -49,7 +57,7 @@ Deno.test("depth stays lossless whatever the preset", () => {
     const sources = new VideoSources(connection)
     const depth = { key: "dimos/depth_image/sensor_msgs.Image", name: "/depth_image", type: "sensor_msgs.Image" }
     sources.acquire(depth)
-    sources.setQuality(depth, "smooth")
+    sources.setQuality(depth, "latency")
     assertEquals(subscriptions.length, 1)
     assertEquals(subscriptions[0].options.encoding, "dimos_lcm_depth")
 })

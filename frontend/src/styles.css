@@ -234,6 +234,9 @@ h3.dim-label.first { margin-top: 4px; }
 .camera-body { position: relative; flex: 1; min-height: 0; }
 .camera-media, .camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .camera-overlay { pointer-events: none; }
+/* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
+.camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
+.camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .add-camera { position: absolute; right: 12px; bottom: calc(16px + var(--dim-inset-bottom)); pointer-events: auto; gap: 1px; padding: 8px 10px; border-radius: 999px; }
 
 /* ── drive HUD ── */

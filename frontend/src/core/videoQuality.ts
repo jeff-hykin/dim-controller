@@ -1,11 +1,14 @@
-// Camera quality presets: the quality-vs-framerate tradeoff, applied at the source. Each preset is bridge subscription
-// options (zenoh-gateway's video policy: maxHz, maxResolution, minResolutionScale, minQuality, qualityToHzTradeoff), so
-// the bridge encodes a smaller picture or sends fewer frames; nothing is thrown away in the browser.
-// The choice is per viewer (a phone on cellular wants Smooth, a desktop on the LAN Sharp): localStorage, not the
+// Camera presets: the latency-vs-quality tradeoff, per camera and per viewer, as bridge subscription options
+// (zenoh-gateway's video policy: maxHz, maxResolution, maxBitrate, minResolutionScale, minQuality, qualityToHzTradeoff):
+// the gateway encodes a smaller picture at fewer bits (each frame is fewer packets: on the wire, decoded and on screen
+// sooner, and a squeezed link keeps the rate) or the full picture at more bits (dropping frames, not detail, when short).
+// The browser side has no knob: the gateway marks every video packet playout-delay 0/0, which overrides the receiver's
+// jitterBufferTarget, so frames always show the moment they decode (measured 2026-10-07: target 250 ms, buffer 0 ms).
+// The choice is per viewer (a phone on cellular wants low latency, a desktop on the LAN quality): localStorage, not the
 // backend's shared settings.
 import type { SubscribeOptions } from "./transport.ts"
 
-export type VideoQuality = "auto" | "smooth" | "balanced" | "sharp"
+export type VideoQuality = "latency" | "balanced" | "quality"
 
 export interface QualityPreset {
     id: VideoQuality
@@ -15,32 +18,35 @@ export interface QualityPreset {
 }
 
 export const QUALITY_PRESETS: QualityPreset[] = [
-    { id: "auto", label: "Auto", about: "the gateway picks size and rate for the bandwidth (up to 30 fps)", options: { maxHz: 30 } },
     {
-        id: "smooth",
-        label: "Smooth",
-        about: "low-res (fits 640×360), up to 30 fps; keeps the rate when bandwidth is short",
-        options: { maxHz: 30, maxResolution: [640, 360], qualityToHzTradeoff: 1 },
+        id: "latency",
+        label: "Low latency",
+        about: "fits 640×360, at most 2 Mbit/s, up to 30 fps; small frames arrive and decode soonest, the rate kept when the link is squeezed",
+        options: { maxHz: 30, maxResolution: [640, 360], maxBitrate: 2_000_000, qualityToHzTradeoff: 1 },
     },
     {
         id: "balanced",
         label: "Balanced",
-        about: "up to 720p, up to 20 fps",
-        options: { maxHz: 20, maxResolution: [1280, 720], qualityToHzTradeoff: 0.5 },
+        about: "the gateway picks size and bitrate for the bandwidth, up to 30 fps",
+        options: { maxHz: 30 },
     },
     {
-        id: "sharp",
-        label: "Sharp",
-        about: "full resolution, up to 10 fps; drops frames before detail",
-        options: { maxHz: 10, minResolutionScale: 1, minQuality: 0.6, qualityToHzTradeoff: 0 },
+        id: "quality",
+        label: "High quality",
+        about: "full size, never shrunk, at least 60% quality; drops frames before detail when the link is squeezed",
+        options: { maxHz: 30, minResolutionScale: 1, minQuality: 0.6, qualityToHzTradeoff: 0 },
     },
 ]
 
-export const presetFor = (id: string | undefined): QualityPreset => QUALITY_PRESETS.find((preset) => preset.id === id) ?? QUALITY_PRESETS[0]
+/** presets before 2026-10-07 (a size-vs-rate choice) → the nearest one now */
+const RENAMED: Record<string, VideoQuality> = { auto: "balanced", smooth: "latency", sharp: "quality" }
+
+export const presetFor = (id: string | undefined): QualityPreset =>
+    QUALITY_PRESETS.find((preset) => preset.id === (RENAMED[id ?? ""] ?? id)) ?? QUALITY_PRESETS[1]
 
 const QUALITY_KEY = "lv.video.quality"
 
-/** This viewer's preset for a topic key (Auto when unset, or storage is unavailable). */
+/** This viewer's preset for a topic key (Balanced when unset, or storage is unavailable). */
 export function loadQuality(topicKey: string): VideoQuality {
     return presetFor(readLocal<Record<string, string>>(QUALITY_KEY, {})[topicKey]).id
 }

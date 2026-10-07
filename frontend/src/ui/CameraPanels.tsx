@@ -348,7 +348,14 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         }
     }, [panel.key, topics.length])
 
-    // the quality menu (gear over the picture)
+    // fullscreen only: the whole picture letterboxed ("fit", object-fit: contain) or the screen filled, edges cropped ("fill", cover); this viewer's, per panel
+    const [fill, setFill] = useState(() => loadPanelFill(panel.id))
+    const toggleFill = () => {
+        setFill(!fill)
+        savePanelFill(panel.id, !fill)
+    }
+
+    // the latency/quality menu (gear over the picture)
     const [qualityOpen, setQualityOpen] = useState(false)
     const quality = useQuality(app, topic, depth)
     useEffect(() => {
@@ -411,20 +418,25 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                     </>
                 )}
                 <span className="camera-info">{info || "…"}</span>
+                {isMain && (
+                    <button type="button" className="dim-btn icon icon-button camera-fit" aria-pressed={fill} title={fill ? "Fill: the picture fills the screen, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the screen)"} onClick={toggleFill}>
+                        <Icon name={fill ? "fill" : "fit"} size={15} />
+                    </button>
+                )}
                 <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
                 <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
             </div>
-            <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
+            <div className={`camera-body ${isMain && fill ? "fill" : ""}`} onClick={mobile && !isMain ? onMain : undefined}>
                 {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
                 <canvas ref={overlayCanvas} className="camera-overlay" />
                 {topic && !depth && (!mobile || isMain) && (
                     <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
-                        <button type="button" className="dim-btn icon quality-gear" title={`Video quality: ${presetFor(quality).label}`} aria-label="Video quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
+                        <button type="button" className="dim-btn icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
                             <Icon name="settings" size={14} />
                         </button>
                         {qualityOpen && createPortal(
-                            <div className="dim-panel quality-menu" role="menu" aria-label="Video quality" style={menuPosition(element.current)} onClick={(event) => event.stopPropagation()}>
-                                <div className="quality-title">Video quality</div>
+                            <div className="dim-panel quality-menu" role="menu" aria-label="Latency or quality" style={menuPosition(element.current)} onClick={(event) => event.stopPropagation()}>
+                                <div className="quality-title">Latency ↔ quality</div>
                                 {QUALITY_PRESETS.map((preset) => (
                                     <button
                                         key={preset.id}
@@ -466,9 +478,14 @@ const SIZE_KEY = "lv.cameras.width"
 const loadPanelWidth = (id: number): number | null => readLocal<Record<string, number>>(SIZE_KEY, {})[id] ?? null
 const savePanelWidth = (id: number, width: number) => writeLocal(SIZE_KEY, { ...readLocal<Record<string, number>>(SIZE_KEY, {}), [id]: width })
 
+/** panel id → fullscreen fills the screen (cropped) instead of fitting the picture; per viewer, like the width */
+const FILL_KEY = "lv.cameras.fill"
+const loadPanelFill = (id: number): boolean => readLocal<Record<string, boolean>>(FILL_KEY, {})[id] === true
+const savePanelFill = (id: number, fill: boolean) => writeLocal(FILL_KEY, { ...readLocal<Record<string, boolean>>(FILL_KEY, {}), [id]: fill })
+
 /** The topic's quality preset as the shared source has it (changes in another panel of the same topic show here). */
 function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQuality {
-    const [quality, setQuality] = useState<VideoQuality>("auto")
+    const [quality, setQuality] = useState<VideoQuality>("balanced")
     useEffect(() => {
         if (!topic || depth) {
             return

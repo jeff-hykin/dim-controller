@@ -63,11 +63,17 @@ detection overlay. Drag a floating panel's inner corner (bottom-left for one on 
 picture keeps its aspect, between 200 px wide and the window. The size is this viewer's (localStorage), not a shared
 setting.
 
-The gear over a camera (on hover) picks its quality, also per viewer: **Auto** (the gateway decides, up to 30 fps),
-**Smooth** (fits 640×360, up to 30 fps, keeps the rate when bandwidth is short), **Balanced** (up to 720p, 20 fps) or
-**Sharp** (full size, never shrunk, up to 10 fps, drops frames before detail). They are gateway subscription options
-(`maxHz`, `maxResolution`, `minResolutionScale`, `minQuality`, `qualityToHzTradeoff`), so the gateway encodes and sends
-less; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back). With no point
+The gear over a camera (on hover) picks where it sits between latency and quality, per camera and per viewer:
+**Low latency** (fits 640×360, at most 2 Mbit/s, up to 30 fps, keeps the rate when bandwidth is short: small frames
+are on the wire, decoded and on screen soonest), **Balanced** (the default: the gateway picks size and bitrate for the
+bandwidth, up to 30 fps) or **High quality** (full size, never shrunk, at least 60% quality, drops frames before
+detail). They are gateway subscription options (`maxHz`, `maxResolution`, `maxBitrate`, `minResolutionScale`,
+`minQuality`, `qualityToHzTradeoff`), so the gateway encodes and sends less or more; nothing is dropped in the browser
+([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). The browser always shows a frame the moment it decodes:
+zenoh-gateway marks video packets playout-delay 0/0, which overrides the receiver's jitter buffer target, so there is
+no buffering to trade for smoothness. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back); fullscreen, a
+button beside it switches **Fit** (the whole picture, letterboxed) and **Fill** (fills the screen, edges cropped),
+remembered per panel for this viewer. With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
 

@@ -1,8 +1,9 @@
-// Connection state, live numbers, and the panel tabs.
+// Connection state, live numbers, and the panel tabs. In Desktop's shell its window title already shows the icon and name, so the bar leaves them out.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { Icon } from "./icons.tsx"
+import { inDesktopShell } from "../dim-app/desktop.js"
 import type { Tab } from "./SidePanel.tsx"
 
 // driving's settings are Settings' first section; recording is the Record button at the top left (RecordControl)
@@ -20,8 +21,12 @@ export function TopBar({ app, tab, onTab }: { app: ViewerApp; tab: Tab | null; o
     const live = connection.state === "connected"
     return (
         <header className="topbar">
-            <img className="brand" src="./icon.svg" alt="" />
-            <span className="title dim-title">Controller</span>
+            {!inDesktopShell() && (
+                <>
+                    <img className="brand" src="./icon.svg" alt="" />
+                    <span className="title dim-title">Controller</span>
+                </>
+            )}
             <span className={`dim-badge dim-mono conn-pill ${live ? "ok" : connection.state === "degraded" ? "warn" : ""}`} title={connection.error ?? ""}>
                 <span className="dot" />
                 {live ? `${connection.topics.length} topics` : connection.state === "lost" ? "no gateway" : connection.state}

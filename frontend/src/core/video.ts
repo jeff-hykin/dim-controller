@@ -1,5 +1,5 @@
 // Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription.
-// Color images arrive as the bridge's H.264 track, sized and paced by the viewer's quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
+// Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
 import type { Connection, Topic } from "./transport.ts"
 import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
@@ -26,7 +26,7 @@ interface Source {
     stop: () => void
     video: Store<VideoState>
     depth: Store<{ image: DepthImage | null }>
-    /** this viewer's quality preset (core/videoQuality.ts): the bridge's size / rate tradeoff */
+    /** this viewer's latency/quality preset (core/videoQuality.ts): the bridge's size / bitrate / rate */
     quality: Store<{ quality: VideoQuality }>
     /** a playing element for textures (the 3D projection), made on first use */
     element: HTMLVideoElement | null
@@ -44,7 +44,7 @@ export class VideoSources {
         }
         const video = new Store<VideoState>({ stream: null, width: 0, height: 0, fps: 0 })
         const depth = new Store<{ image: DepthImage | null }>({ image: null })
-        const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "auto" : loadQuality(topic.key) })
+        const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "balanced" : loadQuality(topic.key) })
         source = { users: 1, stop: () => {}, video, depth, quality, element: null }
         this.#open(topic, source)
         this.#sources.set(topic.key, source)
