@@ -1,36 +1,38 @@
 title: Controller
 spec-version: v1.0 # the dimos.yaml spec version this file follows
-# the running blueprint's Twist inputs, for the drive topic picker
-dimos-api:
-    - GET /dimos/runs
-    - GET /dimos/blueprints/{name}
-    # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
-    - GET /recordings
-    - GET /recordings/{id}/file
-    - DELETE /recordings/{id}
-    - GET /dimos/info
-    - GET /dimos/paths
-    - GET /dimos/uploads
-    - GET /api/launcher/robots
-    - GET /api/apps
-    - POST /api/notifications
-zenoh-web: ">=0.4 <0.5"
-# what its server answers only its own pages (its agent: endpoints are the public API)
-private:
-    - api/pages/*
-    - api/captures/*
-    - api/drive/*
-    - api/recorder/*
-    - api/settings/*
-    - api/annotations/*
-    - api/labels/*
-    - api/topics/*
-    - api/events/*
+uses:
+    "@dimos-gateway":
+        # the running blueprint's Twist inputs, for the drive topic picker
+        - GET /runs
+        - GET /blueprints/{name}
+        - GET /info
+        - GET /paths
+        - GET /uploads
+    "@desktop-gateway":
+        # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
+        - GET /recordings
+        - GET /recordings/{id}/file
+        - DELETE /recordings/{id}
+        - GET /api/launcher/robots
+        - GET /api/apps
+        - POST /api/notifications
+    "@zenoh-gateway": ">=0.4 <0.5"
 # Desktop's nix builds of this app pull from this cache (CI fills it)
 caches:
     - url: https://dimos-desktop.cachix.org
       key: "dimos-desktop.cachix.org-1:A4P35aGJGmCan92LWyamtSFXMqaVE+VRFYnrJ8QMTeQ="
-agent:
+provides:
+    # what its server answers only its own pages (its endpoints: below are the public API)
+    private:
+        - api/pages/*
+        - api/captures/*
+        - api/drive/*
+        - api/recorder/*
+        - api/settings/*
+        - api/annotations/*
+        - api/labels/*
+        - api/topics/*
+        - api/events/*
     description: >-
         Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D view
         (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D
