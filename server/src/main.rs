@@ -37,8 +37,8 @@ pub struct Args {
     port: Option<u16>,
     #[arg(long, env = "DIMOS_DESKTOP_URL", default_value = "")]
     desktop_url: String,
-    /// Desktop's zenoh-gateway (Desktop still names its env var ZENOH_WEB_URL)
-    #[arg(long, env = "ZENOH_WEB_URL", default_value = "")]
+    /// Desktop's zenoh-gateway (Desktop still passes it as --zenoh-web-url / ZENOH_WEB_URL)
+    #[arg(long, alias = "zenoh-web-url", env = "ZENOH_WEB_URL", default_value = "")]
     zenoh_gateway_url: String,
     /// the zenoh endpoint dimos modules are on; empty = join the local network as a peer
     #[arg(long, env = "ZENOH_CONNECT", default_value = "")]
