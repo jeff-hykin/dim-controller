@@ -7,7 +7,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
 import { isDepthTopic } from "../core/video.ts"
-import { isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
+import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
@@ -63,7 +63,7 @@ function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
 }
 
 /** The camera header's height: a panel is this plus the image. */
-const HEAD_PX = 33
+const HEAD_PX = 33 + 27
 /** The size before the image's is known (and for panels saved at the old 360×240 default): ~38% of the window, 16:9. */
 function defaultSize() {
     const width = Math.round(Math.max(320, Math.min(760, (globalThis.innerWidth || 1280) * 0.38)))
@@ -363,13 +363,10 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         : {}
     const info = size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
+    const tabs = cameraTabs(topics)
     return (
         <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
             <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
-                <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value, picked: event.target.value })} aria-label="Camera topic">
-                    {!topic && <option value={panel.key}>{!panel.key ? "pick a camera" : (everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</option>}
-                    {topics.filter(isImage).map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
-                </select>
                 {overlays.length > 0 && (
                     <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
                         <option value="">no overlay</option>
@@ -388,6 +385,25 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                 <span className="camera-info">{info || "…"}</span>
                 <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
                 <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
+            </div>
+            <div className="camera-tabs" role="tablist" aria-label="Cameras">
+                {!topic && panel.key && (
+                    <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
+                )}
+                {tabs.map((tab) => (
+                    <button
+                        key={tab.topic.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={tab.topic.key === panel.key}
+                        className={`camera-tab ${tab.topic.key === panel.key ? "on" : ""} ${tab.depth ? "depth" : ""}`}
+                        title={`${tab.topic.name} (${tab.topic.type})`}
+                        onClick={() => onChange({ key: tab.topic.key, picked: tab.topic.key })}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+                {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus</span>}
             </div>
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
                 {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}

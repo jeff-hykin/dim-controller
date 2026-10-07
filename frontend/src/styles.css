@@ -170,8 +170,11 @@ body.dark .record-split { box-shadow: var(--record-glow); }
 .record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
 .mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: calc(8px + var(--dim-inset-left)); padding: 4px; }
 /* a camera on the whole screen keeps its header (topic picker) clear of Record */
-.mobile.camera-main .record-control { top: calc(92px + env(safe-area-inset-top)); }
-.mobile.camera-main .record-options { top: calc(138px + env(safe-area-inset-top)); }
+/* the full-screen camera's header and tabs (60 px) stay clear of the Record button */
+.desktop.camera-main .record-control { top: 118px; }
+.desktop.camera-main .record-options { top: 168px; }
+.mobile.camera-main .record-control { top: calc(119px + env(safe-area-inset-top)); }
+.mobile.camera-main .record-options { top: calc(165px + env(safe-area-inset-top)); }
 .mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
 .mobile .record-extra { display: none; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 8px; }
@@ -383,3 +386,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
     /* with the camera main, the 3D picture-in-picture takes the same spot between the sticks */
     .mobile.camera-main .scene-slot { top: calc(52px + env(safe-area-inset-top)); bottom: auto; right: auto; left: 50%; transform: translateX(-50%); width: min(30vw, 260px); height: min(18vw, 156px); }
 }
+/* every image topic on the bus, one tab each (core/cameraChoice.ts cameraTabs); scrolls sideways when they don't fit */
+.camera-tabs { display: flex; gap: 2px; padding: 3px 6px 0; flex: none; height: 27px; box-sizing: border-box; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+    background: color-mix(in srgb, var(--card) 88%, transparent); border-bottom: 1px solid var(--border); }
+.camera-tabs::-webkit-scrollbar { display: none; }
+.camera-tab { all: unset; box-sizing: border-box; cursor: pointer; flex: none; padding: 3px 9px; font: 11px var(--mono); color: var(--muted-fg); white-space: nowrap;
+    border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-sm, 4px) var(--radius-sm, 4px) 0 0; }
+.camera-tab:hover, .camera-tab:focus-visible { color: var(--fg); background: var(--accent); }
+.camera-tab.on { color: var(--fg); background: var(--background, var(--bg)); border-color: var(--border); box-shadow: inset 0 2px 0 var(--primary); }
+.camera-tab.depth { font-style: italic; }
+.camera-tab.gone { cursor: default; opacity: 0.6; }
