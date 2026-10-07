@@ -7,6 +7,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
 import { isDepthTopic } from "../core/video.ts"
+import { isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
@@ -17,6 +18,8 @@ export interface PanelState {
     id: number
     /** image topic key ("" until one is picked) */
     key: string
+    /** the topic key the viewer picked from the list (core/cameraChoice.ts shows it again whenever it's on the bus) */
+    picked?: string
     /** overlay topic key ("" = none) */
     overlay: string
     x: number
@@ -55,17 +58,8 @@ export function chooseLayout() {
 /** how long the topic list has to stay the same before a camera-only blueprint gets the camera layout (topics arrive one by one) */
 const SETTLE_MS = 3000
 
-const isImage = (topic: Topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage"
-
 function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
-    const images = topics.filter(isImage)
-    for (const name of app.profile.cameras.preferred) {
-        const found = images.find((topic) => topic.name === name)
-        if (found) {
-            return found
-        }
-    }
-    return images.find((topic) => !isDepthTopic(topic)) ?? images[0] ?? null
+    return pickPreferred(app.profile.cameras.preferred, topics)
 }
 
 /** The camera header's height: a panel is this plus the image. */
@@ -90,6 +84,21 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
             layout.update({ seeded: true, panels: [{ id: 1, key: first.key, overlay: "", x: -1, y: -1, ...defaultSize(), fitted: true }] })
         }
     }, [topics, panels.length, seeded, app, layout])
+
+    // a panel whose topic isn't on the bus (saved from another blueprint, the robot vs its sim) moves to the default camera once the topics settle; the viewer's own pick comes back when it does
+    const imageKeys = topics.filter(isImage).map((topic) => topic.key).join("|")
+    useEffect(() => {
+        if (!imageKeys) {
+            return
+        }
+        const timer = setTimeout(() => {
+            const next = retargetPanels(layout.get().panels, app.connection.status.get().topics, app.profile.cameras.preferred)
+            if (next) {
+                layout.update({ panels: next })
+            }
+        }, SETTLE_MS)
+        return () => clearTimeout(timer)
+    }, [imageKeys, app, layout])
 
     // camera-only (no point cloud, a camera): the camera fills the screen and the 3D view becomes the picture-in-picture
     const topicKeys = topics.map((topic) => topic.key).join("|")
@@ -357,7 +366,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
     return (
         <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
             <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
-                <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value })} aria-label="Camera topic">
+                <select className="dim-select" value={panel.key} onChange={(event) => onChange({ key: event.target.value, picked: event.target.value })} aria-label="Camera topic">
                     {!topic && <option value={panel.key}>{!panel.key ? "pick a camera" : (everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</option>}
                     {topics.filter(isImage).map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
                 </select>
