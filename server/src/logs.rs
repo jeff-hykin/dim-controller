@@ -18,7 +18,7 @@ use serde_json::{json, Map, Value};
 use crate::record::{now_nanos, Encoded, Recorder};
 
 pub const LOG_SCHEMA: &[u8] = include_bytes!("schemas/foxglove.Log.json");
-pub const LOG_TOPIC_PREFIX: &str = "/dimos/logs/";
+pub const LOG_TOPIC_PREFIX: &str = "/dimos/logs/"; // a topic, not an endpoint (dimos-yaml-check: ignore)
 /// an existing run dir under a logs root counts as live when one of its logs changed this recently
 const LIVE_WITHIN: Duration = Duration::from_secs(120);
 const POLL: Duration = Duration::from_millis(250);
