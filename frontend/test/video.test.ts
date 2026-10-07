@@ -5,10 +5,10 @@ import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/cor
 import type { Connection, SubscribeOptions } from "../src/core/transport.ts"
 
 function fakeConnection() {
-    const subscriptions: { key: string; options: SubscribeOptions; open: boolean }[] = []
+    const subscriptions: { key: string; options: SubscribeOptions; open: boolean; openBefore: number }[] = []
     const connection = {
         subscribe(key: string, options: SubscribeOptions) {
-            const entry = { key, options, open: true }
+            const entry = { key, options, open: true, openBefore: subscriptions.filter((other) => other.open).length }
             subscriptions.push(entry)
             return () => (entry.open = false)
         },
@@ -24,9 +24,10 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it reope
     const sources = new VideoSources(connection)
     const source = sources.acquire(camera)
     assertEquals(subscriptions.length, 1)
-    assertEquals(subscriptions[0].options, { delivery: "latest", maxHz: 30, encoding: "dimos_lcm_image" }, "balanced: what it always was")
+    assertEquals(subscriptions[0].options, { delivery: "latest", encoding: "dimos_lcm_image" }, "balanced: the gateway's defaults at the camera's rate")
     sources.setQuality(camera, "latency")
     assertEquals(subscriptions[0].open, false)
+    assertEquals(subscriptions[1].openBefore, 1, "the new subscription opens before the old one closes (else the gateway may refuse the reused track)")
     const latency = QUALITY_PRESETS.find((preset) => preset.id === "latency")!.options
     assertEquals(subscriptions[1].options, { delivery: "latest", ...latency, encoding: "dimos_lcm_image" })
     assertEquals(source.quality.get().quality, "latency")
@@ -39,7 +40,8 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it reope
     // the next viewer session starts on the saved preset
     const again = new VideoSources(connection)
     again.acquire(camera)
-    assertEquals(subscriptions.at(-1)!.options.minQuality, 0.6)
+    assertEquals(subscriptions.at(-1)!.options.maxBitrate, 6_000_000)
+    assertEquals(subscriptions.every((entry) => entry.options.maxHz === undefined), true, "maxHz would reach the encoder as its frame rate")
 })
 
 Deno.test("a saved preset from before the latency/quality axis maps to its nearest", () => {

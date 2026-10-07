@@ -107,11 +107,23 @@ export class Connection {
     }
 }
 
+/** How long to wait before asking again for a video track the gateway still had bound to a closed subscription. */
+const TRACK_BUSY_RETRY_MS = 300
+const TRACK_BUSY_RETRIES = 20
+
 class LiveSubscription {
     #handle: { close(): void } | null = null
     constructor(readonly key: string, readonly options: SubscribeOptions, readonly onMessage: (message: Message) => void) {}
-    open(client: ZenohGateway) {
-        this.#handle = client.subscribe(this.key, this.options, this.onMessage)
+    open(client: ZenohGateway, retries = TRACK_BUSY_RETRIES) {
+        const handle = client.subscribe(this.key, this.options, this.onMessage)
+        this.#handle = handle
+        // the client reuses a closed subscription's transceiver at once, but the gateway frees its track only when that
+        // subscription's send loop ends: until then it rejects the new one ("in use"), for good unless asked again
+        handle.ready().catch(() => {
+            if (this.#handle === handle && retries > 0 && /in use/.test(handle.rejectionReason ?? "")) {
+                setTimeout(() => this.#handle === handle && this.open(client, retries - 1), TRACK_BUSY_RETRY_MS)
+            }
+        })
     }
     close() {
         this.#handle?.close()

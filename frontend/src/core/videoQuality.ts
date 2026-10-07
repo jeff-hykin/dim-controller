@@ -17,24 +17,27 @@ export interface QualityPreset {
     options: SubscribeOptions
 }
 
+// No preset sets maxHz: zenoh-gateway 0.5 hands the encoder maxHz itself as the frame rate when the link isn't short
+// (subscription.rs key_hz), not the source's rate, so maxHz 30 on a 5 Hz camera made VideoToolbox spend bitrate/30 a
+// frame (a sixth of the grant) and shrink the picture as if it ran at 30. Without it the encoder gets the measured rate.
 export const QUALITY_PRESETS: QualityPreset[] = [
     {
         id: "latency",
         label: "Low latency",
-        about: "fits 640×360, at most 2 Mbit/s, up to 30 fps; small frames arrive and decode soonest, the rate kept when the link is squeezed",
-        options: { maxHz: 30, maxResolution: [640, 360], maxBitrate: 2_000_000, qualityToHzTradeoff: 1 },
+        about: "fits 640×360 at the gateway's default bits per pixel; small frames arrive and decode soonest, the rate kept when the link is squeezed",
+        options: { maxResolution: [640, 360], qualityToHzTradeoff: 1 },
     },
     {
         id: "balanced",
         label: "Balanced",
-        about: "the gateway picks size and bitrate for the bandwidth, up to 30 fps",
-        options: { maxHz: 30 },
+        about: "the gateway picks size and bitrate for the bandwidth, at the camera's rate",
+        options: {},
     },
     {
         id: "quality",
         label: "High quality",
-        about: "full size, never shrunk, at least 60% quality; drops frames before detail when the link is squeezed",
-        options: { maxHz: 30, minResolutionScale: 1, minQuality: 0.6, qualityToHzTradeoff: 0 },
+        about: "full size, never shrunk, up to 6 Mbit/s (at least 30% of it); drops frames before detail when the link is squeezed",
+        options: { minResolutionScale: 1, maxBitrate: 6_000_000, minQuality: 0.3, qualityToHzTradeoff: 0 },
     },
 ]
 
