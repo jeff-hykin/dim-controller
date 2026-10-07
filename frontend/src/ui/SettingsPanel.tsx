@@ -3,6 +3,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
+import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { Field, Toggle } from "./controls.tsx"
 import { DrivePanel } from "./DrivePanel.tsx"
@@ -26,7 +27,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                         aria-label="Robot type"
                         value={robot.auto ? "" : robot.type}
                         // every open viewer switches with it (app.ts), no reload
-                        onChange={(event) => app.settings.update({ profile: event.target.value })}
+                        onChange={(event) => (app.settings.update({ profile: event.target.value }), event.target.value === "arm" && armShading())}
                     >
                         <option value="">Auto: {current?.name ?? robot.type}</option>
                         {profiles.map((profile) => <option key={profile.type} value={profile.type}>{profile.name}</option>)}
