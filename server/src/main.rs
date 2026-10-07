@@ -28,30 +28,14 @@ use clap::Parser;
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Controller backend: the page, driving, and an mcap recorder")]
 pub struct Args {
-    /// serve HTTP on this unix socket (Desktop passes it in DIMOS_APP; these flags and env vars are the older
-    /// Desktops' way, and DIMOS_APP wins over them)
-    #[arg(long, env = "DIMOS_APP_SOCKET")]
-    socket: Option<PathBuf>,
-    /// serve HTTP on this TCP port instead (development)
+    /// serve HTTP on this TCP port instead of DIMOS_APP's socket (development)
     #[arg(long)]
     port: Option<u16>,
-    #[arg(long, env = "DIMOS_DESKTOP_URL", default_value = "")]
-    desktop_url: String,
-    /// Desktop's zenoh-gateway (Desktop still passes it as --zenoh-web-url / ZENOH_WEB_URL)
-    #[arg(long, alias = "zenoh-web-url", env = "ZENOH_WEB_URL", default_value = "")]
-    zenoh_gateway_url: String,
-    /// the zenoh endpoint dimos modules are on; empty = join the local network as a peer
-    #[arg(long, env = "ZENOH_CONNECT", default_value = "")]
-    zenoh_connect: String,
-    #[arg(long, env = "DIMOS_DIR", default_value = "")]
-    dimos_dir: String,
-    #[arg(long, env = "DIMOS_PYTHON", default_value = "")]
-    dimos_python: String,
     /// the built page (vite's dist); the nix wrapper sets it
     #[arg(long, env = "CONTROLLER_FRONTEND")]
     frontend: Option<PathBuf>,
-    /// where recordings go [default: Desktop's shared folder $DIMOS_RECORDINGS_DIR/controller (or its live-viewer
-    /// folder, if this app made one before it was renamed), else $DIMOS_APP_DATA/recordings]
+    /// where recordings go [default: Desktop's shared folder (DIMOS_APP's recordingsDir)/controller (or its live-viewer
+    /// folder, if this app made one before it was renamed), else DIMOS_APP's dataDir/recordings]
     #[arg(long, env = "CONTROLLER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
     /// print the endpoints (agent.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
@@ -66,7 +50,7 @@ const OLD_APP_NAME: &str = "dim-live-viewer";
 /// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
 /// app's data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
 fn default_record_dir() -> PathBuf {
-    if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref(), "DIMOS_RECORDINGS_DIR") {
+    if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref()) {
         let old = PathBuf::from(&dir).join("live-viewer");
         return if old.is_dir() {
             old
@@ -89,13 +73,12 @@ fn default_record_dir() -> PathBuf {
         .unwrap_or_else(|_| {
             PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
         });
-    let app = dimos_app::field(|app| app.name.as_ref(), "DIMOS_APP_NAME")
-        .unwrap_or_else(|| "dim-controller".into());
+    let app = dimos_app::field(|app| app.name.as_ref()).unwrap_or_else(|| "dim-controller".into());
     home.join("data").join(app).join("recordings")
 }
 
 fn app_data() -> Option<PathBuf> {
-    dimos_app::field(|app| app.data_dir.as_ref(), "DIMOS_APP_DATA").map(PathBuf::from)
+    dimos_app::field(|app| app.data_dir.as_ref()).map(PathBuf::from)
 }
 
 /// `settings.json` in the app's data dir. Installed under its new name, the app starts from the settings it had under
@@ -134,25 +117,7 @@ async fn revalidate_html(mut response: axum::response::Response) -> axum::respon
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut args = Args::parse();
-    if let Some(app) = dimos_app::get() {
-        let set = |to: &mut String, from: &Option<String>| {
-            if let Some(value) = from {
-                *to = value.clone();
-            }
-        };
-        if let Some(socket) = &app.socket {
-            args.socket = Some(PathBuf::from(socket));
-        }
-        set(&mut args.desktop_url, &app.desktop_url);
-        set(
-            &mut args.zenoh_gateway_url,
-            &app.zenoh_gateway_url.clone().or_else(|| app.zenoh_web_url.clone()),
-        );
-        set(&mut args.zenoh_connect, &app.zenoh_connect);
-        set(&mut args.dimos_dir, &app.dimos_dir);
-        set(&mut args.dimos_python, &app.dimos_python);
-    }
+    let args = Args::parse();
     if args.agent_json {
         println!(
             "{}",
@@ -173,7 +138,7 @@ async fn main() -> Result<()> {
     let settings = Arc::new(settings::Settings::load(settings_file()));
     let state = Arc::new(recorder::State::with_settings(
         record_dir,
-        args.zenoh_connect.clone(),
+        dimos_app::field(|app| app.zenoh_connect.as_ref()).unwrap_or_default(),
         settings.clone(),
     ));
     let annotations: Arc<annotations::Annotations> = Arc::default();
@@ -190,7 +155,7 @@ async fn main() -> Result<()> {
         annotations: annotations.clone(),
         settings,
         drive: Arc::default(),
-        desktop_url: Arc::new(args.desktop_url.clone()),
+        desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
     };
     let app = api::routes()
         .router
@@ -218,10 +183,9 @@ async fn main() -> Result<()> {
             .with_graceful_shutdown(shutdown)
             .await?;
     } else {
-        let socket = args
-            .socket
-            .clone()
-            .context("--socket or --port is required")?;
+        let socket = dimos_app::field(|app| app.socket.as_ref())
+            .map(PathBuf::from)
+            .context("DIMOS_APP's socket (or --port) is required")?;
         let _ = std::fs::remove_file(&socket);
         let listener = tokio::net::UnixListener::bind(&socket)
             .with_context(|| format!("bind {}", socket.display()))?;

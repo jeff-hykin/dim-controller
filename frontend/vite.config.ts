@@ -13,7 +13,6 @@ export default defineConfig({
     server: {
         proxy: {
             "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true },
-            "/zenoh-web": { target: desktop, ws: true, changeOrigin: true },
             "/api": { target: `${desktop}/apps/${app}`, changeOrigin: true },
         },
     },

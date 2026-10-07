@@ -467,10 +467,7 @@ impl State {
             },
             directory: directory.display().to_string(),
             default_directory: self.record_dir.display().to_string(),
-            recordings_root: crate::dimos_app::field(
-                |app| app.recordings_dir.as_ref(),
-                "DIMOS_RECORDINGS_DIR",
-            ),
+            recordings_root: crate::dimos_app::field(|app| app.recordings_dir.as_ref()),
             options,
         }
     }
