@@ -63,7 +63,7 @@ function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
 }
 
 /** The camera header's height: a panel is this plus the image. */
-const HEAD_PX = 33 + 27
+const HEAD_PX = 33
 /** The size before the image's is known (and for panels saved at the old 360×240 default): ~38% of the window, 16:9. */
 function defaultSize() {
     const width = Math.round(Math.max(320, Math.min(760, (globalThis.innerWidth || 1280) * 0.38)))
@@ -339,6 +339,15 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         handle.addEventListener("pointercancel", up)
     }
 
+    // the shown camera's tab in view (it can be off the end of a long row)
+    useEffect(() => {
+        const tab = element.current?.querySelector<HTMLElement>(".camera-tab.on")
+        const row = tab?.parentElement
+        if (tab && row && (tab.offsetLeft < row.scrollLeft || tab.offsetLeft + tab.offsetWidth > row.scrollLeft + row.clientWidth)) {
+            row.scrollLeft = tab.offsetLeft - 6
+        }
+    }, [panel.key, topics.length])
+
     // the quality menu (gear over the picture)
     const [qualityOpen, setQualityOpen] = useState(false)
     const quality = useQuality(app, topic, depth)
@@ -367,6 +376,25 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
     return (
         <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
             <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
+                <div className="camera-tabs" role="tablist" aria-label="Cameras" onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY)}>
+                    {!topic && panel.key && (
+                        <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
+                    )}
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.topic.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={tab.topic.key === panel.key}
+                            className={`camera-tab ${tab.topic.key === panel.key ? "on" : ""} ${tab.depth ? "depth" : ""}`}
+                            title={`${tab.topic.name} (${tab.topic.type})`}
+                            onClick={() => onChange({ key: tab.topic.key, picked: tab.topic.key })}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                    {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus</span>}
+                </div>
                 {overlays.length > 0 && (
                     <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
                         <option value="">no overlay</option>
@@ -385,25 +413,6 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
                 <span className="camera-info">{info || "…"}</span>
                 <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
                 <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
-            </div>
-            <div className="camera-tabs" role="tablist" aria-label="Cameras">
-                {!topic && panel.key && (
-                    <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
-                )}
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.topic.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={tab.topic.key === panel.key}
-                        className={`camera-tab ${tab.topic.key === panel.key ? "on" : ""} ${tab.depth ? "depth" : ""}`}
-                        title={`${tab.topic.name} (${tab.topic.type})`}
-                        onClick={() => onChange({ key: tab.topic.key, picked: tab.topic.key })}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-                {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus</span>}
             </div>
             <div className="camera-body" onClick={mobile && !isMain ? onMain : undefined}>
                 {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay />}
