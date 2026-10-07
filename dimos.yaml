@@ -1,5 +1,5 @@
 title: Controller
-dimos-desktop-api: ">=2 <3"
+spec-version: v1.0 # the dimos.yaml spec version this file follows
 # the running blueprint's Twist inputs, for the drive topic picker
 dimos-api:
     - GET /dimos/runs
