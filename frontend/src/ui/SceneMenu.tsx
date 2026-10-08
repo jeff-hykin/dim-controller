@@ -153,11 +153,11 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                         </form>
                     ) : (
                         <>
-                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
-                                Label this location…
-                            </button>
                             <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>
                                 Publish clicked_point
+                            </button>
+                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
+                                Label this location…
                             </button>
                             {menu.near && (
                                 <button type="button" role="menuitem" className="scene-menu-item" onClick={() => remove(menu.near!)}>
