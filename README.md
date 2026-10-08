@@ -63,15 +63,20 @@ One arrangement, made of panels:
 - **Status strip** (top): the link and its round trip, what's running, what the drive is doing (Ready, Driving, the
   agent driving, Held), TF and render warnings, Record, the command palette and the shortcut list.
 - **Main view** between a **left rail** (the 2D map, the 3D view) and a **right rail** (Status, Settings, Layers, TF);
-  the camera is the main view by default.
-- **Action dock** (bottom): the drive keys lit while held, what's being sent (or the hold and Reconnect), recenter,
-  top-down, 3D on/off, focus, all actions, and STOP.
+  the camera is the main view by default. Docked panels meet edge to edge, no gaps.
+- **Action dock** (bottom): the drive keys lit while held, what's being sent (or the hold and Reconnect), the main
+  view's own actions (a camera: fit / fill, next camera, quality; the 3D view: follow; the map: follow, fit), focus, all
+  actions, and STOP.
 
-Every panel has the same header with the same four buttons in the same place: fold, main view (swap it in; on the main
-view: focus, hiding both rails), pop out / dock, close. Drag a header into a rail (it goes in at the pointer's height),
-onto the main view's middle (swap), or anywhere else to float; a floating panel's edges snap to the main view, the rails
-and the other floating panels, and it resizes from its corner. Splitters share a rail's height, a rail's edge sets its
-width. The arrangement is this device's (`lv.workspace` in localStorage); the palette's "Reset the layout" restores it.
+Every panel has the same header, its buttons in the same place, shown while the panel is hovered (always on a touch
+screen): collapse / expand, make it the main view (swap: the main view's panel takes its place), pop out / dock. There's
+no close: collapse a panel instead, and the others in its rail take its height. A collapsed panel stops its stream (the
+3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. The map's
+topic, costmap, followed frame and fit sit behind the cog over its corner. Drag a header into a rail (it goes in at the
+pointer's height), onto the main view's middle (swap), or anywhere else to float; a floating panel's edges snap to the
+main view, the rails and the other floating panels, and it resizes from its corner. Splitters share a rail's height, a
+rail's edge sets its width. The arrangement is this device's (`lv.workspace` in localStorage); the palette's "Reset the
+layout" restores it.
 
 Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
 palette (every action: panels, layout, cameras, view, recording, robot type, the profile's buttons), `?` lists every
@@ -95,20 +100,18 @@ more; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/cor
 the running subscription in place (zenoh-gateway 0.5.1's `Subscription.update`: same track, no gap). `playoutDelay` is
 the one browser-side knob: the gateway marks each video packet with it, `[0, 0]` (Low latency, Balanced) shows a frame
 the moment it decodes, High quality's `[100, 400]` lets the jitter buffer hold frames to play them out evenly, which is
-worth a fraction of a second when watching but not when driving. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back); fullscreen, a
-button beside it switches **Fit** (the whole picture, letterboxed) and **Fill** (fills the screen, edges cropped),
+worth a fraction of a second when watching but not when driving. A camera panel's fit button (and the dock's, while it's
+the main view) switches **Fit** (the whole picture, letterboxed) and **Fill** (fills its space, edges cropped),
 remembered per panel for this viewer. With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
 
-While a camera is fullscreen the 3D view is a panel too: drag its header bar, resize it by the inner corner, ⤢ (or a
-double-click on the header) gives it the screen back. Its ⏻ turns the 3D view off: every 3D layer unsubscribes (no
-bandwidth) and a small bar is left to turn it back on (fullscreen, the same buttons sit beside recenter / top-down).
-Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
+The 3D view is a panel like the others. Collapsed (or off screen) every 3D layer unsubscribes (no bandwidth); expanded,
+they subscribe again. Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
 live points and bytes a second, and a bandwidth preset: **Low bandwidth** (up to 5 Hz, at most 1 point in 4),
 **Balanced** (the default: up to 20 Hz, every point unless the link is short) or **Full** (up to 30 Hz, never thinned),
 the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` ([core/cloudQuality.ts](frontend/src/core/cloudQuality.ts)).
-The presets, the off switch and where the panel sits are this viewer's (localStorage).
+The presets are this viewer's (localStorage).
 
 The 3D camera follows the robot (`base_link`, or another frame: Settings → Follow frame): orbit and zoom keep
 following, a pan stops it. The 3D view's corner buttons follow (lit while following; click to resume, or while
@@ -196,8 +199,8 @@ driving. Sticks publish through the same drive loop and topics as the keys.
 ## Costmap
 
 `nav_msgs.OccupancyGrid` topics (e.g. `global_costmap`) draw as a plane under the robot, with its pose and the planned
-path; the view's top-down button (or `POST api/camera {action: "topDown"}`) gives the flat map view the old Controller
-had in its map panel.
+path; the palette's "3D view: top-down" (or `POST api/camera {action: "topDown"}`) looks straight down on it (the 2D map
+panel is the everyday top-down view).
 
 ## Recording
 

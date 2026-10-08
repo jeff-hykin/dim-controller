@@ -1,6 +1,6 @@
 // The page: a status strip on top, the workspace (a main view between a left and a right rail, panels that can float
-// over it; ui/workspace.ts), and the action dock at the bottom with the drive keys and STOP. Every panel has the same
-// frame and the same four actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
+// over it; ui/workspace.ts), and the action dock at the bottom with the drive keys, the main view's actions and STOP.
+// Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
 // phone the rails are drawers and driving is two thumb sticks.
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
@@ -54,7 +54,7 @@ export function App() {
     const cameras = useStore(cameraLayout)
     const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS]
     const cameraActions = useCameraActions(app)
-    const api = useWorkspace(ids, mobile, cameraActions.remove)
+    const api = useWorkspace(ids, mobile)
     const robot = useStore(app?.robot ?? placeholderRobot)
     // the profile changes with the robot type: keys follow it
     const profile = app && robot ? app.profile : null

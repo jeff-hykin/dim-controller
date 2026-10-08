@@ -14,7 +14,6 @@ import {
     dropTarget,
     floatBoxFor,
     type Frame,
-    isCamera,
     layoutWorkspace,
     locate,
     movePanel,
@@ -58,11 +57,8 @@ export function useWorkspaceApi(): WorkspaceApi {
 /** the landing preview while a header is dragged (its own store: a drag never re-renders the panels) */
 const dragPreview = new Store<{ target: DropTarget | null; stage: Rect | null }>({ target: null, stage: null })
 
-/**
- * The workspace for these panels: `ids` (every camera panel and the fixed ones), `onClose(id)` for a panel that goes
- * away when closed (an added camera) instead of into the closed list.
- */
-export function useWorkspace(ids: string[], mobile: boolean, onRemove: (id: string) => boolean): WorkspaceApi {
+/** The workspace for these panels: `ids` (every camera panel and the fixed ones). */
+export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     const { arrangement: saved } = useStore(workspace)
     const idsKey = ids.join("|")
     const arrangement = useMemo(() => normalizeArrangement(saved, ids), [saved, idsKey])
@@ -100,20 +96,14 @@ export function useWorkspace(ids: string[], mobile: boolean, onRemove: (id: stri
         } else if (action === "collapse") {
             normalized((arrangement) => toggleCollapsed(arrangement, id))
         } else if (action === "main") {
-            if (current.stage === id) {
-                toggleFocus()
-            } else {
+            if (current.stage !== id) {
                 normalized((arrangement) => movePanel(arrangement, id, { zone: "stage" }))
                 if (mobile) {
                     workspaceView.set({ ...workspaceView.get(), drawer: null })
                 }
             }
-        } else if (action === "popout") {
-            if (!mobile) {
-                normalized((arrangement) => popOut(arrangement, id, layoutWorkspace(arrangement, frame, workspaceView.get())))
-            }
-        } else if (!onRemove(id)) {
-            normalized((arrangement) => movePanel(arrangement, id, { zone: "closed" }))
+        } else if (!mobile) {
+            normalized((arrangement) => popOut(arrangement, id, layoutWorkspace(arrangement, frame, workspaceView.get())))
         }
     }
     const startDrag = (id: string, event: ReactPointerEvent, element: HTMLElement) => {
@@ -196,7 +186,6 @@ function useFrame(mobile: boolean): Frame {
         top: document.querySelector(".status-strip")?.getBoundingClientRect().bottom ?? (mobile ? 48 : 44),
         bottom: dock ?? height - px("--dim-inset-bottom", 0),
         mobile,
-        gap: px("--lv-gap", 8),
     }
 }
 
@@ -221,6 +210,7 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                     return
                 }
                 const y = a.rect.y + a.rect.height
+                // the panels meet edge to edge: the handle straddles the seam
                 splitters.push(
                     <div
                         key={`split-${above}`}
@@ -228,7 +218,7 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                         role="separator"
                         aria-orientation="horizontal"
                         title="Drag to share the height between these two panels"
-                        style={{ left: rail.x, top: y, width: rail.width, height: b.rect.y - y }}
+                        style={{ left: rail.x, top: y - HANDLE / 2, width: rail.width, height: HANDLE }}
                         onPointerDown={(event) => {
                             const start = normalizeArrangement(workspace.get().arrangement, ids)
                             const startLayout = layoutWorkspace(start, api.frame, workspaceView.get())
@@ -238,7 +228,7 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                 )
             })
             // the rail's inner edge: drag to widen or narrow it
-            const edgeX = side === "left" ? rail.x + rail.width : rail.x - api.frame.gap
+            const edgeX = (side === "left" ? rail.x + rail.width : rail.x) - HANDLE / 2
             splitters.push(
                 <div
                     key={`edge-${side}`}
@@ -246,7 +236,7 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                     role="separator"
                     aria-orientation="vertical"
                     title="Drag to resize the rail"
-                    style={{ left: edgeX, top: rail.y, width: api.frame.gap, height: rail.height }}
+                    style={{ left: edgeX, top: rail.y, width: HANDLE, height: rail.height }}
                     onPointerDown={(event) => {
                         const start = normalizeArrangement(workspace.get().arrangement, ids)
                         const width = rail.width
@@ -281,11 +271,12 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
     )
 }
 
+/** how thick a splitter's or a rail edge's grab handle is, centred on the seam between two panels */
+const HANDLE = 8
+
 export const rectStyle = (rect: Rect) => ({ left: rect.x, top: rect.y, width: rect.width, height: rect.height })
 
 /** a box clamped to the workspace (a floating panel resized by its corner) */
 export function clampToArea(box: Rect, layout: WorkspaceLayout): Rect {
     return clampFloat(box, layout.area)
 }
-
-export const isRemovableCamera = (id: string) => isCamera(id) && id !== "camera:1"

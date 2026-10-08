@@ -1,6 +1,7 @@
 // The page's one panel system: a main view (the stage) between a left and a right rail, plus panels floating over the
 // stage. Every panel (each camera, the map, the 3D view, status, settings, layers, TF) sits in exactly one place: the
-// stage, a rail (stacked top to bottom), floating, or closed; any panel can go to any place. Dragging a header snaps it
+// stage, a rail (stacked top to bottom) or floating; any panel can go to any place, and a rail or floating panel folds
+// to its header (its rail's other panels take the height). Dragging a header snaps it
 // into a rail (near or over it), onto the stage (its middle: swap), or leaves it floating, its edges snapping to the
 // stage, the rails and the other floating panels. The arrangement is this viewer's (localStorage `lv.workspace`: a
 // phone and a desktop each keep their own). On a phone the rails are drawers over the stage.
@@ -9,7 +10,7 @@ import { Store } from "../core/store.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
 export type Side = "left" | "right"
-export type Zone = Side | "stage" | "float" | "closed"
+export type Zone = Side | "stage" | "float"
 
 export interface Rect {
     x: number
@@ -24,7 +25,6 @@ export interface Arrangement {
     left: string[]
     right: string[]
     floating: (Rect & { id: string })[]
-    closed: string[]
     /** folded to their header (a stage panel is never folded) */
     collapsed: string[]
     leftWidth: number
@@ -90,7 +90,6 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
     const floating = (Array.isArray(saved?.floating) ? saved.floating : [])
         .filter((box) => box && [box.x, box.y, box.width, box.height].every(finite) && take(box.id))
         .map((box) => ({ id: box.id, x: box.x, y: box.y, width: Math.max(FLOAT_MIN.width, box.width), height: Math.max(PANEL_HEAD, box.height) }))
-    const closed = list(saved?.closed)
     const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed.filter((id) => known.has(id)) : [])
     for (const id of ids) {
         if (seen.has(id)) {
@@ -130,7 +129,6 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
         left,
         right,
         floating,
-        closed,
         collapsed: [...collapsed],
         leftWidth: finite(saved?.leftWidth) ? clamp(saved.leftWidth, RAIL_MIN, RAIL_MAX) : 320,
         rightWidth: finite(saved?.rightWidth) ? clamp(saved.rightWidth, RAIL_MIN, RAIL_MAX) : 340,
@@ -152,11 +150,7 @@ export function locate(arrangement: Arrangement, id: string): { zone: Zone; inde
         }
     }
     const floating = arrangement.floating.findIndex((box) => box.id === id)
-    if (floating >= 0) {
-        return { zone: "float", index: floating }
-    }
-    const closed = arrangement.closed.indexOf(id)
-    return closed >= 0 ? { zone: "closed", index: closed } : null
+    return floating >= 0 ? { zone: "float", index: floating } : null
 }
 
 /** The arrangement without `id` anywhere (a floating panel's box is remembered for its next pop-out). */
@@ -168,18 +162,17 @@ function without(arrangement: Arrangement, id: string): Arrangement {
         left: arrangement.left.filter((other) => other !== id),
         right: arrangement.right.filter((other) => other !== id),
         floating: arrangement.floating.filter((other) => other.id !== id),
-        closed: arrangement.closed.filter((other) => other !== id),
         floatMemory: box ? { ...arrangement.floatMemory, [id]: { x: box.x, y: box.y, width: box.width, height: box.height } } : arrangement.floatMemory,
     }
 }
 
-export type Placement = { zone: Side; index: number } | { zone: "stage" } | { zone: "float"; box: Rect } | { zone: "closed" }
+export type Placement = { zone: Side; index: number } | { zone: "stage" } | { zone: "float"; box: Rect }
 
 const expand = (arrangement: Arrangement, id: string): Arrangement => ({ ...arrangement, collapsed: arrangement.collapsed.filter((other) => other !== id) })
 
 /**
  * `id` moved to `to`. Onto the stage it swaps: the panel there takes the moved one's old place (its rail slot, its
- * floating box; from closed, its home rail). A rail index counts the rail without the moved panel.
+ * floating box; from nowhere, its home rail). A rail index counts the rail without the moved panel.
  */
 export function movePanel(arrangement: Arrangement, id: string, to: Placement): Arrangement {
     const from = locate(arrangement, id)
@@ -202,15 +195,12 @@ export function movePanel(arrangement: Arrangement, id: string, to: Placement): 
         }
         return next
     }
-    if (to.zone === "left" || to.zone === "right") {
-        const rail = next[to.zone].slice()
-        rail.splice(clamp(Math.round(to.index), 0, rail.length), 0, id)
-        return { ...next, [to.zone]: rail }
-    }
     if (to.zone === "float") {
         return { ...next, floating: [...next.floating, { id, ...to.box }] }
     }
-    return { ...next, closed: [...next.closed, id] }
+    const rail = next[to.zone].slice()
+    rail.splice(clamp(Math.round(to.index), 0, rail.length), 0, id)
+    return { ...next, [to.zone]: rail }
 }
 
 export function toggleCollapsed(arrangement: Arrangement, id: string): Arrangement {
@@ -220,11 +210,10 @@ export function toggleCollapsed(arrangement: Arrangement, id: string): Arrangeme
     return arrangement.collapsed.includes(id) ? expand(arrangement, id) : { ...arrangement, collapsed: [...arrangement.collapsed, id] }
 }
 
-/** Closed or folded: back at home (a rail), unfolded. Already open: unfolded where it is. */
+/** Unfolded where it is (somewhere new, e.g. a camera just added: at home). */
 export function showPanel(arrangement: Arrangement, id: string): Arrangement {
-    const at = locate(arrangement, id)
     let next = expand(arrangement, id)
-    if (!at || at.zone === "closed") {
+    if (!locate(arrangement, id)) {
         const side = homeOf(id).side
         next = next.stage === null && isCamera(id) ? movePanel(next, id, { zone: "stage" }) : movePanel(next, id, { zone: side, index: next[side].length })
     }
@@ -296,7 +285,6 @@ export interface Frame {
     /** where the action dock (or, on a phone, Desktop's dock) starts */
     bottom: number
     mobile: boolean
-    gap: number
 }
 
 /** This page's view state (not saved): the phone drawer that's open, and the rails hidden for now (both: focus). */
@@ -310,7 +298,7 @@ export interface Slot {
     rect: Rect
     zone: Zone
     collapsed: boolean
-    /** not on screen (closed, in a shut drawer, a rail hidden by focus): kept mounted, never drawn */
+    /** not on screen (in a shut drawer, a rail hidden by focus): kept mounted, never drawn */
     hidden: boolean
 }
 
@@ -327,36 +315,35 @@ export interface WorkspaceLayout {
 const NOWHERE: Rect = { x: 0, y: 0, width: 0, height: 0 }
 const round = (rect: Rect): Rect => ({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(0, Math.round(rect.width)), height: Math.max(0, Math.round(rect.height)) })
 
-/** The panels of one rail (or drawer) stacked in `box`: folded ones their header, the rest share what's left by weight. */
-function stack(arrangement: Arrangement, ids: string[], box: Rect, gap: number): Record<string, Rect> {
+/**
+ * The panels of one rail (or drawer) stacked edge to edge in `box`: folded ones their header, the open ones share the
+ * rest by weight (fold one and its neighbours take its height).
+ */
+function stack(arrangement: Arrangement, ids: string[], box: Rect): Record<string, Rect> {
     const rects: Record<string, Rect> = {}
     const open = ids.filter((id) => !arrangement.collapsed.includes(id))
-    const free = box.height - gap * Math.max(0, ids.length - 1) - PANEL_HEAD * (ids.length - open.length)
+    const free = box.height - PANEL_HEAD * (ids.length - open.length)
     const total = open.reduce((sum, id) => sum + weightOf(arrangement, id), 0) || 1
     let y = box.y
     for (const id of ids) {
         const height = arrangement.collapsed.includes(id) ? PANEL_HEAD : Math.max(PANEL_HEAD + MIN_BODY, free * weightOf(arrangement, id) / total)
         rects[id] = { x: box.x, y, width: box.width, height }
-        y += height + gap
+        y += height
     }
     return rects
 }
 
 export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: View = SHOWN): WorkspaceLayout {
-    const { width, gap } = frame
+    const { width } = frame
     const slots: Record<string, Slot> = {}
     const place = (id: string, rect: Rect, zone: Zone, hidden = false) => {
         slots[id] = { rect: round(rect), zone, collapsed: zone !== "stage" && arrangement.collapsed.includes(id), hidden }
     }
-    for (const id of arrangement.closed) {
-        place(id, NOWHERE, "closed", true)
-    }
-
     if (frame.mobile) {
         // the stage fills the screen between the strip and the thumb sticks; the rails are drawers over it (never over
         // the sticks: STOP stays in reach)
         const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
-        const drawerWidth = Math.min(width - 2 * gap - 24, 380)
+        const drawerWidth = Math.min(width - 40, 380)
         const drawer = view.drawer ? { x: view.drawer === "left" ? 0 : width - drawerWidth, y: frame.top, width: drawerWidth, height: area.height } : null
         if (arrangement.stage) {
             place(arrangement.stage, area, "stage")
@@ -365,8 +352,7 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         const members: Record<Side, string[]> = { left: [...arrangement.left, ...arrangement.floating.map((box) => box.id)], right: arrangement.right }
         for (const side of ["left", "right"] as const) {
             const shown = drawer && view.drawer === side
-            const inner = shown ? { x: drawer.x + gap, y: drawer.y + gap, width: drawer.width - 2 * gap, height: drawer.height - 2 * gap } : NOWHERE
-            const rects = stack(arrangement, members[side], inner, gap)
+            const rects = stack(arrangement, members[side], shown ? drawer : NOWHERE)
             for (const id of members[side]) {
                 place(id, shown ? rects[id] : NOWHERE, arrangement.floating.some((box) => box.id === id) ? "float" : side, !shown)
             }
@@ -374,9 +360,10 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         return { area, stage: area, rails: {}, drawer: drawer && round(drawer), slots }
     }
 
-    const area: Rect = { x: gap, y: frame.top + gap, width: width - 2 * gap, height: frame.bottom - frame.top - 2 * gap }
+    // every panel edge to edge: the rails against the window's sides, the main view between them
+    const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
     // the rails never take more than 60% of the width between them
-    const railBudget = Math.max(0, area.width * 0.6 - gap)
+    const railBudget = Math.max(0, area.width * 0.6)
     let leftWidth = arrangement.left.length && !view.hide.includes("left") ? arrangement.leftWidth : 0
     let rightWidth = arrangement.right.length && !view.hide.includes("right") ? arrangement.rightWidth : 0
     if (leftWidth + rightWidth > railBudget) {
@@ -391,14 +378,14 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
     if (rightWidth) {
         rails.right = { x: area.x + area.width - rightWidth, y: area.y, width: rightWidth, height: area.height }
     }
-    const stageX = area.x + (leftWidth ? leftWidth + gap : 0)
-    const stage: Rect = { x: stageX, y: area.y, width: area.x + area.width - (rightWidth ? rightWidth + gap : 0) - stageX, height: area.height }
+    const stageX = area.x + leftWidth
+    const stage: Rect = { x: stageX, y: area.y, width: area.x + area.width - rightWidth - stageX, height: area.height }
     if (arrangement.stage) {
         place(arrangement.stage, stage, "stage")
     }
     for (const side of ["left", "right"] as const) {
         const rail = rails[side]
-        const rects = rail ? stack(arrangement, arrangement[side], rail, gap) : {}
+        const rects = rail ? stack(arrangement, arrangement[side], rail) : {}
         for (const id of arrangement[side]) {
             place(id, rects[id] ?? NOWHERE, side, !rail)
         }

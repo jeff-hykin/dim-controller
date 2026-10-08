@@ -1,11 +1,12 @@
-// The 2D map: a floating, collapsible (or a layout's docked), top-down panel (north-up: +x right, +y up) with the bus's global map (an
+// The 2D map: a workspace panel (ui/Panel.tsx), top-down (north-up: +x right, +y up) with the bus's global map (an
 // accumulated point cloud, as a height heatmap) or any other cloud or occupancy grid, optionally a costmap laid over
-// it, the robot's pose, heading and trail, the world axes and a scale bar. View-only: wheel / pinch zoom and drag pan
+// it, the robot's pose, heading and trail and a scale bar (before any data: "no lidar data on <topic> yet"). View-only: wheel / pinch zoom and drag pan
 // move the picture, never the robot. It follows a TF frame (base_link unless picked) until the viewer pans; a zoom keeps
 // following, re-center (or a double-click) resumes it. Like the 3D view's layers, it keeps each topic's last message for
 // the page's life (a collapse, a reopen or a topic missing from discovery never blanks it). Redrawn only when something
 // changed (new data, the robot moved, a zoom or pan, a resize, the theme).
-import { useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
@@ -44,6 +45,8 @@ import { LAYOUT_KEY, loadMapLayout, type MapLayout } from "./mapLayout.ts"
 import { Panel } from "./Panel.tsx"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { panelTitle } from "./commands.ts"
+import { useDockActions } from "./dockActions.ts"
+import { popoverPosition } from "./panelDrag.ts"
 import { useTfFrames } from "./useTfFrames.ts"
 
 /** every map topic this page has seen (the 3D view's layers outlive discovery the same way): a 0.5 Hz map that misses a
@@ -91,10 +94,10 @@ export function MapPanel({ app }: { app: ViewerApp }) {
     const grids = overlayCandidates(topics).filter((grid) => grid.key !== topic?.key)
     const canvas = useRef<HTMLCanvasElement>(null)
     const renderer = useRef<MapRenderer | null>(null)
-    const [status, setStatus] = useState({ info: "", problem: "" })
+    const [status, setStatus] = useState<MapStatus>({ info: "", problem: "", empty: true })
     const [follow, setFollow] = useState({ following: true, waiting: false })
 
-    // the renderer lives while the panel is on screen; folded, closed or in a shut drawer, nothing is subscribed or drawn
+    // the renderer lives while the panel is on screen; collapsed or off screen (a shut drawer, a rail hidden by focus), nothing is subscribed or drawn
     const slot = useWorkspaceApi().layout.slots.map
     const open = !!slot && !slot.hidden && !slot.collapsed
     useEffect(() => {
@@ -104,7 +107,7 @@ export function MapPanel({ app }: { app: ViewerApp }) {
         const created = new MapRenderer(app, canvas.current, layout.view, layout.followFrame, {
             onView: (view) => update({ view }),
             onFollow: (next) => setFollow((old) => old.following === next.following && old.waiting === next.waiting ? old : next),
-            onStatus: (next) => setStatus((old) => old.info === next.info && old.problem === next.problem ? old : next),
+            onStatus: (next) => setStatus((old) => old.info === next.info && old.problem === next.problem && old.empty === next.empty ? old : next),
         })
         renderer.current = created
         return () => {
@@ -127,6 +130,20 @@ export function MapPanel({ app }: { app: ViewerApp }) {
 
     const name = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
     const label = topic ? name(topic) : "no map on the bus"
+    const recenter = () => renderer.current?.recenter()
+    const fit = () => renderer.current?.fit()
+    const followTitle = follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`
+    useDockActions("map", [
+        { id: "follow", label: follow.following ? "Following" : "Follow", icon: "target", title: followTitle, pressed: follow.following, run: recenter },
+        { id: "fit", label: "Fit map", icon: "fit", title: "Fit the whole map", run: fit },
+    ])
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const cog = useRef<HTMLButtonElement>(null)
+    useEffect(() => {
+        if (!open) {
+            setSettingsOpen(false)
+        }
+    }, [open])
     return (
         <Panel
             id="map"
@@ -136,43 +153,57 @@ export function MapPanel({ app }: { app: ViewerApp }) {
             testid="map-panel"
             info={status.info}
             bodyClassName="map-body"
-            tools={
-                <div className="map-tools">
-                    {candidates.length > 1
-                        ? (
-                            <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
-                                <option value="">auto ({label})</option>
-                                {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
-                            </select>
-                        )
-                        : <span className="map-source">{label}</span>}
-                    {grids.length > 0 && (
-                        <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
-                            <option value="">no costmap</option>
-                            {grids.map((grid) => <option key={grid.key} value={grid.key}>+ {grid.name}</option>)}
-                        </select>
-                    )}
-                    <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
-                        {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>follow {frame}{waiting ? " (waiting)" : ""}</option>)}
-                    </select>
-                    <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={follow.following} title={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()}>
-                        <Icon name="target" size={15} />
-                    </button>
-                    <button type="button" className="dim-btn icon icon-button" title="Fit the whole map" onClick={() => renderer.current?.fit()}>
-                        <Icon name="fit" size={15} />
-                    </button>
-                </div>
-            }
         >
             {open && (
                 <>
                     <canvas ref={canvas} className="map-canvas" aria-label="Top-down map" />
-                    {status.problem && <div className="map-problem">{status.problem}</div>}
+                    {status.problem && <div className={status.empty ? "map-empty" : "map-problem"} data-testid={status.empty ? "map-empty" : undefined}>{status.problem}</div>}
                     {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
+                    <div className="map-controls">
+                        <button ref={cog} type="button" className={`dim-btn icon map-control map-settings ${settingsOpen ? "on" : ""}`} aria-haspopup="menu" aria-expanded={settingsOpen} title="Map settings: topic, costmap, frame to follow, fit" aria-label="Map settings" onClick={() => setSettingsOpen(!settingsOpen)}>
+                            <Icon name="settings" size={15} />
+                        </button>
+                        <button type="button" className="dim-btn icon map-control map-follow" aria-pressed={follow.following} title={followTitle} aria-label={follow.following ? "Following" : "Follow"} onClick={recenter}>
+                            <Icon name="target" size={15} />
+                        </button>
+                    </div>
                     {!follow.following && (
-                        <button type="button" className="dim-btn map-recenter" title="Follow it again (or double-click the map)" onClick={() => renderer.current?.recenter()}>
+                        <button type="button" className="dim-btn map-recenter" title="Follow it again (or double-click the map)" onClick={recenter}>
                             <Icon name="target" size={13} />Re-center on {layout.followFrame}
                         </button>
+                    )}
+                    {settingsOpen && (
+                        <MapSettings anchor={cog.current} onClose={() => setSettingsOpen(false)}>
+                            <label className="map-setting">
+                                <span>Map</span>
+                                {candidates.length > 1
+                                    ? (
+                                        <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
+                                            <option value="">auto ({label})</option>
+                                            {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
+                                        </select>
+                                    )
+                                    : <span className="map-source">{label}</span>}
+                            </label>
+                            {grids.length > 0 && (
+                                <label className="map-setting">
+                                    <span>Costmap</span>
+                                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
+                                        <option value="">none</option>
+                                        {grids.map((grid) => <option key={grid.key} value={grid.key}>{grid.name}</option>)}
+                                    </select>
+                                </label>
+                            )}
+                            <label className="map-setting">
+                                <span>Follow</span>
+                                <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
+                                    {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
+                                </select>
+                            </label>
+                            <button type="button" className="dim-btn sm map-fit" title="Fit the whole map" onClick={fit}>
+                                <Icon name="fit" size={14} />Fit the whole map
+                            </button>
+                        </MapSettings>
                     )}
                 </>
             )}
@@ -180,15 +211,42 @@ export function MapPanel({ app }: { app: ViewerApp }) {
     )
 }
 
+/** The map's settings (behind its cog): a popover that closes on a click outside it. */
+function MapSettings({ anchor, onClose, children }: { anchor: HTMLElement | null; onClose: () => void; children: ReactNode }) {
+    useEffect(() => {
+        const close = (event: Event) => {
+            if (!(event.target as HTMLElement).closest?.(".map-settings-menu, .map-settings")) {
+                onClose()
+            }
+        }
+        addEventListener("pointerdown", close, true)
+        return () => removeEventListener("pointerdown", close, true)
+    }, [onClose])
+    return createPortal(
+        <div className="dim-panel map-settings-menu" role="menu" aria-label="Map settings" style={popoverPosition(anchor, 280)}>
+            <div className="quality-title">Map</div>
+            {children}
+        </div>,
+        document.body,
+    )
+}
+
+/** what the map says about itself: a live note for the header, what's wrong, and whether it has nothing to draw yet */
+interface MapStatus {
+    info: string
+    problem: string
+    empty: boolean
+}
+
+/** before the first message: what the map is listening to */
+const emptyText = (topic: Topic) => isGridTopic(topic) ? `no map data on ${topic.name} yet` : `no lidar data on ${topic.name} yet`
+
 interface Palette {
     background: Rgba
     fg: Rgba
     muted: Rgba
     primary: Rgba
     robot: Rgba
-    /** the world's +x and +y arrows (the skin's axis colors) */
-    axisX: string
-    axisY: string
     /** a grid as the base map: free floor, costs, walls */
     gridLut: Uint8ClampedArray
     /** a grid over the base: free floor clear, so the map under it shows */
@@ -228,8 +286,6 @@ function themePalette(): Palette {
         muted,
         primary,
         robot: token("--warn", "#e8bf6a"),
-        axisX: css(token("--axis-x", "#e5484d")),
-        axisY: css(token("--axis-y", "#46a758")),
         // free floor a shade off the background, costs toward the accent, walls in the text color, unknown clear
         gridLut: gridLut({ free: blend(base, opaque(fg), 0.1), low: blend(base, opaque(primary), 0.3), high: blend(base, opaque(primary), 0.8), lethal: opaque(fg), unknown: clear }),
         overlayLut: gridLut({ free: clear, low: [...primary.slice(0, 3), 70] as Rgba, high: [...primary.slice(0, 3), 190] as Rgba, lethal: [...primary.slice(0, 3), 235] as Rgba, unknown: clear }),
@@ -268,17 +324,20 @@ class MapSource {
     #cloudMatrix: number[] | null = null
     info = ""
     problem = ""
+    /** nothing from the topic yet (this page's life: a message from before counts) */
+    empty = true
     #stop: (() => void)[] = []
 
     constructor(readonly app: ViewerApp, readonly topic: Topic, readonly lut: () => Uint8ClampedArray, readonly changed: () => void) {
         const connection = app.connection
         const kept = retainedFor(app, topic.key)
-        this.problem = `waiting for ${topic.name}`
+        this.problem = emptyText(topic)
         // the last message from before (a collapse, another pick, a discovery gap): drawn now, replaced by the next one
         if (kept.grid) {
             this.grid = kept.grid
             this.info = kept.gridInfo ?? ""
             this.problem = ""
+            this.empty = false
         }
         if (kept.cloudFrame !== undefined) {
             this.#cloudFrame = kept.cloudFrame
@@ -288,10 +347,12 @@ class MapSource {
             this.#cloudMatrix = kept.cloudMatrix
             this.info = kept.cloudInfo ?? ""
             this.problem = ""
+            this.empty = false
         }
         this.rebuild()
         if (isGridTopic(topic)) {
             this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 2 }, (message) => {
+                this.empty = false
                 let grid: LcmValue
                 try {
                     grid = decode(topic.type, message.bytes)
@@ -324,6 +385,7 @@ class MapSource {
             if (!positions || this.#cloudFrame === null) {
                 return
             }
+            this.empty = false
             const placed = app.tf.lookup(this.#cloudFrame, app.viewer.fixedFrame)
             if (!placed) {
                 this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
@@ -437,7 +499,7 @@ class MapRenderer {
     constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, followFrame: string, readonly events: {
         onView(view: MapView): void
         onFollow(follow: { following: boolean; waiting: boolean }): void
-        onStatus(status: { info: string; problem: string }): void
+        onStatus(status: MapStatus): void
     }) {
         this.#view = isValidView(view) ? view : { centerX: 0, centerY: 0, metersPerPixel: DEFAULT_METERS_PER_PIXEL }
         this.#fitted = isValidView(view)
@@ -517,8 +579,8 @@ class MapRenderer {
     #report() {
         const base = this.#base, overlay = this.#overlay
         const info = [base?.info, overlay?.info && `+ ${overlay.topic.name} ${overlay.info}`].filter(Boolean).join(" · ")
-        const problem = !base ? "no point cloud or occupancy grid on the bus" : base.problem || overlay?.problem || ""
-        this.events.onStatus({ info, problem })
+        const problem = !base ? "no lidar data yet: no point cloud or occupancy grid on the bus" : base.problem || overlay?.problem || ""
+        this.events.onStatus({ info, problem, empty: !base || base.empty })
     }
 
     /** every 3D frame: the robot's pose, the grids' TF placement, the fixed frame; a redraw only when one changed */
@@ -762,13 +824,6 @@ class MapRenderer {
         context.globalAlpha = 1
         context.setTransform(ratio, 0, 0, ratio, 0, 0)
 
-        // the world's origin: x (red) and y (green), a scale-bar step long but at least 24 px
-        const axis = Math.max(24, Math.min(60, step * scale))
-        const [ox, oy] = toScreen(0, 0)
-        if (ox > -axis && ox < width + axis && oy > -axis && oy < height + axis) {
-            drawAxes(context, palette, ox, oy, axis, true)
-        }
-
         // the trail, then the robot on top
         const trail = this.#trail.points
         if (trail.length >= 4) {
@@ -813,8 +868,7 @@ class MapRenderer {
             context.restore()
         }
 
-        // corner key (which way +x and +y point) and the scale bar
-        drawAxes(context, palette, width - 40, height - 14, 22, false)
+        // the scale bar
         const barMeters = niceLength(110 * view.metersPerPixel)
         const barPixels = barMeters * scale
         context.strokeStyle = css(palette.fg, 0.9)
@@ -830,30 +884,6 @@ class MapRenderer {
         context.textBaseline = "bottom"
         context.fillText(formatMeters(barMeters), 14, height - 15)
     }
-}
-
-/** x (right) and y (up) arrows from (x, y); labeled ones mark the world origin */
-function drawAxes(context: CanvasRenderingContext2D, palette: Palette, x: number, y: number, length: number, origin: boolean) {
-    const arrow = (dx: number, dy: number, color: string, name: string) => {
-        context.strokeStyle = color
-        context.fillStyle = color
-        context.lineWidth = 2
-        context.beginPath()
-        context.moveTo(x, y)
-        context.lineTo(x + dx * length, y + dy * length)
-        context.stroke()
-        context.beginPath()
-        context.moveTo(x + dx * (length + 5), y + dy * (length + 5))
-        context.lineTo(x + dx * length - dy * 4, y + dy * length + dx * 4)
-        context.lineTo(x + dx * length + dy * 4, y + dy * length - dx * 4)
-        context.closePath()
-        context.fill()
-        context.font = "600 10px ui-sans-serif, sans-serif"
-        context.textBaseline = "middle"
-        context.fillText(name, x + dx * (length + 12) - (dx ? 0 : 3), y + dy * (length + 12))
-    }
-    arrow(1, 0, palette.axisX, origin ? "x" : "+x")
-    arrow(0, -1, palette.axisY, origin ? "y" : "+y")
 }
 
 /** RGBA pixels on a canvas the map draws scaled (reused when the size matches). */

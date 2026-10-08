@@ -4,24 +4,24 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { recorder } from "../core/recorder.ts"
 import { cameraTabs } from "../core/cameraChoice.ts"
-import { scenePanel, updateScenePanel } from "../core/cloudQuality.ts"
 import { profiles } from "../profile/index.ts"
 import { type Command, panelCommands, panelTitle } from "./commands.ts"
 import { openOverlay } from "./overlay.ts"
 import { toggleRecording } from "./RecordControl.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
-import { resetArrangement } from "./workspace.ts"
+import { cameraId, isCamera, resetArrangement } from "./workspace.ts"
 
 export interface CameraActions {
     addCamera: () => void
     /** the main camera (the one in the main view, else the first) shows this topic */
     showTopic: (key: string) => void
+    /** an added camera panel goes away (camera 1 always stays) */
+    removeCamera: (id: string) => void
 }
 
 export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraActions): Command[] {
     const drive = useStore(app.drive.state)
     const recording = useStore(recorder.status)
-    const scene = useStore(scenePanel)
     const view = useStore(app.settings)
     const connection = useStore(app.connection.status)
     const arm = app.profile.type === "arm"
@@ -62,7 +62,10 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         { id: "drive.settings", label: "Drive speeds, topics and max latency", group: "Settings", hint: "Settings", words: "speed linear angular cmd_vel deadman", run: () => api.act("settings", "show") },
     ]
     for (const id of api.ids) {
-        commands.push(...panelCommands(api.arrangement, id, panelTitle(id), { mobile: api.mobile, focused }, (action) => api.act(id, action)))
+        commands.push(...panelCommands(api.arrangement, id, panelTitle(id), { mobile: api.mobile }, (action) => api.act(id, action)))
+        if (isCamera(id) && id !== cameraId(1)) {
+            commands.push({ id: `panel.${id}.remove`, label: `${panelTitle(id)}: remove`, group: "Cameras", words: "close delete panel", run: () => cameras.removeCamera(id) })
+        }
     }
     commands.push(
         { id: "layout.reset", label: "Reset the layout", group: "Layout", hint: "camera main, map + 3D left, status + settings right", words: "default arrangement panels restore", run: () => resetArrangement(api.ids) },
@@ -79,7 +82,6 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         })),
         { id: "view.recenter", label: "3D view: follow the robot again", group: "View", words: "recenter center", run: () => app.recenter() },
         { id: "view.top", label: "3D view: top-down", group: "View", words: "bird overhead", run: () => app.topDown() },
-        { id: "view.power", label: scene.off ? "3D view: turn on (subscribe again)" : "3D view: turn off (no bandwidth)", group: "View", words: "lidar point cloud", run: () => updateScenePanel({ off: !scene.off }) },
         { id: "view.follow", label: view.follow ? "3D camera: stop following" : "3D camera: follow the robot", group: "View", run: () => app.settings.update({ follow: !view.follow }) },
         { id: "view.model", label: view.robotModel !== false ? "Hide the robot model" : "Show the robot model", group: "View", run: () => app.settings.update({ robotModel: view.robotModel === false }) },
         { id: "view.stats", label: view.showStats ? "Hide render stats" : "Show render stats", group: "View", words: "fps latency", run: () => app.settings.update({ showStats: !view.showStats }) },

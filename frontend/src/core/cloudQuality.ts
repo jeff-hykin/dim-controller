@@ -147,21 +147,3 @@ export const formatCount = (count: number) =>
 
 export const formatBytes = (bytes: number) =>
     bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : bytes >= 1000 ? `${Math.round(bytes / 1000)} kB` : `${Math.round(bytes)} B`
-
-const PANEL_KEY = "lv.scene"
-
-/** The 3D view's panel, per viewer: off (nothing subscribed), and where the picture-in-picture sits (-1: its corner). */
-export interface ScenePanelState {
-    off: boolean
-    x: number
-    y: number
-    width: number
-    height: number
-}
-
-export const scenePanel = new Store<ScenePanelState>({ off: false, x: -1, y: -1, width: -1, height: -1, ...readLocal<Partial<ScenePanelState>>(PANEL_KEY, {}) })
-
-export function updateScenePanel(patch: Partial<ScenePanelState>) {
-    scenePanel.update(patch)
-    writeLocal(PANEL_KEY, scenePanel.get())
-}

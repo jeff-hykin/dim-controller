@@ -1,6 +1,6 @@
 // The panel system (ui/workspace.ts): the default arrangement, a saved one made safe, the boxes at a desktop's and a
-// phone's size, where a dragged header snaps (rails, the main view, floating against edges), the four panel actions,
-// the splitters, and the arrangement surviving a reload.
+// phone's size (edge to edge), where a dragged header snaps (rails, the main view, floating against edges), the panel
+// actions, a collapse giving its height to its neighbours, the splitters, and the arrangement surviving a reload.
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1"
 import {
     type Arrangement,
@@ -28,8 +28,8 @@ import {
 } from "../src/ui/workspace.ts"
 
 const IDS = ["camera:1", ...FIXED_PANELS]
-const desktop: Frame = { width: 1440, height: 900, top: 44, bottom: 900 - 64, mobile: false, gap: 8 }
-const phone: Frame = { width: 390, height: 844, top: 48, bottom: 520, mobile: true, gap: 8 }
+const desktop: Frame = { width: 1440, height: 900, top: 44, bottom: 900 - 64, mobile: false }
+const phone: Frame = { width: 390, height: 844, top: 48, bottom: 520, mobile: true }
 const shown = { drawer: null, hide: [] }
 
 const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
@@ -43,7 +43,6 @@ Deno.test("default: the camera is the main view, map and 3D on the left, status 
     assertEquals(arrangement.right, ["status", "settings", "layers", "tf"])
     assertEquals(arrangement.collapsed.sort(), ["layers", "tf"])
     assertEquals(arrangement.floating, [])
-    assertEquals(arrangement.closed, [])
 })
 
 Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropped, missing ones at home, sizes finite", () => {
@@ -62,7 +61,8 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
     assertEquals(arrangement.stage, "map")
     assertEquals(arrangement.left, ["camera:1", "scene"])
     assertEquals(arrangement.floating.map((box) => box.id), ["tf"])
-    assertEquals(arrangement.closed, ["layers"])
+    // there's no closed place (an old arrangement's closed list is ignored): layers is back home, on the right
+    assert(!("closed" in arrangement) && arrangement.right.includes("layers"))
     // settings (its box was broken) went home: the right rail
     assert(arrangement.right.includes("settings"))
     // the stage panel is never folded
@@ -70,7 +70,7 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
     assertEquals([arrangement.leftWidth, arrangement.rightWidth], [320, 220])
     assertEquals(arrangement.weights, { scene: 2 })
     // every known panel exactly once
-    const placed = [arrangement.stage, ...arrangement.left, ...arrangement.right, ...arrangement.floating.map((box) => box.id), ...arrangement.closed]
+    const placed = [arrangement.stage, ...arrangement.left, ...arrangement.right, ...arrangement.floating.map((box) => box.id)]
     assertEquals(placed.sort(), [...IDS].sort())
     // garbage is the default
     assertEquals(normalizeArrangement("junk" as never, IDS), defaultArrangement(IDS))
@@ -83,7 +83,7 @@ Deno.test("an added camera starts at the top of the left rail; a removed one lea
     assertEquals(without.left, ["map", "scene"])
 })
 
-Deno.test("desktop: the rails and the main view share the space between the strip and the dock, nothing overlaps", () => {
+Deno.test("desktop: the rails and the main view share the space between the strip and the dock edge to edge, nothing overlaps", () => {
     const layout = layoutWorkspace(defaultArrangement(IDS), desktop, shown)
     const left = layout.rails.left!, right = layout.rails.right!
     assert(within(left, layout.area) && within(right, layout.area) && within(layout.stage, layout.area))
@@ -102,6 +102,27 @@ Deno.test("desktop: the rails and the main view share the space between the stri
     assert(layout.slots.settings.rect.height > layout.slots.status.rect.height)
     // the stage is wider than both rails together
     assert(layout.stage.width > left.width + right.width)
+    // no gaps: the rails touch the window's sides and the main view, the area is the whole space between strip and dock
+    assertEquals(layout.area, { x: 0, y: desktop.top, width: desktop.width, height: desktop.bottom - desktop.top })
+    assertEquals([left.x, left.x + left.width, layout.stage.x + layout.stage.width, right.x + right.width], [0, layout.stage.x, right.x, desktop.width])
+    assertEquals(layout.slots.scene.rect.y, layout.slots.map.rect.y + layout.slots.map.rect.height)
+    assertEquals(layout.slots.scene.rect.y + layout.slots.scene.rect.height, left.y + left.height)
+})
+
+Deno.test("collapsing a rail panel gives its height to the others in its rail; expanding takes it back", () => {
+    const arrangement = defaultArrangement(IDS)
+    const before = layoutWorkspace(arrangement, desktop, shown)
+    const rail = before.rails.left!
+    // the 3D view collapsed: the map above it takes the rail but its header
+    const folded = layoutWorkspace(toggleCollapsed(arrangement, "scene"), desktop, shown)
+    assertEquals(folded.slots.scene.rect.height, PANEL_HEAD)
+    assertEquals(folded.slots.map.rect.height, rail.height - PANEL_HEAD)
+    assertEquals(folded.slots.scene.rect.y + PANEL_HEAD, rail.y + rail.height)
+    // the map collapsed instead: the 3D view below it takes it
+    const top = layoutWorkspace(toggleCollapsed(arrangement, "map"), desktop, shown)
+    assertEquals(top.slots.scene.rect, { x: rail.x, y: rail.y + PANEL_HEAD, width: rail.width, height: rail.height - PANEL_HEAD })
+    // expanded again: as before
+    assertEquals(layoutWorkspace(toggleCollapsed(toggleCollapsed(arrangement, "scene"), "scene"), desktop, shown).slots, before.slots)
 })
 
 Deno.test("focus hides both rails: the main view takes the width, the rail panels stay mounted but hidden", () => {
@@ -166,13 +187,12 @@ Deno.test("main view: a panel moved onto it swaps with the one there (which take
     const floated = movePanel(arrangement, "map", { zone: "float", box: { x: 500, y: 200, width: 300, height: 300 } })
     const back = movePanel(floated, "map", { zone: "stage" })
     assertEquals(back.floating, [{ id: "camera:1", x: 500, y: 200, width: 300, height: 300 }])
-    // from closed: the old one goes home
-    const closed = movePanel(arrangement, "tf", { zone: "closed" })
-    const tf = movePanel(closed, "tf", { zone: "stage" })
-    assertEquals([tf.stage, tf.left.includes("camera:1")], ["tf", true])
+    // from a rail on the other side: the old one takes its slot there
+    const tf = movePanel(arrangement, "tf", { zone: "stage" })
+    assertEquals([tf.stage, tf.right.at(-1)], ["tf", "camera:1"])
 })
 
-Deno.test("the four actions: fold, pop out and dock back, close and show", () => {
+Deno.test("the panel actions: collapse, pop out and dock back, show", () => {
     const arrangement = defaultArrangement(IDS)
     const layout = layoutWorkspace(arrangement, desktop, shown)
     // fold / unfold; the main view never folds
@@ -187,12 +207,10 @@ Deno.test("the four actions: fold, pop out and dock back, close and show", () =>
     assertEquals(locate(docked, "settings")?.zone, "right")
     // it remembers where it floated
     assertEquals(popOut(docked, "settings", layout).floating.find((other) => other.id === "settings"), box)
-    // close, then show: back home, unfolded
-    const closed = movePanel(arrangement, "layers", { zone: "closed" })
-    assertEquals(locate(closed, "layers")?.zone, "closed")
-    const reopened = showPanel(closed, "layers")
-    assertEquals(locate(reopened, "layers")?.zone, "right")
-    assert(!reopened.collapsed.includes("layers"))
+    // show: expanded where it is
+    const shownLayers = showPanel(arrangement, "layers")
+    assertEquals(locate(shownLayers, "layers")?.zone, "right")
+    assert(!shownLayers.collapsed.includes("layers"))
 })
 
 Deno.test("splitters: the pair's share moves, their total height doesn't; rails stay within their limits", () => {

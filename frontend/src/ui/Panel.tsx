@@ -1,20 +1,20 @@
-// Every panel's frame, the same everywhere: a header (its icon and title, a live note, then the same four buttons in
-// the same place on every panel: fold, main view, pop out / dock, close), an optional row of the panel's own tools, and
-// its body. The workspace (ui/Workspace.tsx) gives it its box; dragging the header moves it (rails, main view,
-// floating; ui/workspace.ts snaps it), a double-click on the header folds it (on the main view: focus), and a floating
-// panel resizes from its corner. Hidden (closed, a shut drawer) it stays mounted, so a video or the 3D view never restarts.
+// Every panel's frame, the same everywhere: a header (its icon and title, a live note, then its buttons in the same
+// place on every panel: collapse / expand, make it the main view, pop out / dock; shown while the panel is hovered, and
+// always on a touch screen), an optional row of the panel's own tools, and its body. The workspace (ui/Workspace.tsx)
+// gives it its box; dragging the header moves it (rails, main view, floating; ui/workspace.ts snaps it), a double-click
+// on the header collapses it (on the main view: focus), and a floating panel resizes from its corner. Hidden (a shut
+// drawer, a rail hidden by focus) it stays mounted, so its element is never rebuilt.
 import { type ReactNode, useRef } from "react"
 import { Icon } from "./icons.tsx"
-import { panelActionStates, type PanelAction } from "./commands.ts"
+import { panelActions, type PanelAction } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { arrange, clampFloat, FLOAT_MIN, movePanel, normalizeArrangement } from "./workspace.ts"
 import { startPointerDrag } from "./panelDrag.ts"
 
-const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; onStage: boolean; floating: boolean; focused: boolean }) => string> = {
+const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: boolean }) => string> = {
     collapse: ({ collapsed }) => collapsed ? "chevron-down" : "chevron-up",
-    main: ({ onStage, focused }) => onStage ? (focused ? "fullscreen-exit" : "fullscreen") : "expand",
+    main: () => "main",
     popout: ({ floating }) => floating ? "dock" : "float",
-    close: () => "close",
 }
 
 export function Panel({ id, title, icon, info, tools, children, className = "", bodyClassName = "", testid, onBodyClick }: {
@@ -39,8 +39,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
     }
     const onStage = slot.zone === "stage"
     const floating = slot.zone === "float"
-    const focused = onStage && api.view.hide.length === 2
-    const states = panelActionStates(api.arrangement, id, { mobile: api.mobile, focused })
+    const states = panelActions(api.arrangement, id, { mobile: api.mobile })
     const fromControl = (target: EventTarget) => !!(target as HTMLElement).closest("button, select, input, label, textarea, [role=tab]")
     const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", className]
     return (
@@ -56,7 +55,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
             <header
                 className="panel-head"
                 onPointerDown={(event) => !fromControl(event.target) && element.current && api.startDrag(id, event, element.current)}
-                onDoubleClick={(event) => !fromControl(event.target) && api.act(id, onStage ? "main" : "collapse")}
+                onDoubleClick={(event) => !fromControl(event.target) && (onStage ? api.toggleFocus() : api.act(id, "collapse"))}
                 title={api.mobile ? undefined : "Drag to move: into a rail, onto the main view's middle, or anywhere to float"}
             >
                 <span className="panel-title"><Icon name={icon} size={14} /><span>{title}</span></span>
@@ -68,13 +67,11 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                             type="button"
                             className={`dim-btn icon icon-button panel-action action-${state.action}`}
                             data-action={state.action}
-                            disabled={state.disabled}
                             title={state.label}
                             aria-label={`${title}: ${state.label}`}
-                            aria-pressed={state.action === "main" && onStage ? focused : undefined}
                             onClick={() => api.act(id, state.action)}
                         >
-                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, onStage, floating, focused })} size={14} />
+                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating })} size={14} />
                         </button>
                     ))}
                 </span>

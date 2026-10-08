@@ -1,5 +1,5 @@
 // Every action on the page as a command, so the `/` palette reaches all of them: driving (STOP, Reconnect, boost), each
-// panel's own four actions (the same four its header has), the layout, the view, recording, settings and the robot
+// panel's own actions (the ones its header has), the layout, the view, recording, settings and the robot
 // profile's buttons. The filter (multi-word, every word must match) and the per-panel commands are pure and unit tested
 // (test/commands.test.ts).
 import { type Arrangement, isCamera, locate } from "./workspace.ts"
@@ -35,44 +35,47 @@ export function filterCommands(commands: Command[], query: string): Command[] {
     })
 }
 
-/** The four actions every panel header has, in the same order, as the header's buttons name them. */
-export type PanelAction = "collapse" | "main" | "popout" | "close"
+/**
+ * A panel's header actions: fold / unfold (folded, a panel with a stream of its own unsubscribes), make it the main view
+ * (swap: the main view's panel takes its place), and pop out / dock. No close: a panel folds instead.
+ */
+export type PanelAction = "collapse" | "main" | "popout"
 
 export interface PanelActionState {
     action: PanelAction
     label: string
-    /** a button that can't act here (a stage panel can't fold; a phone can't float) */
-    disabled: boolean
 }
 
-/** What each of a panel's four buttons does where the panel is now (the header and the palette share this). */
-export function panelActionStates(arrangement: Arrangement, id: string, options: { mobile: boolean; focused: boolean }): PanelActionState[] {
-    const zone = locate(arrangement, id)?.zone ?? "closed"
-    const onStage = zone === "stage"
-    const collapsed = arrangement.collapsed.includes(id)
-    return [
-        { action: "collapse", label: onStage ? "Fold (not in the main view)" : collapsed ? "Unfold" : "Fold to its header", disabled: onStage || zone === "closed" },
-        { action: "main", label: onStage ? (options.focused ? "Show the side rails again" : "Focus: hide the side rails") : "Show in the main view (swap)", disabled: false },
-        { action: "popout", label: zone === "float" ? "Dock into the nearest rail" : "Pop out: float over the main view", disabled: options.mobile || zone === "closed" },
-        { action: "close", label: zone === "closed" ? "Closed (open it from the palette)" : "Close (reopen from the palette)", disabled: zone === "closed" },
-    ]
+/** The header buttons a panel has where it is now, in their fixed order (the header and the palette share this). */
+export function panelActions(arrangement: Arrangement, id: string, options: { mobile: boolean }): PanelActionState[] {
+    const zone = locate(arrangement, id)?.zone
+    if (!zone) {
+        return []
+    }
+    const states: PanelActionState[] = []
+    if (zone !== "stage") {
+        states.push({ action: "collapse", label: arrangement.collapsed.includes(id) ? "Expand" : "Collapse (stops its stream)" })
+        states.push({ action: "main", label: "Make this the main view (swap)" })
+    }
+    if (!options.mobile) {
+        states.push({ action: "popout", label: zone === "float" ? "Dock into the nearest rail" : "Pop out: float over the main view" })
+    }
+    return states
 }
 
-/** The palette's commands for one panel: open it, then each of its header's actions that applies where it is. */
-export function panelCommands(arrangement: Arrangement, id: string, title: string, options: { mobile: boolean; focused: boolean }, act: (action: PanelAction | "show") => void): Command[] {
-    const zone = locate(arrangement, id)?.zone ?? "closed"
+/** The palette's commands for one panel: show it, then each of its header's actions. */
+export function panelCommands(arrangement: Arrangement, id: string, title: string, options: { mobile: boolean }, act: (action: PanelAction | "show") => void): Command[] {
+    const zone = locate(arrangement, id)?.zone
     const commands: Command[] = [{
         id: `panel.${id}.show`,
         label: `${title}: show`,
         group: "Panels",
-        hint: zone === "closed" ? "closed" : zone === "stage" ? "main view" : zone === "float" ? "floating" : `${zone} rail`,
-        words: "open reveal panel",
+        hint: zone === "stage" ? "main view" : zone === "float" ? "floating" : `${zone} rail`,
+        words: "open reveal expand panel",
         run: () => act("show"),
     }]
-    for (const state of panelActionStates(arrangement, id, options)) {
-        if (!state.disabled) {
-            commands.push({ id: `panel.${id}.${state.action}`, label: `${title}: ${state.label}`, group: "Panels", words: `panel ${state.action} maximize float dock collapse`, run: () => act(state.action) })
-        }
+    for (const state of panelActions(arrangement, id, options)) {
+        commands.push({ id: `panel.${id}.${state.action}`, label: `${title}: ${state.label}`, group: "Panels", words: `panel ${state.action} maximize main float dock collapse fold`, run: () => act(state.action) })
     }
     return commands
 }

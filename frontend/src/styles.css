@@ -3,8 +3,6 @@
    tokens; dim-app/theme.css is the off-Desktop fallback): this file only places and sizes them, and every color here
    is a theme token. */
 :root {
-    /* the space between and around panels (ui/Workspace.tsx reads it) */
-    --lv-gap: 8px;
     /* the red for STOP, recording and a held drive, in every skin (Portal's --danger is amber) */
     --lv-stop: var(--close-red, var(--danger));
     --lv-stop-hover: var(--close-red-hover, var(--lv-stop));
@@ -117,13 +115,17 @@ body.dark .record-split { box-shadow: var(--record-glow); }
 .mobile .record-extra, .mobile .record-control .record-label { display: none; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 9px; }
 
-/* ── the workspace (ui/Workspace.tsx): every panel absolutely placed in one layer, by zone ── */
+/* ── the workspace (ui/Workspace.tsx): every panel absolutely placed in one layer, by zone; docked panels meet edge to
+   edge, a hairline seam between them (the stacked ones' seam is the header's top), only a floating one has a frame ── */
 .workspace { position: absolute; inset: 0; z-index: 1; }
 .lv-panel { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; color: var(--fg);
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+    background: var(--card); border: 0 solid var(--border); border-radius: 0; }
 .lv-panel.zone-stage { z-index: 1; background: var(--scene-bg, var(--bg)); }
 .lv-panel.zone-left, .lv-panel.zone-right { z-index: 3; }
-.lv-panel.zone-float { z-index: 6; border-color: var(--border-strong); box-shadow: var(--shadow-lg); }
+.lv-panel.zone-left { border-right-width: 1px; }
+.lv-panel.zone-right { border-left-width: 1px; }
+.lv-panel.zone-left > .panel-head, .lv-panel.zone-right > .panel-head { box-shadow: inset 0 1px 0 var(--border); }
+.lv-panel.zone-float { z-index: 6; border-width: 1px; border-color: var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 .lv-panel.hidden { visibility: hidden; pointer-events: none; }
 .lv-panel.collapsed > .panel-content { display: none; }
 .lv-panel.dragging { z-index: 50; opacity: 0.72; box-shadow: var(--shadow-lg); border-color: var(--primary); transition: none; }
@@ -137,13 +139,13 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .panel-title svg { color: var(--muted-fg); }
 .zone-stage > .panel-head .panel-title svg { color: var(--primary); }
 .panel-info { flex: 1 1 auto; min-width: 0; text-align: right; font: 10.5px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
+/* the header's buttons: while the panel is hovered (or a button in it has focus); always on a touch screen */
+.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; opacity: 0; transition: opacity 0.12s; }
+.lv-panel:hover > .panel-head .panel-actions, .panel-actions:focus-within, .mobile .panel-actions { opacity: 1; }
+@media (hover: none) { .panel-actions { opacity: 1; } }
 .panel-info + .panel-actions { margin-left: 0; }
 .panel-action.dim-btn.icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
 .panel-action.dim-btn.icon.icon-button:hover:not(:disabled) { color: var(--fg); background: var(--hover); border-color: var(--border); }
-.panel-action.dim-btn.icon.icon-button:disabled { opacity: 0.28; }
-.panel-action[aria-pressed="true"] { color: var(--primary); }
-.panel-action.action-close:hover:not(:disabled) { color: var(--lv-stop); }
 .has-issues > .panel-head .panel-info { color: var(--warn); }
 /* the panel's own tools: one row under the header (scrolls sideways when narrow) */
 .panel-tools { flex: none; display: flex; align-items: center; min-height: 32px; padding: 0 6px; gap: 6px; overflow-x: auto; scrollbar-width: none;
@@ -175,7 +177,7 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .ws-stage-target.on { border: 2px solid var(--primary); color: var(--fg); background: color-mix(in srgb, var(--primary) 18%, transparent); }
 .ws-edge-hint { position: absolute; z-index: 51; width: 6px; pointer-events: none; background: color-mix(in srgb, var(--primary) 25%, transparent); }
 .ws-edge-hint.on { width: 10px; background: var(--primary); }
-.ws-empty-stage { position: absolute; z-index: 1; display: grid; place-items: center; border: 1px dashed var(--border); border-radius: var(--radius-lg); }
+.ws-empty-stage { position: absolute; z-index: 1; display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--border); }
 .ws-empty-note { text-align: center; max-width: 360px; padding: 16px; color: var(--muted-fg); }
 .ws-empty-note p { margin: 4px 0; }
 .stage-message { position: absolute; z-index: 8; pointer-events: none; }
@@ -187,7 +189,6 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 @keyframes drawer-left { from { transform: translateX(-24px); opacity: 0; } }
 @keyframes drawer-right { from { transform: translateX(24px); opacity: 0; } }
 .mobile .lv-panel:not(.zone-stage) { z-index: 21; }
-.mobile .lv-panel.zone-stage { border: 0; border-radius: 0; }
 
 /* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
 .action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: 64px; box-sizing: border-box;
@@ -202,6 +203,8 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .dock-actions::-webkit-scrollbar { display: none; }
 .dock-action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .dock-action.on { color: var(--primary); border-color: var(--primary); }
+/* between the main view's own actions and the general ones */
+.dock-divider { flex: none; width: 1px; height: 22px; margin: 0 4px; background: var(--border); }
 @media (max-width: 1100px) { .dock-action span { display: none; } }
 .app .action-dock .dim-btn.dock-stop { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px; flex: none; font: 800 16px var(--sans); letter-spacing: 0.1em;
     color: var(--primary-fg); background: var(--lv-stop); border: 1px solid var(--lv-stop); box-shadow: 0 0 12px color-mix(in srgb, var(--lv-stop) 40%, transparent); }
@@ -256,12 +259,9 @@ body.dark .scene-slot > .panel-content { background: radial-gradient(120% 90% at
 .label-layer { position: absolute; inset: 0; pointer-events: none; }
 .scene-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .scene-rate { font: 10.5px var(--mono); }
-.scene-slot.off .scene { display: none; }
-.scene-power.on { color: var(--primary); border-color: var(--primary); }
+.scene-slot.collapsed .scene { display: none; }
 .scene-clouds.dim-btn.icon.icon-button { width: auto; min-width: 24px; gap: 3px; padding: 0 5px; }
 .scene-count { font: 10px var(--mono); }
-.scene-off { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px;
-    font: 12px var(--sans); color: var(--muted-fg); box-shadow: var(--shadow-md); }
 .cloud-menu { padding: 4px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow-md); max-height: min(70vh, 520px); overflow-y: auto; max-width: calc(100vw - 16px); }
 .cloud-empty { font-size: 12px; color: var(--muted-fg); padding: 4px 8px 8px; margin: 0; }
 .cloud-row { padding: 6px 8px; border: 1px solid transparent; }
@@ -393,18 +393,27 @@ h3.dim-label.first { margin-top: 4px; }
 .panel-tools .depth-range { width: 52px; padding: 2px 4px; font-size: 11px; }
 
 /* ── the 2D map (ui/MapPanel.tsx) ── */
-.map-tools { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
-.map-source { flex: 1 1 auto; min-width: 0; font: 10.5px var(--mono); color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the cog (topic, costmap, frame to follow, fit) and follow, over the map's top-right corner */
+.map-controls { position: absolute; right: 8px; top: 8px; z-index: 3; display: flex; gap: 6px; }
+.map-control.dim-btn.icon { width: 30px; height: 30px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
+.map-settings.on { color: var(--primary); border-color: var(--primary); }
+.map-settings-menu { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); max-width: calc(100vw - 16px); box-sizing: border-box; }
+.map-setting { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--muted-fg); }
+.map-setting .dim-select { width: 100%; }
+.map-source { min-width: 0; font: 10.5px var(--mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-fit.dim-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .map-body { overflow: hidden; background: var(--scene-bg, var(--bg)); }
 .map-follow[aria-pressed="true"], .view-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .map-recenter.dim-btn { position: absolute; right: 8px; bottom: 26px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
     font: 11px var(--sans); background: color-mix(in srgb, var(--card) 88%, transparent); border-color: var(--primary); color: var(--fg); }
-.map-panel .camera-head .dim-select.map-frame { max-width: 28%; }
 .map-body { overflow: hidden; }
 .map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .map-canvas:active { cursor: grabbing; }
-.map-problem { position: absolute; left: 8px; right: 8px; top: 8px; pointer-events: none; font: 11px var(--sans); color: var(--warn);
-    padding: 3px 7px; background: color-mix(in srgb, var(--card) 80%, transparent); width: fit-content; max-width: calc(100% - 16px); }
+/* nothing from the topic yet: said in the middle of the map */
+.map-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; box-sizing: border-box; text-align: center; pointer-events: none;
+    font: 12px var(--sans); color: var(--muted-fg); }
+.map-problem { position: absolute; left: 8px; right: 84px; top: 8px; pointer-events: none; font: 11px var(--sans); color: var(--warn);
+    padding: 3px 7px; background: color-mix(in srgb, var(--card) 80%, transparent); width: fit-content; max-width: calc(100% - 92px); }
 
 /* ── phone: two thumb zones over the bottom of the main view, STOP between them (ui/Joystick.tsx) ── */
 /* phone: two thumb zones filling the bottom of the screen, STOP between them (ui/Joystick.tsx). The zones take the
@@ -461,7 +470,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .stats-overlay { bottom: auto; top: calc(var(--lv-strip-h) + 8px + env(safe-area-inset-top)); }
 
 /* ── status panel ── */
-.status-panel { display: grid; gap: var(--lv-gap); }
+.status-panel { display: grid; gap: 8px; }
 .status-robot { display: flex; align-items: center; gap: 10px; font: 600 13px var(--sans); }
 .status-rows { margin: 0; display: grid; gap: 2px; }
 .status-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hair, var(--border)); }

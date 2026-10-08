@@ -1,6 +1,6 @@
-// The 3D view's own camera buttons, over its corner: follow (track the followed TF frame, base_link by default; a pan
-// stops it, this resumes it) and top-down (straight down on the area around it). They move this page's camera
-// directly; the agent's POST api/camera does the same in every open page.
+// The 3D view's own camera button, over its corner: follow (track the followed TF frame, base_link by default; a pan
+// stops it, this resumes it). It moves this page's camera directly; the agent's POST api/camera does the same in every
+// open page. (Top-down is the map panel's job; the palette and the agent still have it.)
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { Icon } from "./icons.tsx"
@@ -18,9 +18,6 @@ export function ViewControls({ app }: { app: ViewerApp }) {
         <div className="view-controls" data-testid="view-controls">
             <button type="button" className="dim-btn icon view-control view-follow" aria-pressed={following} title={title} aria-label={following ? "Following" : "Follow"} onClick={() => app.recenter()}>
                 <Icon name="target" size={17} />
-            </button>
-            <button type="button" className="dim-btn icon view-control" title="Top-down view" aria-label="Top down" onClick={() => app.topDown()}>
-                <Icon name="top" size={17} />
             </button>
         </div>
     )

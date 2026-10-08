@@ -1,6 +1,7 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second, a point cloud menu (each PointCloud2 on the bus: on/off, this viewer's bandwidth preset, color and size) and
-// an off switch: off, every 3D layer stops (nothing subscribed, no bandwidth). Follow and top-down sit over its corner.
+// second and a point cloud menu (each PointCloud2 on the bus: on/off, this viewer's bandwidth preset, color and size).
+// Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
+// bandwidth; expanded, they subscribe again. Follow sits over its corner, and in the dock while it's the main view.
 // View-only: nothing here moves the robot. The element the viewer draws into (`host`) is never remounted, wherever the
 // panel goes.
 import { type RefObject, useEffect, useRef, useState } from "react"
@@ -8,7 +9,7 @@ import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
 import { type Store, useStore } from "../core/store.ts"
-import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, scenePanel, setCloudQuality, updateScenePanel } from "../core/cloudQuality.ts"
+import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, setCloudQuality } from "../core/cloudQuality.ts"
 import { GRADIENTS } from "../core/render/gradients.ts"
 import type { PointLook } from "../core/render/pointMaterial.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
@@ -19,6 +20,8 @@ import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
 import { TfFootnote } from "./TfFootnote.tsx"
 import { panelTitle } from "./commands.ts"
+import { useWorkspaceApi } from "./Workspace.tsx"
+import { useDockActions } from "./dockActions.ts"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -36,12 +39,12 @@ export function totalRate(rates: Record<string, CloudRate>): CloudRate & { cloud
 }
 
 export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement | null>; app: ViewerApp | null; onTf: () => void }) {
-    const state = useStore(scenePanel)
-    const off = state.off
+    const slot = useWorkspaceApi().layout.slots.scene
+    const off = !slot || slot.hidden || slot.collapsed
     const [menuOpen, setMenuOpen] = useState(false)
     const cloudButton = useRef<HTMLButtonElement>(null)
 
-    // off is per viewer and survives a reload: the layers stay stopped from the start
+    // collapsed or off screen: every 3D layer unsubscribes; expanded: they subscribe again
     useEffect(() => {
         app?.layers.setPaused(off)
         if (off) {
@@ -49,44 +52,45 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
         }
     }, [app, off])
 
-    const setOff = (next: boolean) => updateScenePanel({ off: next })
     return (
+        <>
+        {app && <SceneDockActions app={app} />}
         <Panel
             id="scene"
             title={panelTitle("scene")}
             icon="cube"
             className={`scene-slot ${off ? "off" : ""}`}
             testid="scene-panel"
-            info={off ? "off · nothing subscribed" : app ? <SceneRate /> : undefined}
-            tools={
+            info={slot?.collapsed ? "collapsed · nothing subscribed" : app ? <SceneRate /> : undefined}
+            tools={app && !off && (
                 <div className="scene-tools">
-                    {app && !off && <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />}
-                    <PowerButton off={off} onChange={setOff} />
+                    <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />
                 </div>
-            }
+            )}
         >
             <div ref={host} className="scene" />
             {app && !off && <ViewControls app={app} />}
             {app && !off && <TfFootnote app={app} onOpen={onTf} />}
-            {off && (
-                <div className="dim-panel scene-off">
-                    <Icon name="cube" size={15} />
-                    <span>3D view off · nothing subscribed</span>
-                    <PowerButton off={off} onChange={setOff} />
-                </div>
-            )}
             {app && menuOpen && !off && <CloudMenu app={app} anchor={cloudButton.current} onClose={() => setMenuOpen(false)} />}
         </Panel>
+        </>
     )
 }
 
-function PowerButton({ off, onChange }: { off: boolean; onChange: (off: boolean) => void }) {
-    const title = off ? "Turn the 3D view on (subscribes to its layers again)" : "Turn the 3D view off (unsubscribes every 3D layer: no bandwidth)"
-    return (
-        <button type="button" className={`dim-btn icon icon-button scene-power ${off ? "" : "on"}`} aria-pressed={!off} title={title} aria-label={off ? "Turn the 3D view on" : "Turn the 3D view off"} onClick={() => onChange(!off)}>
-            <Icon name="power" size={15} />
-        </button>
-    )
+/** The 3D view's actions in the dock while it's the main view: follow the robot (again). */
+function SceneDockActions({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    const { paused } = useStore(app.viewer.followPaused)
+    const following = view.follow && !paused
+    useDockActions("scene", [{
+        id: "follow",
+        label: following ? "Following" : "Follow",
+        icon: "target",
+        title: following ? `Following ${app.followFrame}: a pan looks around, click to reframe it` : `Follow ${app.followFrame} again`,
+        pressed: following,
+        run: () => app.recenter(),
+    }])
+    return null
 }
 
 function SceneRate() {

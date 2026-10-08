@@ -1,7 +1,8 @@
 // Camera panels (ui/workspace.ts ids camera:<n>): one from the start (the profile's preferred camera once one is on
 // the bus; until then it says there's none), more from the palette. Each is a workspace panel like any other (the
 // main view by default). Its tools: a tab per image topic, a 2D detection overlay, the depth colormap and range; a gear
-// over the picture picks latency vs quality. Depth is drawn as a colormap.
+// over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
+// rail hidden by focus) it holds no stream. As the main view it offers the dock fit / fill, the next camera and quality.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
@@ -15,6 +16,8 @@ import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from
 import { Icon } from "./icons.tsx"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
+import { useWorkspaceApi } from "./Workspace.tsx"
+import { useDockActions } from "./dockActions.ts"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 import { panelTitle } from "./commands.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
@@ -52,8 +55,8 @@ export function cameraPanels(layout: Partial<CameraLayout> | null | undefined): 
 
 const updatePanel = (id: number, patch: Partial<PanelState>) => cameraLayout.update({ panels: cameraPanels(cameraLayout.get()).map((panel) => panel.id === id ? { ...panel, ...patch } : panel) })
 
-/** Adding a camera panel, pointing the main one at a topic, and removing an added one (camera 1 only ever closes). */
-export function useCameraActions(app: ViewerApp | null): CameraActions & { remove: (id: string) => boolean } {
+/** Adding a camera panel, pointing the main one at a topic, and removing an added one (camera 1 always stays). */
+export function useCameraActions(app: ViewerApp | null): CameraActions {
     return {
         addCamera: () => {
             const panels = cameraPanels(cameraLayout.get())
@@ -68,13 +71,12 @@ export function useCameraActions(app: ViewerApp | null): CameraActions & { remov
             const id = stage && isCamera(stage) ? Number(stage.split(":")[1]) : 1
             updatePanel(id, { key, picked: key })
         },
-        remove: (panelId: string) => {
+        removeCamera: (panelId: string) => {
             if (!isCamera(panelId) || panelId === cameraId(1)) {
-                return false
+                return
             }
             const id = Number(panelId.split(":")[1])
             cameraLayout.update({ panels: cameraPanels(cameraLayout.get()).filter((panel) => panel.id !== id) })
-            return true
         },
     }
 }
@@ -145,10 +147,12 @@ function CameraPanel({ app, panel, topics, onChange }: {
     }
     const [size, setSize] = useState({ width: 0, height: 0, fps: 0 })
     const depth = topic ? isDepthTopic(topic) : false
+    const slot = useWorkspaceApi().layout.slots[cameraId(panel.id)]
+    const open = !!slot && !slot.hidden && !slot.collapsed
 
-    // the stream (shared with a 3D projection of the same topic)
+    // the stream (shared with a 3D projection of the same topic), only while the panel is open
     useEffect(() => {
-        if (!topic) {
+        if (!topic || !open) {
             return
         }
         const source = app.video.acquire(topic)
@@ -183,7 +187,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             unsubscribe()
             app.video.release(topic)
         }
-    }, [app, topic?.key])
+    }, [app, topic?.key, open])
 
     // the overlay (latest message, redrawn as it arrives)
     useEffect(() => {
@@ -229,7 +233,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
     // the latency/quality menu (gear over the picture)
     const [qualityOpen, setQualityOpen] = useState(false)
     const gear = useRef<HTMLButtonElement>(null)
-    const quality = useQuality(app, topic, depth)
+    const quality = useQuality(app, open ? topic : null, depth)
     useEffect(() => {
         if (!qualityOpen) {
             return
@@ -246,6 +250,14 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const info = size.width ? `${size.width}×${size.height}${size.fps ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     const tabs = cameraTabs(topics)
+    const nextTab = tabs.length > 1 ? tabs[(tabs.findIndex((tab) => tab.topic.key === panel.key) + 1) % tabs.length] : null
+    const qualityIndex = QUALITY_PRESETS.findIndex((preset) => preset.id === quality)
+    const nextQuality = QUALITY_PRESETS[(qualityIndex + 1) % QUALITY_PRESETS.length]
+    useDockActions(cameraId(panel.id), [
+        { id: "fill", label: fill ? "Fill" : "Fit", icon: fill ? "fill" : "fit", title: fill ? "Fill: the picture fills the view, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the view)", pressed: fill, run: toggleFill },
+        ...(nextTab ? [{ id: "next", label: "Next camera", icon: "camera", title: `Show ${nextTab.topic.name}`, run: () => onChange({ key: nextTab.topic.key, picked: nextTab.topic.key }) }] : []),
+        ...(topic && !depth ? [{ id: "quality", label: presetFor(quality).label, icon: "settings", title: `Latency ↔ quality: ${presetFor(quality).label} (click for ${nextQuality.label})`, run: () => app.video.setQuality(topic, nextQuality.id) }] : []),
+    ])
     return (
         <Panel
             id={cameraId(panel.id)}
