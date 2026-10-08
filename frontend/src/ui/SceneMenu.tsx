@@ -7,6 +7,7 @@ import type { ViewerApp } from "../core/app.ts"
 import type { LocationLabel } from "../core/labels.ts"
 import { recorder } from "../core/recorder.ts"
 import { clickedPoint } from "../core/clickedPoint.ts"
+import { createRightClickTip, narrate, RIGHT_CLICK_TIP_TEXT } from "../core/rightClickTip.ts"
 
 interface Menu {
     x: number
@@ -29,7 +30,12 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
     useEffect(() => {
         const canvas = app.viewer.renderer.domElement
         let down: { x: number; y: number } | null = null
+        let leftDown: { x: number; y: number } | null = null
+        const tip = createRightClickTip({
+            show: () => narrate(RIGHT_CLICK_TIP_TEXT).then((narrated) => !narrated && setNote(RIGHT_CLICK_TIP_TEXT)),
+        })
         const open = (x: number, y: number) => {
+            tip.rightClicked()
             const picked = app.viewer.pick(x, y)
             setText("")
             setMenu({ x, y, point: picked?.point ?? null, on: picked?.on ?? "", near: app.labels.near(x, y), editing: false })
@@ -39,9 +45,17 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                 down = { x: event.clientX, y: event.clientY }
             } else if (event.button === 0) {
                 setMenu(null)
+                leftDown = event.pointerType === "mouse" ? { x: event.clientX, y: event.clientY } : null
             }
         }
         const onUp = (event: PointerEvent) => {
+            // a left click that barely moved (an orbit drag isn't one) counts toward the double-click tip
+            if (event.button === 0 && leftDown && Math.hypot(event.clientX - leftDown.x, event.clientY - leftDown.y) < 5) {
+                tip.click(event.timeStamp)
+            }
+            if (event.button === 0) {
+                leftDown = null
+            }
             if (event.button === 2 && down && Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
                 open(event.clientX, event.clientY)
             }
