@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import type { ArmControl } from "../core/arm.ts"
 import type { EeAxis, RobotProfile } from "../profile/types.ts"
+import { overlay } from "./overlay.ts"
 
 const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
 
@@ -31,6 +32,10 @@ export function useArmKeys(arm: ArmControl | null, profile: RobotProfile | null)
                 event.preventDefault()
                 held.clear()
                 arm.stop()
+                return
+            }
+            // the palette or the shortcut list is open: no jogging (Space still stops, above)
+            if (overlay.get().open) {
                 return
             }
             const action = keys[event.code]
