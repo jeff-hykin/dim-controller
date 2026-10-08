@@ -21,6 +21,8 @@ const ENABLED_KEY = "lv.layers.enabled"
 
 export class LayerManager {
     readonly entries = new Store<{ list: LayerEntry[] }>({ list: [] })
+    /** the 3D view is switched off: no layer runs (nothing subscribed), the switches keep what to start again */
+    readonly paused = new Store<{ paused: boolean }>({ paused: false })
     #instances = new Map<string, LayerInstance>()
     #enabled = persistentStore<Record<string, boolean>>(ENABLED_KEY, {})
 
@@ -63,7 +65,7 @@ export class LayerManager {
         const next = [...list, ...added].sort((a, b) => a.topic.name.localeCompare(b.topic.name))
         this.entries.set({ list: next })
         for (const entry of added) {
-            if (entry.enabled) {
+            if (entry.enabled && !this.paused.get().paused) {
                 this.#start(entry)
             }
         }
@@ -80,10 +82,28 @@ export class LayerManager {
             return
         }
         this.#patch(key, { enabled })
+        if (this.paused.get().paused) {
+            return
+        }
         if (enabled) {
             this.#start(entry)
         } else {
             this.#stop(key)
+        }
+    }
+
+    /** Off: every layer stops (unsubscribes); on: the enabled ones start again. */
+    setPaused(paused: boolean) {
+        if (paused === this.paused.get().paused) {
+            return
+        }
+        this.paused.set({ paused })
+        for (const entry of this.entries.get().list) {
+            if (paused) {
+                this.#stop(entry.topic.key)
+            } else if (entry.enabled) {
+                this.#start(entry)
+            }
         }
     }
 
@@ -98,6 +118,9 @@ export class LayerManager {
 
     #start(entry: LayerEntry) {
         const key = entry.topic.key
+        if (this.#instances.has(key)) {
+            return
+        }
         const manager = this
         const context = {
             viewer: this.viewer,

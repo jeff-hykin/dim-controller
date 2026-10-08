@@ -10,8 +10,9 @@ import type { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
 import { rendering, resolveStyle, splatFallback } from "../core/render/rendering.ts"
-import { Field, Select, Slider } from "../ui/controls.tsx"
+import { Field, Select } from "../ui/controls.tsx"
 import { useStore } from "../core/store.ts"
+import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
 
 export interface CloudSettings {
     look: PointLook
@@ -21,9 +22,6 @@ export interface CloudSettings {
     windowSeconds: number
     /** accumulate: ring capacity */
     maxPoints: number
-    maxHz: number
-    /** "full": every point; "auto": the bridge thins clouds when bandwidth is short */
-    detail: "full" | "auto"
 }
 
 const isMap = (topic: Topic) => /map|global|voxel|terrain|costmap/i.test(topic.name)
@@ -33,8 +31,6 @@ const DEFAULTS: CloudSettings = {
     mode: "latest",
     windowSeconds: 10,
     maxPoints: 2_000_000,
-    maxHz: 20,
-    detail: "auto",
 }
 
 const SPLAT_BUDGET = 3_000_000
@@ -54,12 +50,12 @@ class CloudLayer {
     #range: [number, number] = [0, 2]
     #rangeSeen = false
     #unsubscribe: (() => void)[] = []
-    #stopStream: (() => void) | null = null
-    #streamOptions = ""
+    /** the bridge subscription at this viewer's preset (core/cloudQuality.ts) */
+    #stream: CloudStream
+    #rateSince = performance.now()
     #frameTimer: ReturnType<typeof setInterval>
     #fixedFrame = ""
     #lastCount = 0
-    #rate = { count: 0, since: performance.now(), hz: 0 }
     #settings: Store<CloudSettings>
     #mode: CloudSettings["mode"]
 
@@ -74,8 +70,15 @@ class CloudLayer {
         this.#resize(1024)
         this.#readFrame()
         this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
-        settings.subscribe(() => this.#onSettings())
+        this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
+            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array } | undefined
+            if (decoded?.positions) {
+                this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
+            }
+        })
+        this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
         this.#unsubscribe.push(rendering.subscribe(() => this.#onSettings()), splatFallback.subscribe(() => this.#onSettings()))
+        this.#unsubscribe.push(cloudQualities.subscribe(() => this.#stream.setQuality(cloudQualityOf(topic.key))))
         this.#onSettings()
     }
 
@@ -85,29 +88,10 @@ class CloudLayer {
             this.#mode = settings.mode
             this.#clear()
         }
-        if (`${settings.maxHz}/${settings.detail}` !== this.#streamOptions) {
-            this.#streamOptions = `${settings.maxHz}/${settings.detail}`
-            this.#subscribe()
-        }
         this.#material.uniforms.uWindow.value = settings.mode === "accumulate" && settings.windowSeconds > 0 ? settings.windowSeconds : -1
         applyLook(this.#material, this.#look(), this.#range)
         this.#syncSplatBudget()
         this.context.viewer.requestRender()
-    }
-
-    #subscribe() {
-        const settings = this.#settings.get()
-        this.#stopStream?.()
-        this.#stopStream = this.context.connection.subscribe(
-            this.topic.key,
-            { delivery: "latest", maxHz: settings.maxHz, encoding: "dimos_lcm_pointcloud2", ...(settings.detail === "full" ? { minQuality: 1 } : {}) },
-            (message) => {
-                const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array } | undefined
-                if (decoded?.positions) {
-                    this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
-                }
-            },
-        )
     }
 
     /** One raw message for its header's frame_id, then unsubscribe (a raw cloud is big). */
@@ -168,7 +152,6 @@ class CloudLayer {
         const settings = this.#settings.get()
         const count = positions.length / 3
         this.#lastCount = count
-        this.#rate.count++
         const accumulate = settings.mode === "accumulate"
         let transform: THREE.Matrix4 | null = null
         if (accumulate) {
@@ -286,27 +269,32 @@ class CloudLayer {
                 }
             }
         }
-        if (frame.now - this.#rate.since > 1000) {
-            this.#rate.hz = (this.#rate.count * 1000) / (frame.now - this.#rate.since)
-            this.#rate = { count: 0, since: frame.now, hz: this.#rate.hz }
+        if (frame.now - this.#rateSince > 1000) {
+            this.#rateSince = frame.now
+            const rate = this.#stream.sample(frame.now)
+            setCloudRate(this.topic.key, rate)
             const shown = this.#settings.get().mode === "accumulate" ? `${formatCount(this.#filled)} kept · ` : ""
-            this.context.setStatus({ info: this.#frame === null ? "waiting for frame_id…" : `${shown}${formatCount(this.#lastCount)} pts · ${this.#rate.hz.toFixed(1)} Hz · ${this.#frame || "no frame"}` })
+            this.context.setStatus({ info: this.#frame === null ? "waiting for frame_id…" : `${shown}${formatCount(this.#lastCount)} pts · ${rate.hz.toFixed(1)} Hz · ${formatBytes(rate.bytesPerSecond)}/s · ${this.#frame || "no frame"}` })
         }
     }
 
     dispose() {
         clearInterval(this.#frameTimer)
         this.#unsubscribe.forEach((stop) => stop())
-        this.#stopStream?.()
+        this.#stream.close()
+        setCloudRate(this.topic.key, null)
         this.#geometry.dispose()
         this.#material.dispose()
     }
 }
 
-const formatCount = (count: number) =>
-    count >= 1e6 ? `${(count / 1e6).toFixed(1)}M` : count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count)
+/** This viewer's bandwidth preset for a cloud (shared with the 3D panel's cloud menu). */
+export function CloudQualitySelect({ topicKey }: { topicKey: string }) {
+    useStore(cloudQualities)
+    return <Select value={cloudQualityOf(topicKey)} options={CLOUD_PRESETS.map((preset) => [preset.id, preset.label])} onChange={(quality) => setCloudQuality(topicKey, quality as CloudQuality)} />
+}
 
-function CloudSettingsEditor({ settings }: { settings: Store<CloudSettings>; topic: Topic }) {
+function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSettings>; topic: Topic }) {
     const value = useStore(settings)
     return (
         <>
@@ -319,11 +307,8 @@ function CloudSettingsEditor({ settings }: { settings: Store<CloudSettings>; top
                     <Select value={String(value.windowSeconds)} options={[["5", "5 s"], ["10", "10 s"], ["30", "30 s"], ["120", "2 min"], ["0", "forever"]]} onChange={(seconds) => settings.update({ windowSeconds: Number(seconds) })} />
                 </Field>
             )}
-            <Field label="Detail">
-                <Select value={value.detail} options={[["auto", "auto (thins on slow links)"], ["full", "every point"]]} onChange={(detail) => settings.update({ detail: detail as CloudSettings["detail"] })} />
-            </Field>
-            <Field label="Max rate">
-                <Slider min={1} max={30} step={1} value={value.maxHz} format={(hz) => `${hz} Hz`} onChange={(maxHz) => settings.update({ maxHz })} />
+            <Field label="Bandwidth" hint={`this viewer's: ${CLOUD_PRESETS.map((preset) => `${preset.label}: ${preset.about}`).join("; ")}`}>
+                <CloudQualitySelect topicKey={topic.key} />
             </Field>
         </>
     )

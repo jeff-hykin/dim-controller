@@ -77,6 +77,15 @@ remembered per panel for this viewer. With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
 
+While a camera is fullscreen the 3D view is a panel too: drag its header bar, resize it by the inner corner, ⤢ (or a
+double-click on the header) gives it the screen back. Its ⏻ turns the 3D view off: every 3D layer unsubscribes (no
+bandwidth) and a small bar is left to turn it back on (fullscreen, the same buttons sit beside recenter / top-down).
+Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
+live points and bytes a second, and a bandwidth preset: **Low bandwidth** (up to 5 Hz, at most 1 point in 4),
+**Balanced** (the default: up to 20 Hz, every point unless the link is short) or **Full** (up to 30 Hz, never thinned),
+the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` ([core/cloudQuality.ts](frontend/src/core/cloudQuality.ts)).
+The presets, the off switch and where the panel sits are this viewer's (localStorage).
+
 The 3D view's corner buttons recenter (frame the robot, or without one the drawn data) and look straight down on the
 area around the robot (`POST api/camera` does the same in every open page). Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.

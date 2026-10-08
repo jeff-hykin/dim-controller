@@ -14,10 +14,8 @@ import { useArmKeys } from "./ui/useArmKeys.ts"
 import { ArmHud } from "./ui/ArmHud.tsx"
 import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
-import { Icon } from "./ui/icons.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
-import { ViewControls } from "./ui/ViewControls.tsx"
-import { TfFootnote } from "./ui/TfFootnote.tsx"
+import { ScenePanel } from "./ui/ScenePanel.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 
 const noRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
@@ -64,17 +62,10 @@ export function App() {
 
     return (
         <div className={`app ${view.mobile ? "mobile" : "desktop"} ${view.mainCamera ? "camera-main" : "scene-main"}`} onPointerDownCapture={takeKeyboard}>
-            <div className="scene-slot">
-                <div ref={host} className="scene" />
-                {app && !view.mainCamera && <ViewControls app={app} />}
-                {app && !view.mainCamera && <TfFootnote app={app} onOpen={() => setTab("tf")} />}
-                {view.mainCamera && (
-                    <button type="button" className="dim-btn round pip-expand" title="Make the 3D view fullscreen" aria-label="Make the 3D view fullscreen" onClick={() => {
-                        chooseLayout()
-                        cameraLayout.update({ main: null, auto: false, autoPanel: null })
-                    }}><Icon name="expand" size={15} /></button>
-                )}
-            </div>
+            <ScenePanel host={host} app={app} mainCamera={view.mainCamera} mobile={view.mobile} onTf={() => setTab("tf")} onMain={() => {
+                chooseLayout()
+                cameraLayout.update({ main: null, auto: false, autoPanel: null })
+            }} />
             {app && (
                 <>
                     <TopBar app={app} tab={tab} onTab={(next) => setTab(tab === next ? null : next)} />

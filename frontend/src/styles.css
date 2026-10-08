@@ -26,7 +26,44 @@ body.dark .scene-slot { background: radial-gradient(120% 90% at 50% 0%, color-mi
     border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
 }
 .mobile.camera-main .scene-slot { width: 42vw; height: 30vw; bottom: calc(min(40vh, 330px) + 28px + env(safe-area-inset-bottom) + var(--dim-inset-bottom)); right: 10px; }
-.pip-expand { position: absolute; top: 6px; right: 6px; z-index: 2; }
+/* the 3D view as a panel (ui/ScenePanel.tsx): the picture-in-picture gets the camera's header, handle and a cloud menu */
+.scene-slot { container-type: inline-size; }
+.scene-slot.floating .scene { top: 33px; }
+.scene-slot.floating .scene-head { position: relative; z-index: 2; }
+.scene-slot.floating .scene-head .camera-info { flex: 1 1 auto; }
+.mobile .scene-slot.floating .scene-head .camera-info { display: none; }
+.mobile .scene-slot.floating .scene-head { padding: 2px 4px; justify-content: flex-end; }
+.scene-slot.off .scene { display: none; }
+.camera-main .scene-slot.off { width: auto; height: auto; }
+.scene-power.on { color: var(--primary); border-color: var(--primary); }
+.scene-clouds.dim-btn.icon.icon-button { width: auto; min-width: 24px; gap: 3px; padding: 0 5px; }
+.scene-count { font: 10px var(--mono); }
+.scene-tools { position: absolute; right: calc(60px + var(--dim-inset-right)); bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; align-items: center; gap: 4px;
+    padding: 3px 4px 3px 10px; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
+.scene-tools .camera-info { max-width: 220px; }
+.scene-tools .dim-btn.icon.icon-button { width: 28px; height: 28px; }
+.scene-tools .scene-clouds.dim-btn.icon.icon-button { width: auto; }
+.mobile .scene-tools { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: calc(52px + var(--dim-inset-right)); padding: 3px; }
+.mobile .scene-tools .camera-info { display: none; }
+.scene-off { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px;
+    font: 12px var(--sans); color: var(--muted-fg); box-shadow: var(--shadow-md); }
+.cloud-menu { padding: 4px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow-md); max-height: min(70vh, 520px); overflow-y: auto; max-width: calc(100vw - 16px); }
+.cloud-empty { font-size: 12px; color: var(--muted-fg); padding: 4px 8px 8px; margin: 0; }
+.cloud-row { padding: 6px 8px; border: 1px solid transparent; }
+.cloud-row.on { border-color: var(--border); }
+.cloud-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cloud-name { font: 600 12px var(--sans); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+.cloud-rate { font: 10px var(--mono); color: var(--muted-fg); white-space: nowrap; }
+.cloud-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.cloud-presets { display: flex; border: 1px solid var(--border); }
+.cloud-preset { all: unset; cursor: pointer; font-size: 11px; padding: 3px 7px; color: var(--muted-fg); }
+.cloud-preset + .cloud-preset { border-left: 1px solid var(--border); }
+.cloud-preset:hover, .cloud-preset:focus-visible { color: var(--fg); background: var(--accent); }
+.cloud-preset.on { color: var(--fg); background: var(--accent); box-shadow: inset 0 -2px 0 var(--primary); }
+.cloud-controls .dim-select.cloud-color { width: auto; flex: 0 1 auto; padding: 2px 28px 2px 6px; font-size: 11px; background-position: right 12px center, right 7px center; }
+.cloud-solid { width: 28px; height: 22px; padding: 0; border: 1px solid var(--border); background: none; }
+.cloud-size { display: flex; align-items: center; gap: 6px; flex: 1 1 120px; font: 10px var(--mono); color: var(--muted-fg); }
+.cloud-size input { flex: 1; min-width: 60px; }
 /* recenter / top-down, over the view's bottom-right corner (above the add-camera button) */
 .view-controls { position: absolute; right: 12px; bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 6px; }
 .view-control { width: 36px; height: 36px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
@@ -394,6 +431,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
     .mobile .tf-footnote { top: calc(100px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); max-width: 30vw; }
     /* with the camera main, the 3D picture-in-picture takes the same spot between the sticks */
     .mobile.camera-main .scene-slot { top: calc(52px + env(safe-area-inset-top)); bottom: auto; right: auto; left: 50%; transform: translateX(-50%); width: min(30vw, 260px); height: min(18vw, 156px); }
+    .mobile .scene-tools { top: calc(100px + env(safe-area-inset-top)); right: auto; left: calc(96px + var(--dim-inset-left)); }
 }
 /* every image topic on the bus, one tab each (core/cameraChoice.ts cameraTabs); scrolls sideways when they don't fit */
 .camera-tabs { position: relative; display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; align-self: stretch; margin: -4px 0 -4px -6px; padding: 0 0 0 6px;
