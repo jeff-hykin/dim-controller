@@ -294,7 +294,7 @@ h3.dim-label.first { margin-top: 4px; }
 .desktop .stats-overlay { bottom: 96px; }
 .keys { display: grid; gap: 3px; }
 .keys > div { display: flex; gap: 3px; justify-content: center; }
-.key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; font: 700 11px var(--mono);
+.key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 0; font: 700 11px var(--mono);
     border: 1px solid var(--border); background: var(--card); color: var(--muted-fg); transition: background 0.06s; }
 .key.empty { visibility: hidden; }
 .key.down { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
