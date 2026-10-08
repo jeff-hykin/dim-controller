@@ -1,6 +1,7 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
+import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
@@ -23,9 +24,7 @@ function HaltNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
 export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const drive = app.drive
     const state = useStore(drive.state)
-    const keys = app.profile.drive.keys
-    const usesVertical = Object.values(keys).some((action) => "axis" in action && action.axis === "vertical")
-    const usesStrafe = Object.values(keys).some((action) => "axis" in action && action.axis === "strafe")
+    const { strafe: usesStrafe, vertical: usesVertical } = profileAxes(app.profile)
     const command = state.command
     const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`
 
@@ -79,8 +78,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
 export function DriveKeys({ app }: { app: ViewerApp }) {
     const state = useStore(app.drive.state)
     const keys = app.profile.drive.keys
-    const usesVertical = Object.values(keys).some((action) => "axis" in action && action.axis === "vertical")
-    const usesStrafe = Object.values(keys).some((action) => "axis" in action && action.axis === "strafe")
+    const { strafe: usesStrafe, vertical: usesVertical } = profileAxes(app.profile)
     const keyFor = (axis: Axis, sign: number) => Object.entries(keys).find(([code, action]) => !code.startsWith("Arrow") && "axis" in action && action.axis === axis && Math.sign(action.value) === sign)?.[0].replace(/^Key/, "")
     const command = state.command
     const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`

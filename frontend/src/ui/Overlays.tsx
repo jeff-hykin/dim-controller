@@ -1,6 +1,7 @@
 // The two overlays (ui/overlay.ts): the `/` command palette (every action, searchable: words narrow it, ↑ ↓ pick,
 // Enter runs, Escape closes) and the `?` shortcut list. Typing in the palette never drives (the keyboard ignores keys
 // while a field has the focus); Space still stops, and still types its space.
+import { gamepadBindings } from "../core/gamepad.ts"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -129,9 +130,21 @@ function ShortcutHelp({ app }: { app: ViewerApp }) {
                             </dl>
                         </section>
                     ))}
+                    <section className="help-group" data-testid="gamepad-help">
+                        <h3 className="dim-label">Gamepad</h3>
+                        <dl>
+                            {gamepadBindings(app.profile).map((binding) => (
+                                <div key={binding.buttons} className="help-row">
+                                    <dt><kbd className="lv-kbd">{binding.buttons}</kbd></dt>
+                                    <dd>{binding.action}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        <p className="hint">Nothing is sent until both sticks are at rest after the pad connects (or after a stop, a blur or a hidden tab).</p>
+                    </section>
                     <section className="help-group">
                         <h3 className="dim-label">Panels</h3>
-                        <p className="hint">Every panel has the same four buttons, in the same place: fold, main view (on the main view: focus), pop out / dock, close. Drag a header into a rail, onto the main view's middle (swap), or anywhere to float; it snaps to edges. Double-click a header to fold it. The arrangement is saved on this device.</p>
+                        <p className="hint">Every panel's header has the same buttons, shown on hover: collapse / expand (collapsed, it stops its stream), make it the main view, pop out / dock. Drag a header into a rail, onto the main view's middle (swap), or anywhere to float; it snaps to edges. Double-click a header to collapse it. The arrangement is saved on this device.</p>
                     </section>
                 </div>
             </div>

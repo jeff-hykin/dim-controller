@@ -11,6 +11,7 @@ import { inDesktopShell } from "../dim-app/source/desktop.js"
 import { RecordControl } from "./RecordControl.tsx"
 import { openOverlay } from "./overlay.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
+import { gamepadStatus } from "./useGamepad.ts"
 
 type Tone = "ok" | "warn" | "bad" | "busy" | ""
 
@@ -81,6 +82,7 @@ export function StatusStrip({ app, api }: { app: ViewerApp; api: WorkspaceApi })
                     <span className="strip-value">{stats.fps} fps{stats.latencyP50 !== null ? ` · ${Math.round(stats.latencyP50)} ms` : ""}</span>
                 </span>
             )}
+            <GamepadChip />
             {tfIssues.length > 0 && (
                 <button type="button" className="strip-chip tone-warn strip-button" title={`TF: ${tfIssues[0].summary} (open the TF panel)`} onClick={() => api.act("tf", "show")}>
                     <Icon name="warn" size={13} />
@@ -110,5 +112,24 @@ export function StatusStrip({ app, api }: { app: ViewerApp; api: WorkspaceApi })
                 </button>
             )}
         </header>
+    )
+}
+
+/** A gamepad connected: its state (ready, waiting for the sticks at rest, stopped until A); nothing without one. */
+function GamepadChip() {
+    const pad = useStore(gamepadStatus)
+    if (!pad.connected) {
+        return null
+    }
+    const [tone, text, detail] = pad.stopped
+        ? ["warn", "stopped", "LT + RT stopped it: press A to drive again"]
+        : pad.ready
+        ? ["ok", "ready", "the sticks drive (LT + RT: STOP)"]
+        : ["warn", "center sticks", "nothing is sent until both sticks are at rest and the triggers are out"]
+    return (
+        <span className={`strip-chip tone-${tone} strip-gamepad`} title={`Gamepad: ${pad.id} · ${detail}`} data-testid="strip-gamepad">
+            <Icon name="gamepad" size={14} />
+            <span className="strip-value">{text}</span>
+        </span>
     )
 }

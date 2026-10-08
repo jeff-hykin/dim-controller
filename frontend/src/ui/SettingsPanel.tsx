@@ -6,7 +6,8 @@ import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
-import { Field, Toggle } from "./controls.tsx"
+import { Field, Slider, Toggle } from "./controls.tsx"
+import { gamepadSettings } from "../core/gamepad.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
@@ -60,6 +61,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                         <Field label="Max latency (ms)" hint="Over this, the drive panel stops driving and shows Reconnect (also when the link drops).">
                             <MaxLatencyInput app={app} />
                         </Field>
+                        <GamepadSettingsFields />
                     </section>
                 )}
             <section className="settings-section" data-section="map">
@@ -90,6 +92,21 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
+        </div>
+    )
+}
+
+/** Settings → Drive → Gamepad: its dead zone (drift) and inverted forward / back */
+function GamepadSettingsFields() {
+    const settings = useStore(gamepadSettings)
+    return (
+        <div className="field-block gamepad-settings" data-testid="gamepad-settings">
+            <span className="field-label">Gamepad</span>
+            <Field label="Dead zone" hint="how far a stick moves before it drives (raise it for a drifting stick)">
+                <Slider value={settings.deadZone} min={0.05} max={0.4} step={0.01} onChange={(deadZone) => gamepadSettings.update({ deadZone })} format={(value) => `${Math.round(value * 100)}%`} />
+            </Field>
+            <Field label="Invert Y" hint="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY) => gamepadSettings.update({ invertY })} /></Field>
+            <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>
         </div>
     )
 }

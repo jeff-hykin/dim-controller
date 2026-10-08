@@ -12,6 +12,7 @@ import { MapPanel } from "./ui/MapPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useKeyboard } from "./ui/useKeyboard.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
+import { useGamepad } from "./ui/useGamepad.ts"
 import { ArmHud } from "./ui/ArmHud.tsx"
 import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
@@ -60,6 +61,7 @@ export function App() {
     const profile = app && robot ? app.profile : null
     useKeyboard(profile?.type === "arm" ? null : app?.drive ?? null, profile?.type === "arm" ? null : profile, api)
     useArmKeys(app?.arm ?? null, profile?.type === "arm" ? profile : null)
+    useGamepad(app)
 
     return (
         <WorkspaceContext.Provider value={api}>

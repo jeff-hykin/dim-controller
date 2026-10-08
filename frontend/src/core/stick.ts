@@ -14,37 +14,38 @@ export type StickAxes = "xy" | "x" | "y"
 
 /**
  * The thumb's offset from the stick's center (px, screen y down) → x and y in -1..1 (up = +y).
- * Two-axis sticks use a radial dead zone (no snapping to an axis); one-axis sticks look at that axis alone.
+ * Two-axis sticks use a radial dead zone (no snapping to an axis); one-axis sticks look at that axis alone. A gamepad
+ * passes its own dead zone (Settings → Drive → Gamepad).
  */
-export function shapeStick(dx: number, dy: number, radius: number, axes: StickAxes = "xy"): { x: number; y: number } {
+export function shapeStick(dx: number, dy: number, radius: number, axes: StickAxes = "xy", deadZone = DEAD_ZONE): { x: number; y: number } {
     if (!(radius > 0)) {
         return { x: 0, y: 0 }
     }
     let x = dx / radius
     let y = -dy / radius
     if (axes === "x") {
-        return { x: shape1(x), y: 0 }
+        return { x: shape1(x, deadZone), y: 0 }
     }
     if (axes === "y") {
-        return { x: 0, y: shape1(y) }
+        return { x: 0, y: shape1(y, deadZone) }
     }
     const length = Math.hypot(x, y)
-    if (length <= DEAD_ZONE) {
+    if (length <= deadZone) {
         return { x: 0, y: 0 }
     }
     const clamped = Math.min(1, length)
-    const scaled = Math.pow((clamped - DEAD_ZONE) / (1 - DEAD_ZONE), EXPO)
+    const scaled = Math.pow((clamped - deadZone) / (1 - deadZone), EXPO)
     x = (x / length) * scaled
     y = (y / length) * scaled
     return { x: clean(x), y: clean(y) }
 }
 
-function shape1(value: number): number {
+function shape1(value: number, deadZone: number): number {
     const size = Math.min(1, Math.abs(value))
-    if (size <= DEAD_ZONE) {
+    if (size <= deadZone) {
         return 0
     }
-    return clean(Math.sign(value) * Math.pow((size - DEAD_ZONE) / (1 - DEAD_ZONE), EXPO))
+    return clean(Math.sign(value) * Math.pow((size - deadZone) / (1 - deadZone), EXPO))
 }
 
 /** rounds away float dust (and -0) so a twist reads exactly 0 or a tidy number */

@@ -89,6 +89,14 @@ key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while 
 open, and leaving the window lets go of everything. On a phone the rails are drawers (the strip's buttons) and driving
 is two thumb sticks with STOP between them.
 
+**Gamepad** (Xbox, PlayStation, Steam Deck; the Gamepad API's standard mapping, other pads read with the common
+layout): the left stick drives forward / back (and strafes, for formats that strafe), the right stick turns (and goes
+up / down for a drone), RB held boosts, **LT + RT stops** at once and holds the pad until **A**; A also Reconnects
+while driving is held, and otherwise presses the focused button. Nothing is sent until both sticks are at rest after
+the pad connects (a drifting or held stick never drives), and a disconnect, blur or hidden tab zeroes it and asks for
+rest again. The arm format isn't driven by a pad (LT + RT still stops the arm). The status strip shows the pad's state;
+Settings → Drive → Gamepad has its dead zone and invert Y; `?` lists the mapping ([core/gamepad.ts](frontend/src/core/gamepad.ts)).
+
 ## Cameras
 
 One camera panel opens on the profile's preferred camera; the palette's "Add a camera panel" adds more, each with its own topic and an optional 2D
