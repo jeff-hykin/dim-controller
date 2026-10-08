@@ -1,6 +1,6 @@
 // Camera latency/quality presets (core/videoQuality.ts) reach the bridge as subscription options; a change updates it in place.
 import { assertEquals } from "jsr:@std/assert@1"
-import { DEPTH_OPTIONS, DEPTH_PREVIEW_OPTIONS, optionChanges, PREVIEW_OPTIONS, streamOptions, VideoSources } from "../src/core/video.ts"
+import { DEPTH_OPTIONS, DEPTH_PREVIEW_OPTIONS, needsNewReceiver, optionChanges, PREVIEW_OPTIONS, streamOptions, VideoSources } from "../src/core/video.ts"
 import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/core/videoQuality.ts"
 import type { Connection, SubscribeOptions, SubscriptionUpdate } from "../src/core/transport.ts"
 
@@ -55,9 +55,14 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it updat
     assertEquals(subscriptions[0].options.playoutDelay, [100, 400], "High quality buffers for smooth playout")
     sources.setQuality(camera, "balanced")
     await Promise.resolve()
-    assertEquals(subscriptions[0].options, { delivery: "latest", encoding: "dimos_lcm_image" })
-    assertEquals(subscriptions[0].updates[2].playoutDelay, null)
-    assertEquals(subscriptions.length, 1)
+    // leaving High quality's buffered playout takes a fresh receiver (Firefox froze on the change in place)
+    assertEquals(subscriptions.map((entry) => entry.open), [false, true])
+    assertEquals(subscriptions[1].openBefore, 0, "the old subscription closes first")
+    assertEquals(subscriptions[1].options, { delivery: "latest", encoding: "dimos_lcm_image" })
+    sources.setQuality(camera, "latency")
+    await Promise.resolve()
+    assertEquals(subscriptions.length, 2, "between low-latency presets: in place again")
+    assertEquals(subscriptions[1].options, { delivery: "latest", encoding: "dimos_lcm_image", ...preset("latency") })
     sources.setQuality(camera, "quality")
     sources.release(camera)
     assertEquals(subscriptions.every((entry) => !entry.open), true)
@@ -78,6 +83,16 @@ Deno.test("a gateway that refuses the update gets a new subscription with the pr
     assertEquals(subscriptions.map((entry) => entry.open), [false, true])
     assertEquals(subscriptions[1].openBefore, 0, "the old subscription closes first (the client gives the new one a fresh transceiver)")
     assertEquals(subscriptions[1].options, { delivery: "latest", ...preset("latency"), encoding: "dimos_lcm_image" })
+})
+
+Deno.test("needsNewReceiver: only a change from buffered playout back to low-latency rendering", () => {
+    assertEquals(needsNewReceiver(preset("quality"), preset("latency")), true)
+    assertEquals(needsNewReceiver(preset("quality"), preset("balanced")), true)
+    assertEquals(needsNewReceiver(preset("quality"), PREVIEW_OPTIONS), true)
+    assertEquals(needsNewReceiver(preset("balanced"), preset("quality")), false)
+    assertEquals(needsNewReceiver(preset("latency"), preset("balanced")), false)
+    assertEquals(needsNewReceiver({ playoutDelay: [0, 400] }, {}), false, "min 0 and max <= 500 ms is low latency too")
+    assertEquals(needsNewReceiver({ playoutDelay: [0, 600] }, {}), true)
 })
 
 Deno.test("optionChanges: the new preset's options, null for the ones only the old set", () => {
@@ -133,22 +148,23 @@ Deno.test("cameras in 3D: a panel opening shares the 3D view's subscription at i
     assertEquals(viewed, preview, "one source: the 3D view's texture and the panel play the same stream")
     assertEquals(subscriptions.length, 1, "no second subscription")
     assertEquals(subscriptions[0].options, { delivery: "latest", ...preset("quality"), encoding: "dimos_lcm_image" })
-    // a preset change while viewed applies to the shared stream
+    // a preset change while viewed applies to the shared stream (from High quality's buffered playout: a fresh receiver)
     sources.setQuality(camera, "latency")
     await Promise.resolve()
-    assertEquals(subscriptions[0].options, { delivery: "latest", ...preset("latency"), encoding: "dimos_lcm_image" })
+    assertEquals(subscriptions.map((entry) => entry.open), [false, true])
+    assertEquals(subscriptions[1].options, { delivery: "latest", ...preset("latency"), encoding: "dimos_lcm_image" })
     // the panel collapses: back to the preview on the same subscription
     sources.release(camera, "view")
     await Promise.resolve()
-    assertEquals(subscriptions.length, 1)
-    assertEquals(subscriptions[0].open, true)
-    assertEquals(subscriptions[0].options, { delivery: "latest", ...PREVIEW_OPTIONS, encoding: "dimos_lcm_image" })
+    assertEquals(subscriptions.length, 2)
+    assertEquals(subscriptions[1].open, true)
+    assertEquals(subscriptions[1].options, { delivery: "latest", ...PREVIEW_OPTIONS, encoding: "dimos_lcm_image" })
     // a preset change while only previewed is remembered for when a panel opens, the preview unchanged
     sources.setQuality(camera, "balanced")
     await Promise.resolve()
-    assertEquals(subscriptions[0].options, { delivery: "latest", ...PREVIEW_OPTIONS, encoding: "dimos_lcm_image" })
+    assertEquals(subscriptions[1].options, { delivery: "latest", ...PREVIEW_OPTIONS, encoding: "dimos_lcm_image" })
     sources.release(camera, "preview")
-    assertEquals(subscriptions[0].open, false)
+    assertEquals(subscriptions[1].open, false)
 })
 
 Deno.test("cameras in 3D: a panel already open keeps its stream when the 3D view joins and leaves", async () => {

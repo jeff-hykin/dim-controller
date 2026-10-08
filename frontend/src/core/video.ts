@@ -52,6 +52,22 @@ export function optionChanges(from: SubscribeOptions, to: SubscribeOptions): Sub
     return { ...changes, ...to } as SubscriptionUpdate
 }
 
+/** Whether options keep the browser in low-latency rendering (playoutDelay min 0, max <= 500 ms; the default [0, 0]). */
+export function lowLatencyRendering(options: SubscribeOptions): boolean {
+    const [min, max] = options.playoutDelay ?? [0, 0]
+    return min === 0 && max <= 500
+}
+
+/**
+ * Whether a change can't be made in place: back to low-latency rendering from a buffered playout (High quality's
+ * playoutDelay [100, 400] → any other preset). Firefox stops showing a receiver's frames for good once their render
+ * time drops back to 0 (they decode, the picture stays frozen), so that change takes a new subscription (a fresh
+ * receiver); zenoh-gateway >= 0.5.3 never sends it on a running track either (it sends [10, 10] ms there).
+ */
+export function needsNewReceiver(from: SubscribeOptions, to: SubscribeOptions): boolean {
+    return !lowLatencyRendering(from) && lowLatencyRendering(to)
+}
+
 interface Source {
     uses: Record<StreamUse, number>
     /** the options the bridge subscription runs with now */
@@ -126,7 +142,8 @@ export class VideoSources {
     /**
      * The running subscription takes the options its users want now (a panel opened or closed over a 3D projection, a
      * new preset) in place (zenoh-gateway 0.5.1's update: same track, no resubscribe, so no gap); a gateway that refuses
-     * the update gets a new subscription instead (closed, then reopened: a fresh transceiver).
+     * the update, or a change back to low-latency rendering (needsNewReceiver), gets a new subscription instead (closed,
+     * then reopened: a fresh transceiver).
      */
     #retune(topic: Topic, source: Source) {
         const previous = source.options
@@ -142,7 +159,7 @@ export class VideoSources {
                 this.#open(topic, source)
             }
         }
-        if (!subscription.update) {
+        if (!subscription.update || needsNewReceiver(previous, wanted)) {
             return reopen()
         }
         subscription.update(optionChanges(previous, wanted)).catch((error) => {

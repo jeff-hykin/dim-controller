@@ -4,7 +4,8 @@
 // on screen sooner, and a squeezed link keeps the rate) or the full picture at more bits (dropping frames, not detail, when
 // short). playoutDelay is the browser side: the gateway marks each video packet with it, and the receiver may hold frames
 // that long to even out their arrival ([0, 0], the default, shows each the moment it decodes).
-// A change applies in place (Subscription.update, zenoh-gateway >= 0.5.1): same subscription and track, no gap.
+// A change applies in place (Subscription.update, zenoh-gateway >= 0.5.1): same subscription and track, no gap; leaving
+// High quality's buffered playout takes a new subscription instead (core/video.ts needsNewReceiver: Firefox froze).
 // The choice is per viewer (a phone on cellular wants low latency, a desktop on the LAN quality): localStorage, not the
 // backend's shared settings.
 import type { SubscribeOptions } from "./transport.ts"
