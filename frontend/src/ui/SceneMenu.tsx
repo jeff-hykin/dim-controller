@@ -1,6 +1,6 @@
 // The 3D view's right-click menu: label the clicked spot (a text label at that point in the fixed frame, written into
 // the recording if one runs) or remove the label under the cursor. A right-drag still pans: only a right click that
-// barely moved opens it (a long press on touch). "Publish clicked_point" sends the spot to the nav stack (one message).
+// barely moved opens it (a long press on touch). "Go here" publishes clicked_point: it sends the spot to the nav stack (one message).
 import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ViewerApp } from "../core/app.ts"
@@ -154,7 +154,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                     ) : (
                         <>
                             <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>
-                                Publish clicked_point
+                                Go here
                             </button>
                             <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
                                 Label this location…
