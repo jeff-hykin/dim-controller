@@ -39,11 +39,11 @@ export interface DriveState {
     error: string | null
     /** the last endpoint command (POST api/drive), shown until it ends */
     command: DriveCommand | null
-    /** driving is held (link too slow, or lost) until a reconnect; nothing but the stop goes out */
+    /** driving is disengaged (link too slow, or lost) until a reconnect; nothing but the stop goes out */
     halt: DriveHalt | null
 }
 
-/** Why driving is held: the link's latency went over Settings' max, or the link dropped. */
+/** Why driving is disengaged: the link's latency went over Settings' max, or the link dropped. */
 export interface DriveHalt {
     reason: "latency" | "lost"
     latencyMs: number | null

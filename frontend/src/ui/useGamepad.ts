@@ -1,6 +1,6 @@
 // The gamepad in the page (core/gamepad.ts has the mapping and the safety rules): polled while one is connected, zeroed
 // when the window loses focus (to another window or app; Desktop's shell around the page counts as the page) or the tab
-// is hidden. `gamepadStatus` is what the status strip shows.
+// is hidden. `gamepadStatus` is what the bar's gamepad chip shows.
 import { useEffect } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { GamepadDriver, type GamepadStatus, gamepadSettings, noPad, type PadLike } from "../core/gamepad.ts"

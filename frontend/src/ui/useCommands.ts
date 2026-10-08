@@ -40,8 +40,8 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
             id: "drive.reconnect",
             label: "Reconnect the control link",
             group: "Drive",
-            hint: drive.halt ? (drive.halt.reason === "lost" ? "link lost" : "latency over max") : undefined,
-            blocked: drive.halt ? undefined : "driving isn't held",
+            hint: drive.halt ? (drive.halt.reason === "lost" ? "disengaged: link lost" : "disengaged: latency over max") : undefined,
+            blocked: drive.halt ? undefined : "driving isn't disengaged",
             run: () => app.reconnect(),
         },
         ...(arm ? [] : [{

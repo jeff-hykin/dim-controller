@@ -1,12 +1,13 @@
-// The page: a status strip on top, the workspace (a main view between a left and a right rail, panels that can float
-// over it; ui/workspace.ts), and the action dock at the bottom with the drive keys, the main view's actions and STOP.
+// The page: the workspace (a main view between a left and a right rail, panels that can float over it; ui/workspace.ts)
+// and one bar along the bottom (ui/ActionDock.tsx): the drive keys, the main view's actions, the problem chips, Record
+// and STOP. No bar across the top: the Status panel has the link, what's running and the rates.
 // Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
 // phone the rails are drawers and driving is two thumb sticks.
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
-import { StatusStrip } from "./ui/StatusStrip.tsx"
 import { ActionDock } from "./ui/ActionDock.tsx"
+import { PhoneCorners } from "./ui/PhoneCorners.tsx"
 import { CameraPanels, cameraLayout, useCameraActions } from "./ui/CameraPanels.tsx"
 import { MapPanel } from "./ui/MapPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
@@ -67,7 +68,7 @@ export function App() {
     return (
         <WorkspaceContext.Provider value={api}>
             <div className={`app ${mobile ? "mobile" : "desktop"}`} onPointerDownCapture={takeKeyboard}>
-                {app && <StatusStrip app={app} api={api} />}
+                {app && mobile && <PhoneCorners app={app} api={api} />}
                 <div className="workspace">
                     <ScenePanel host={host} app={app} onTf={() => api.act("tf", "show")} />
                     {app && (
@@ -108,7 +109,7 @@ function Driving({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
         <>
             {api.mobile
                 ? !onboarding.blocksDriving && (isArm ? <ArmHud app={app} mobile /> : <DriveHud app={app} mobile />)
-                : <ActionDock app={app} api={api} canDrive={!onboarding.blocksDriving} />}
+                : <ActionDock app={app} api={api} onboarding={onboarding} />}
             {/* over the main view only: an open drawer covers it */}
             {onboarding.message && !api.view.drawer && (
                 <div className="stage-message" style={rectStyle(api.layout.stage)}>

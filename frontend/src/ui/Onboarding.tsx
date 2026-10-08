@@ -55,7 +55,11 @@ export function EmptyLayer(props: EmptyStateOptions) {
     return <div ref={host} className="dim-empty-layer" />
 }
 
-export type Onboarding = { message: EmptyStateOptions | null; blocksDriving: boolean }
+/**
+ * The message over the main view (null: none) and, when nothing can be driven, why in a few words (`reason`, for the
+ * dock: "dimOS isn't installed") and where to fix it (`launch`: the Launcher's filter; none: nothing to open).
+ */
+export type Onboarding = { message: EmptyStateOptions | null; blocksDriving: boolean; reason?: string; launch?: Record<string, string> }
 
 /** Which first-run message applies now (null: none), and whether the drive bar should step aside for it. */
 export function useOnboarding(app: ViewerApp): Onboarding {
@@ -99,6 +103,8 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     if (runs.dimosInstalled === false) {
         return {
             blocksDriving: true,
+            reason: "dimOS isn't installed",
+            launch,
             message: {
                 testId: "onboard-no-dimos",
                 tone: "warn",
@@ -112,6 +118,7 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     if (runs.running.length === 0 && runs.starting) {
         return {
             blocksDriving: true,
+            reason: `${runs.starting} is still starting`,
             message: {
                 testId: "onboard-starting",
                 busy: true,
@@ -126,11 +133,13 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     const outside = runs.running.length === 0 && connection.topics.some((topic) => !/^\/rpc\b|^\/dimos\//.test(topic.name))
     if (runs.running.length === 0 && !outside && noBlueprintDismissed) {
         // dismissed: the 3D view shows whatever topics exist; there's nothing to drive, so no key guide
-        return { message: null, blocksDriving: true }
+        return { message: null, blocksDriving: true, reason: isArm ? "no arm blueprint is running" : "no blueprint with a cmd_vel input is running", launch }
     }
     if (runs.running.length === 0 && !outside) {
         return {
             blocksDriving: true,
+            reason: isArm ? "no arm blueprint is running" : "no blueprint with a cmd_vel input is running",
+            launch,
             message: {
                 testId: "onboard-no-blueprint",
                 label: "No blueprint running",
@@ -151,6 +160,8 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     if (isArm && arm.topics.fromMetadata && !armInputs && dismissed !== runningKey) {
         return {
             blocksDriving: true,
+            reason: `${names} takes no arm commands`,
+            launch: LAUNCH_ARM,
             message: {
                 testId: "onboard-no-arm-input",
                 tone: "warn",
@@ -168,6 +179,8 @@ export function useOnboarding(app: ViewerApp): Onboarding {
     if (!isArm && takesVelocity(runs.blueprints) === false && dismissed !== runningKey) {
         return {
             blocksDriving: true,
+            reason: `${names} has no cmd_vel input`,
+            launch: LAUNCH_DRIVABLE,
             message: {
                 testId: "onboard-no-cmd-vel",
                 tone: "warn",

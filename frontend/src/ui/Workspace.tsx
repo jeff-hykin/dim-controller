@@ -144,7 +144,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     return { arrangement, layout, frame, view, mobile, ids, act, startDrag, toggleRail, toggleFocus }
 }
 
-/** The window as the workspace sees it: between the status strip and the action dock (a phone: Desktop's dock). */
+/** The window as the workspace sees it: above the bar (a phone: above the thumb sticks). */
 function useFrame(mobile: boolean): Frame {
     const [, setTick] = useState(0)
     useEffect(() => {
@@ -156,7 +156,7 @@ function useFrame(mobile: boolean): Frame {
         const bars = new ResizeObserver(again)
         const watched = new Set<Element>()
         const watch = () => {
-            for (const element of document.querySelectorAll(".status-strip, .action-dock, .drive-hud.mobile")) {
+            for (const element of document.querySelectorAll(".action-dock, .drive-hud.mobile")) {
                 if (!watched.has(element)) {
                     watched.add(element)
                     bars.observe(element)
@@ -183,7 +183,8 @@ function useFrame(mobile: boolean): Frame {
     return {
         width: innerWidth,
         height,
-        top: document.querySelector(".status-strip")?.getBoundingClientRect().bottom ?? (mobile ? 48 : 44),
+        // nothing across the top: the panels start at the window's top edge
+        top: 0,
         bottom: dock ?? height - px("--dim-inset-bottom", 0),
         mobile,
     }

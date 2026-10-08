@@ -5,8 +5,6 @@
 import type { CSSProperties } from "react"
 import type { DropTarget, Rect } from "./workspace.ts"
 
-/** the status strip's height: a popover never goes under it */
-export const TOP_BAR_PX = 48
 /** a press has to move this far before it's a drag (a click or double-click stays one) */
 const DRAG_SLOP = 5
 
@@ -105,10 +103,10 @@ export function startPointerDrag(event: { clientX: number; clientY: number }, on
 export function popoverPosition(anchor: Element | null | undefined, width: number, viewport = { width: globalThis.innerWidth || 1280, height: globalThis.innerHeight || 800 }): CSSProperties {
     const box = anchor?.getBoundingClientRect()
     if (!box) {
-        return { position: "fixed", right: 8, top: TOP_BAR_PX + 8, width, zIndex: 40 }
+        return { position: "fixed", right: 8, top: 8, width, zIndex: 40 }
     }
     const left = Math.round(Math.max(8, Math.min(box.right - width, viewport.width - width - 8)))
-    const below = viewport.height - box.bottom - 8, above = box.top - TOP_BAR_PX - 8
+    const below = viewport.height - box.bottom - 8, above = box.top - 8
     return below >= Math.min(320, above)
         ? { position: "fixed", left, top: Math.round(box.bottom + 4), width, maxHeight: Math.max(120, below - 4), zIndex: 40 }
         : { position: "fixed", left, bottom: Math.round(viewport.height - box.top + 4), width, maxHeight: Math.max(120, above - 4), zIndex: 40 }

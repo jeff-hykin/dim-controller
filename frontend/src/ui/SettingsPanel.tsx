@@ -58,7 +58,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <section className="settings-section" data-section="drive">
                         <h3 className="dim-label">Drive</h3>
                         <DrivePanel app={app} />
-                        <Field label="Max latency (ms)" hint="Over this, the drive panel stops driving and shows Reconnect (also when the link drops).">
+                        <Field label="Max latency (ms)" hint="Over this (or when the link drops), driving disengages until you press Reconnect.">
                             <MaxLatencyInput app={app} />
                         </Field>
                         <GamepadSettingsFields />

@@ -1,4 +1,4 @@
-/* The page: a status strip, the workspace (a main view between two rails, panels floating over it; ui/workspace.ts
+/* The page: the workspace (a main view between two rails, panels floating over it; ui/workspace.ts
    places every panel inline) and the action dock. Components and colors come from Desktop's /theme.css (every skin's
    tokens; dim-app/theme.css is the off-Desktop fallback): this file only places and sizes them, and every color here
    is a theme token. */
@@ -8,9 +8,10 @@
     --lv-stop-hover: var(--close-red-hover, var(--lv-stop));
     /* a light line or glow over video (sticks, the resize corner, the quality gear) */
     --lv-over-video: color-mix(in srgb, var(--fg) 55%, transparent);
+    /* the one bar along the bottom (ui/ActionDock.tsx) */
+    --lv-bar-h: 64px;
     /* the frosted bars and panel headers over the view */
     --lv-bar: color-mix(in srgb, var(--card) 92%, transparent);
-    --lv-strip-h: 44px;
 }
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
@@ -26,39 +27,26 @@ h3.dim-label { display: block; margin: 14px 0 6px; }
 
 .app { position: fixed; inset: 0; }
 
-/* ── status strip (ui/StatusStrip.tsx) ── */
-.status-strip { position: absolute; top: 0; left: 0; right: 0; height: var(--lv-strip-h); z-index: 30; display: flex; align-items: center; gap: 6px;
-    padding: env(safe-area-inset-top) calc(8px + var(--dim-inset-right)) 0 calc(10px + var(--dim-inset-left)); box-sizing: content-box;
-    background: var(--lv-bar); backdrop-filter: var(--blur); border-bottom: 1px solid var(--border); }
-.status-strip .brand { width: 20px; height: 20px; }
-.status-strip .title { white-space: nowrap; margin-right: 6px; }
-.strip-spacer { flex: 1; }
-.strip-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; min-width: 0; white-space: nowrap; font: 500 12px var(--sans);
+/* ── the bar's chips (ui/BarChips.tsx): a problem (the link, TF, rendering) or the gamepad, nothing when all's well ── */
+.bar-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; flex: none; white-space: nowrap; font: 500 12px var(--sans);
     color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 70%, transparent); }
-.strip-key { font: 10px var(--mono); text-transform: var(--label-case); letter-spacing: 0.08em; color: var(--muted-fg); }
-.strip-key:empty { display: none; }
-.strip-value { font: 500 12px var(--mono); overflow: hidden; text-overflow: ellipsis; }
-.strip-run .strip-value { max-width: 260px; }
-.strip-extra { font: 11px var(--mono); color: var(--warn); }
-.strip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-fg); flex: none; }
-.strip-chip.tone-ok .strip-dot { background: var(--ok); box-shadow: 0 0 6px var(--ok-line); }
-.strip-chip.tone-warn { border-color: var(--warn-line); }
-.strip-chip.tone-warn .strip-dot, .strip-chip.tone-warn svg { background: var(--warn); color: var(--warn); }
-.strip-chip.tone-warn svg { background: none; }
-.strip-chip.tone-bad { border-color: var(--lv-stop); color: var(--lv-stop); }
-.strip-chip.tone-bad .strip-dot { background: var(--lv-stop); animation: blink 1s infinite; }
-.strip-chip.tone-busy { border-color: var(--primary); }
-.strip-chip.tone-busy .strip-dot { background: var(--primary); box-shadow: var(--glow-accent); }
-.strip-button { cursor: pointer; }
-.strip-button:hover { background: var(--hover); }
-.strip-command { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; }
-.strip-help.dim-btn.icon, .strip-drawer.dim-btn.icon { width: 32px; height: 32px; padding: 0; flex: none; }
-.strip-drawer.on { color: var(--primary); border-color: var(--primary); }
+.bar-value { font: 500 12px var(--mono); overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.bar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-fg); flex: none; }
+.bar-chip.tone-ok .bar-dot { background: var(--ok); box-shadow: 0 0 6px var(--ok-line); }
+.bar-chip.tone-ok svg { color: var(--ok); }
+.bar-chip.tone-warn { border-color: var(--warn-line); }
+.bar-chip.tone-warn .bar-dot { background: var(--warn); }
+.bar-chip.tone-warn svg { color: var(--warn); }
+.bar-chip.tone-bad { border-color: var(--lv-stop); color: var(--lv-stop); background: color-mix(in srgb, var(--lv-stop) 14%, var(--card)); }
+.bar-chip.tone-bad .bar-dot { background: var(--lv-stop); animation: blink 1s infinite; }
+.bar-button { cursor: pointer; }
+.bar-button:hover { background: var(--hover); }
+.dock-help.dim-btn.icon { width: 32px; height: 32px; padding: 0; flex: none; }
 .lv-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; box-sizing: border-box; font: 10.5px var(--mono); line-height: 1; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
-/* recording sits in the strip: the Record button and "…" (ui/RecordControl.tsx), the options drop below it */
-.status-strip .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
+/* recording sits in the bar (a phone: its top-right corner): the Record button and "…" (ui/RecordControl.tsx) */
+.action-dock .record-control, .phone-corners .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
     /* recording is red in every skin (Portal's --danger is amber, and a record button should read as one) */
     --record: var(--lv-stop); --record-hover: var(--lv-stop-hover); --record-fg: var(--primary-fg); --record-glow: 0 0 10px color-mix(in srgb, var(--lv-stop) 55%, transparent); }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -109,8 +97,10 @@ body.dark .record-split { box-shadow: var(--record-glow); }
 .record-topic.off .topic-name { color: var(--muted-fg); text-decoration: line-through; }
 .record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
 .record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
-.record-options { position: fixed; top: calc(var(--lv-strip-h) + 8px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); width: 380px; z-index: 45; display: flex; flex-direction: column;
-    max-height: calc(100vh - var(--lv-strip-h) - 24px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
+/* its options open up from the bar (a phone: down from the corner) */
+.record-options { position: fixed; bottom: calc(var(--lv-bar-h) + 8px + var(--dim-inset-bottom)); right: calc(8px + var(--dim-inset-right)); width: 380px; z-index: 45; display: flex; flex-direction: column;
+    max-height: calc(100vh - var(--lv-bar-h) - 24px - var(--dim-inset-bottom)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
+.mobile .record-options { bottom: auto; top: calc(56px + env(safe-area-inset-top)); max-height: calc(100vh - 72px - env(safe-area-inset-top)); }
 .mobile .record-options { left: 8px; right: 8px; width: auto; }
 .mobile .record-extra, .mobile .record-control .record-label { display: none; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 9px; }
@@ -191,16 +181,17 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .mobile .lv-panel:not(.zone-stage) { z-index: 21; }
 
 /* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
-.action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: 64px; box-sizing: border-box;
+.action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: var(--lv-bar-h); box-sizing: border-box;
     padding: 0 calc(10px + var(--dim-inset-right)) 0 calc(10px + var(--dim-inset-left)); background: var(--lv-bar); backdrop-filter: var(--blur); border-top: 1px solid var(--border); }
 .dock-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* the two sides share what the actions leave equally (never narrower than what's in them), so the actions sit centred */
 .dock-drive-slot, .dock-stop-slot { flex: 1 1 0; min-width: max-content; }
-.dock-stop-slot { display: flex; justify-content: flex-end; }
+.dock-stop-slot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .dock-drive { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 6px; border: 1px solid transparent; border-radius: var(--radius); }
 .dock-drive.moving { border-color: var(--primary); box-shadow: var(--glow-accent); }
 .dock-drive.halted { border-color: var(--lv-stop); }
-.dock-note { margin: 0; max-width: 300px; }
+.dock-note { display: flex; align-items: center; gap: 8px; margin: 0; max-width: 420px; }
+.dock-note .hint { margin: 0; }
 .dock-actions { flex: 0 1 auto; justify-content: center; overflow-x: auto; scrollbar-width: none; }
 .dock-actions::-webkit-scrollbar { display: none; }
 .dock-action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -471,7 +462,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .panel-tools .dim-select { font-size: 16px; }
 
 .stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(76px + var(--dim-inset-bottom)); z-index: 9; font-size: 11px; padding: 6px 9px; pointer-events: none; }
-.mobile .stats-overlay { bottom: auto; top: calc(var(--lv-strip-h) + 8px + env(safe-area-inset-top)); }
+.mobile .stats-overlay { bottom: auto; top: calc(56px + env(safe-area-inset-top)); }
 
 /* ── status panel ── */
 .status-panel { display: grid; gap: 8px; }
@@ -536,16 +527,20 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .warn-text { color: var(--warn); font-size: 12px; margin: 6px 0; }
 .arm-panel code, .drive-panel code { font: 11px var(--mono); }
 
-/* a phone's strip: dots and short values only */
-.mobile .status-strip { gap: 4px; }
-.mobile .strip-chip { padding: 0 7px; height: 30px; }
-.mobile .strip-run, .mobile .strip-key { display: none; }
-.mobile .strip-chip .strip-value { max-width: 92px; }
+/* a phone: the drawers, Record and the palette over the main view's top corners, the chips between them */
+.phone-corners { position: absolute; top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; z-index: 18; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.phone-corners > * { pointer-events: auto; }
+.corner-button.dim-btn.icon { width: 40px; height: 40px; padding: 0; flex: none; background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); box-shadow: var(--shadow-md); }
+.corner-button.on { color: var(--primary); border-color: var(--primary); }
+.corner-chips { flex: 1; min-width: 0; display: flex; gap: 4px; justify-content: center; overflow: hidden; pointer-events: none; }
+.corner-chips > * { pointer-events: auto; }
+.corner-chips .bar-chip { height: 30px; padding: 0 7px; background: color-mix(in srgb, var(--card) 88%, transparent); }
+.corner-chips .bar-value { max-width: 110px; }
 /* a phone's main camera: the picture at the top, the space below it for the thumbs */
 .mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
 
-/* ── Steam Deck banner (ui/SteamDeckBanner.tsx): under the status strip, over the main view ── */
-.steam-banner { position: absolute; top: calc(var(--lv-strip-h) + env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); z-index: 35;
+/* ── Steam Deck banner (ui/SteamDeckBanner.tsx): over the top of the main view ── */
+.steam-banner { position: absolute; top: calc(env(safe-area-inset-top) + 8px); left: 50%; transform: translateX(-50%); z-index: 35;
     display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; max-width: calc(100vw - 32px); box-sizing: border-box;
     font: 12px var(--sans); color: var(--fg); box-shadow: var(--shadow-md); border-color: var(--warn); }
 .steam-banner > svg { flex: none; color: var(--warn); }
@@ -555,12 +550,11 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .steam-link { white-space: nowrap; color: var(--primary); font-size: 11.5px; }
 .mobile .steam-banner { flex-wrap: wrap; }
 
-/* a short screen (a Steam Deck's 800 px, less in its browser, under Desktop's bar and dock): a slimmer strip and dock,
-   so the panels keep the height */
+/* a short screen (a Steam Deck's 800 px, less in its browser, under Desktop's bar and dock): a slimmer bar, so the
+   panels keep the height */
 @media (max-height: 760px) {
-    :root { --lv-strip-h: 38px; }
-    .app.desktop .strip-chip { height: 26px; }
-    .app.desktop .action-dock { height: 52px; }
+    :root { --lv-bar-h: 52px; }
+    .app.desktop .bar-chip { height: 26px; }
     .app.desktop .action-dock .key { width: 21px; height: 21px; font-size: 10px; }
     .app .action-dock .dim-btn.dock-stop { height: 40px; padding: 0 16px; font-size: 15px; }
 }

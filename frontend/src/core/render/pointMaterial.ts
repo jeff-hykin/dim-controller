@@ -17,7 +17,7 @@ export const splatBackground = new THREE.Color().setHex(0x05070d, THREE.NoColorS
  * editor lists whatever is here.
  */
 export const POINT_STYLES = {
-    voxel: { id: 2, label: "Cubes", define: "VOXEL", about: "lit cubes on the voxel grid (shading below)" },
+    voxel: { id: 2, label: "Cubes", define: "VOXEL", about: "lit cubes on the voxel grid (Cube shading picks the light)" },
     splat: { id: 3, label: "Glow", define: "SPLAT", about: "soft gaussian splats fading into the background with distance" },
     disc: { id: 0, label: "Spheres", define: null, about: "MemWorld's lit spheres" },
     square: { id: 1, label: "Squares", define: null, about: "flat squares, the cheapest" },

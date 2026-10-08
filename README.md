@@ -52,7 +52,7 @@ Point clouds are GL point sprites, never meshes. The styles (Settings → Render
 settings to override): **Glow** (default: soft gaussian splats fading into the background with distance), **Cubes**
 (MemWorld's: snaps each point to a grid and ray-casts an axis-aligned cube inside the sprite), **Spheres** (MemWorld's
 lit balls) and **Squares**. Over 3M points a glow cloud draws a stable random subset, and if frames stay over 16 ms
-the viewer switches glow to cubes and says so in the status strip. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
+the viewer switches glow to cubes and says so in the bar. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
 accumulating, aged out in the shader), so a new scan costs one partial buffer upload. The view only redraws when
 something changed. Settings → Stats shows fps, CPU per frame and gateway-to-screen latency.
 
@@ -60,13 +60,14 @@ something changed. Settings → Stats shows fps, CPU per frame and gateway-to-sc
 
 One arrangement, made of panels:
 
-- **Status strip** (top): the link and its round trip, what's running, what the drive is doing (Ready, Driving, the
-  agent driving, Held), TF and render warnings, Record, the command palette and the shortcut list.
 - **Main view** between a **left rail** (the 2D map, the 3D view) and a **right rail** (Status, Settings, Layers, TF);
   the camera is the main view by default. Docked panels meet edge to edge, no gaps.
-- **Action dock** (bottom): the drive keys lit while held, what's being sent (or the hold and Reconnect), the main
-  view's own actions (a camera: fit / fill, next camera, quality; the 3D view: follow; the map: follow, fit), focus, all
-  actions, and STOP.
+- **One bar** (bottom; nothing across the top, so the panels take the full height): on the left the drive keys lit
+  while held and what's being sent (disengaged: why, and Reconnect; nothing to drive yet: why, and the Launcher); in the
+  middle the main view's own actions (a camera: fit / fill, next camera, mode; the 3D view: follow; the map: follow,
+  fit), focus and the palette; on the right a chip for each problem (the link when it's lost, connecting, degraded or
+  slow; TF; rendering), the gamepad's state, Record, the shortcut list and STOP. A healthy link shows nothing: the
+  Status panel has the link, round trip, drops, what's running, the drive and the render rates.
 
 Every panel has the same header, its buttons in the same place, shown while the panel is hovered (always on a touch
 screen): collapse / expand, make it the main view (swap: the main view's panel takes its place), pop out / dock. There's
@@ -86,15 +87,15 @@ layout" restores it.
 Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
 palette (every action: panels, layout, cameras, view, recording, controller format, the profile's buttons), `?` lists every
 key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while you type in a field or with an overlay
-open, and leaving the window lets go of everything. On a phone the rails are drawers (the strip's buttons) and driving
+open, and leaving the window lets go of everything. On a phone the rails are drawers (buttons over the main view's top corners, with Record, the palette and the chips) and driving
 is two thumb sticks with STOP between them.
 
 **Gamepad** (Xbox, PlayStation, Steam Deck; the Gamepad API's standard mapping, other pads read with the common
 layout): the left stick drives forward / back (and strafes, for formats that strafe), the right stick turns (and goes
 up / down for a drone), RB held boosts, **LT + RT stops** at once and holds the pad until **A**; A also Reconnects
-while driving is held, and otherwise presses the focused button. Nothing is sent until both sticks are at rest after
+while driving is disengaged, and otherwise presses the focused button. Nothing is sent until both sticks are at rest after
 the pad connects (a drifting or held stick never drives), and a disconnect, blur or hidden tab zeroes it and asks for
-rest again. The arm format isn't driven by a pad (LT + RT still stops the arm). The status strip shows the pad's state;
+rest again. The arm format isn't driven by a pad (LT + RT still stops the arm). The bar shows the pad's state;
 Settings → Drive → Gamepad has its dead zone and invert Y; `?` lists the mapping ([core/gamepad.ts](frontend/src/core/gamepad.ts)). On a Steam Deck (or SteamOS) opened outside Steam,
 with no gamepad reaching the page, a banner says the controls only work as a gamepad when dimOS is opened from Steam and
 offers **Open dimOS in Steam** (Desktop >= 0.2.119's `GET /api/steam-deck` and `POST /api/steam-deck/open`; an older
@@ -177,8 +178,9 @@ disconnects, the gateway sends a zero on every one. Nothing is sent while nobody
 of zeros, then silence), so a parked browser never drowns out other teleop.
 
 If the control link's latency (the gateway heartbeat's round trip, or how long it has gone unanswered) passes Settings →
-Drive → Max latency (default 1000 ms), or the link drops, driving stops (the usual zeros, once) and the drive panel shows
-Reconnect: a new gateway session, video and control alike. Driving picks up again only on new input.
+Drive → Max latency (default 1000 ms), or the link drops, driving **disengages**: it stops (the usual zeros, once) and
+the bar says why ("Disengaged: latency 1240 ms > 1000 ms max. Reconnect to drive.") with **Reconnect**: a new gateway
+session, video and control alike. Driving picks up again only on new input.
 
 ### Driving: which topics
 

@@ -280,7 +280,7 @@ const weightOf = (arrangement: Arrangement, id: string) => arrangement.weights[i
 export interface Frame {
     width: number
     height: number
-    /** where the status strip ends */
+    /** where the panels start (the window's top: nothing across it) */
     top: number
     /** where the action dock (or, on a phone, Desktop's dock) starts */
     bottom: number
@@ -303,7 +303,7 @@ export interface Slot {
 }
 
 export interface WorkspaceLayout {
-    /** everything between the strip and the dock */
+    /** everything above the bar */
     area: Rect
     stage: Rect
     rails: Partial<Record<Side, Rect>>
@@ -340,7 +340,7 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         slots[id] = { rect: round(rect), zone, collapsed: zone !== "stage" && arrangement.collapsed.includes(id), hidden }
     }
     if (frame.mobile) {
-        // the stage fills the screen between the strip and the thumb sticks; the rails are drawers over it (never over
+        // the stage fills the screen above the thumb sticks; the rails are drawers over it (never over
         // the sticks: STOP stays in reach)
         const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
         const drawerWidth = Math.min(width - 40, 380)

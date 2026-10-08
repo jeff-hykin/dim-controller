@@ -1,6 +1,7 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
+import { disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -8,12 +9,11 @@ import type { Axis } from "../profile/types.ts"
 import { Joystick, releaseAllSticks } from "./Joystick.tsx"
 import type { DriveHalt } from "../core/drive.ts"
 
-/** Driving is held (latency over the max, or the link lost): why, and the Reconnect button. */
-function HaltNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
-    const why = halt.reason === "lost" ? "Link lost" : `Latency over ${halt.maxMs} ms${halt.latencyMs !== null ? ` (${halt.latencyMs} ms)` : ""}`
+/** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
+function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     return (
         <div className="drive-halt" role="alert" data-testid="drive-halt">
-            <span>{why} · driving stopped</span>
+            <span>{disengagedText(halt)}</span>
             <button type="button" className="dim-btn reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
             </button>
@@ -39,7 +39,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     onMove={(x, y) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
                 />
                 <div className="hud-center">
-                    {state.halt && <HaltNotice app={app} halt={state.halt} />}
+                    {state.halt && <DisengagedNotice app={app} halt={state.halt} />}
                     <span className="dim-badge hud-note" data-testid="drive-readout">
                         {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
                     </span>
@@ -95,7 +95,7 @@ export function DriveKeys({ app }: { app: ViewerApp }) {
             </div>
             <span className={`key shift ${state.boost ? "down" : ""}`} title="Shift: boost">⇧</span>
             {state.halt
-                ? <HaltNotice app={app} halt={state.halt} />
+                ? <DisengagedNotice app={app} halt={state.halt} />
                 : (
                     <div className="hud-readout" data-testid="drive-readout">
                         {command

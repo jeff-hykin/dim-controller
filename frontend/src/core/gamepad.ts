@@ -35,7 +35,7 @@ export interface GamepadSettings {
 export const GAMEPAD_DEFAULTS: GamepadSettings = { deadZone: 0.15, invertY: false }
 export const gamepadSettings = persistentStore<GamepadSettings>("lv.gamepad", GAMEPAD_DEFAULTS)
 
-/** what the status strip shows */
+/** what the bar's gamepad chip shows (ui/barStatus.ts) */
 export interface GamepadStatus {
     connected: boolean
     id: string
@@ -222,6 +222,6 @@ export function gamepadBindings(profile: RobotProfile): { buttons: string; actio
         { buttons: "right stick", action: vertical ? "turn, up / down" : "turn" },
         { buttons: "RB (hold)", action: "boost" },
         { buttons: "LT + RT", action: "STOP (the pad holds until A)" },
-        { buttons: "A", action: "after a stop: drive again · held: Reconnect · else the focused button" },
+        { buttons: "A", action: "after a stop: drive again · disengaged: Reconnect · else the focused button" },
     ]
 }
