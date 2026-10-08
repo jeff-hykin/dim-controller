@@ -1,11 +1,12 @@
 // The 3D view's right-click menu: label the clicked spot (a text label at that point in the fixed frame, written into
 // the recording if one runs) or remove the label under the cursor. A right-drag still pans: only a right click that
-// barely moved opens it (a long press on touch).
+// barely moved opens it (a long press on touch). "Publish clicked_point" sends the spot to the nav stack (one message).
 import { useEffect, useRef, useState } from "react"
 import type * as THREE from "three"
 import type { ViewerApp } from "../core/app.ts"
 import type { LocationLabel } from "../core/labels.ts"
 import { recorder } from "../core/recorder.ts"
+import { clickedPoint } from "../core/clickedPoint.ts"
 
 interface Menu {
     x: number
@@ -109,9 +110,26 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         }
     }
 
+    const publishClickedPoint = async (point: THREE.Vector3) => {
+        setMenu(null)
+        const client = app.connection.client
+        if (!client || client.state === "lost") {
+            setNote("Couldn't publish clicked_point: not connected to the gateway")
+            return
+        }
+        const frame = app.viewer.fixedFrame
+        const { key, bytes } = clickedPoint(point, frame)
+        try {
+            await client.put(key, bytes)
+            setNote(`Published clicked_point ${fmt(point.x)}, ${fmt(point.y)}, ${fmt(point.z)} (${frame})`)
+        } catch (error) {
+            setNote(`Couldn't publish clicked_point: ${error instanceof Error ? error.message : error}`)
+        }
+    }
+
     // keep the menu on screen
     const left = menu ? Math.min(menu.x, innerWidth - 250) : 0
-    const top = menu ? Math.min(menu.y, innerHeight - 140) : 0
+    const top = menu ? Math.min(menu.y, innerHeight - 175) : 0
     return (
         <>
             {menu && (
@@ -137,6 +155,9 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                         <>
                             <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => setMenu({ ...menu, editing: true })}>
                                 Label this location…
+                            </button>
+                            <button type="button" role="menuitem" className="scene-menu-item" disabled={!menu.point} onClick={() => publishClickedPoint(menu.point!)}>
+                                Publish clicked_point
                             </button>
                             {menu.near && (
                                 <button type="button" role="menuitem" className="scene-menu-item" onClick={() => remove(menu.near!)}>
