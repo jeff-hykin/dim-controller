@@ -12,6 +12,7 @@ import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
 import { Icon } from "./icons.tsx"
+import { startPanelDrag } from "./panelDrag.ts"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 
 export interface PanelState {
@@ -279,23 +280,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         if (isMain || mobile || (event.target as HTMLElement).closest("button, select")) {
             return
         }
-        const box = element.current!.getBoundingClientRect()
-        const offsetX = event.clientX - box.left, offsetY = event.clientY - box.top
-        const move = (moved: PointerEvent) => {
-            const x = Math.max(0, Math.min(innerWidth - 80, moved.clientX - offsetX))
-            const y = Math.max(48, Math.min(innerHeight - 40, moved.clientY - offsetY))
-            element.current!.style.left = `${x}px`
-            element.current!.style.top = `${y}px`
-            element.current!.style.right = "auto"
-        }
-        const up = () => {
-            removeEventListener("pointermove", move)
-            removeEventListener("pointerup", up)
-            const after = element.current!.getBoundingClientRect()
-            onChange({ x: after.left, y: after.top })
-        }
-        addEventListener("pointermove", move)
-        addEventListener("pointerup", up)
+        startPanelDrag(event, element.current!, (x, y) => onChange({ x, y }))
     }
 
     // size: this viewer's width (dragged with the corner handle, kept in localStorage), the height from the image's

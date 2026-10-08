@@ -7,6 +7,7 @@ import { TopBar } from "./ui/TopBar.tsx"
 import { RecordControl } from "./ui/RecordControl.tsx"
 import { SidePanel, type Tab } from "./ui/SidePanel.tsx"
 import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
+import { MapPanel } from "./ui/MapPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
@@ -80,6 +81,7 @@ export function App() {
                     <RecordControl app={app} />
                     {tab && <SidePanel app={app} tab={tab} onTab={setTab} onClose={() => setTab(null)} mobile={view.mobile} />}
                     <CameraPanels app={app} layout={cameraLayout} mobile={view.mobile} />
+                    <MapPanel app={app} mobile={view.mobile} />
                     <FirstRun app={app} mobile={view.mobile} />
                     <StatsOverlay app={app} />
                     <SceneMenu app={app} />
