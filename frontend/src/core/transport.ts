@@ -1,12 +1,15 @@
 // The page's one connection to Desktop's zenoh-gateway (dim-app's getZenoh(): the backend's events ride it too), and
 // topic discovery. dimos names a channel
 // `dimos/<topic>/<msg type>`, so the key itself says what a topic carries.
-import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type ZenohGateway } from "../vendor/zenoh_gateway/zenoh_gateway.ts"
+import { connect, type Message, Priority, type Publisher, type SubscribeOptions, type Subscription, type SubscriptionUpdate, type ZenohGateway } from "../vendor/zenoh_gateway/zenoh_gateway.ts"
 import { getZenoh } from "../dim-app/source/zenoh.js"
 import { Store } from "./store.ts"
 
 export { Priority }
-export type { Message, Publisher, SubscribeOptions }
+export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
+
+/** Calling it unsubscribes; `update` changes the running subscription's options in place (same channel and video track). */
+export type LiveHandle = (() => void) & { update(changes: SubscriptionUpdate): Promise<void> }
 
 export interface Topic {
     /** the full zenoh key, e.g. dimos/lidar/sensor_msgs.PointCloud2 */
@@ -152,17 +155,18 @@ export class Connection {
         return this.#reconnecting
     }
 
-    /** Subscribes now or once connected; the returned function unsubscribes. */
-    subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): () => void {
+    /** Subscribes now or once connected; the returned function unsubscribes, its `update` changes the options in place. */
+    subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): LiveHandle {
         const subscription = new LiveSubscription(key, options, onMessage)
         this.#subscriptions.add(subscription)
         if (this.client) {
             subscription.open(this.client)
         }
-        return () => {
+        const unsubscribe = () => {
             this.#subscriptions.delete(subscription)
             subscription.close()
         }
+        return Object.assign(unsubscribe, { update: (changes: SubscriptionUpdate) => subscription.update(changes) })
     }
 
     /** Gateway clock now (ms), the clock message timestamps are in. */
@@ -173,10 +177,27 @@ export class Connection {
 }
 
 class LiveSubscription {
-    #handle: { close(): void } | null = null
-    constructor(readonly key: string, readonly options: SubscribeOptions, readonly onMessage: (message: Message) => void) {}
+    #handle: Subscription | null = null
+    constructor(readonly key: string, public options: SubscribeOptions, readonly onMessage: (message: Message) => void) {}
     open(client: ZenohGateway) {
         this.#handle = client.subscribe(this.key, this.options, this.onMessage)
+    }
+    /** zenoh-gateway >= 0.5.1: the running subscription takes the new options; before it opens, it opens with them. */
+    async update(changes: SubscriptionUpdate) {
+        if (this.#handle) {
+            await this.#handle.update(changes)
+            this.options = this.#handle.options
+            return
+        }
+        const options: Record<string, unknown> = { ...this.options }
+        for (const [name, value] of Object.entries(changes)) {
+            if (value === null) {
+                delete options[name]
+            } else {
+                options[name] = name === "encodeOptions" ? { ...this.options.encodeOptions, ...(value as object) } : value
+            }
+        }
+        this.options = options as SubscribeOptions
     }
     close() {
         this.#handle?.close()

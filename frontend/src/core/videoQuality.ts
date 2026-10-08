@@ -1,12 +1,13 @@
 // Camera presets: the latency-vs-quality tradeoff, per camera and per viewer, as bridge subscription options
-// (zenoh-gateway's video policy: maxHz, maxResolution, maxBitrate, minResolutionScale, minQuality, qualityToHzTradeoff):
-// the gateway encodes a smaller picture at fewer bits (each frame is fewer packets: on the wire, decoded and on screen
-// sooner, and a squeezed link keeps the rate) or the full picture at more bits (dropping frames, not detail, when short).
-// The browser side has no knob: the gateway marks every video packet playout-delay 0/0, which overrides the receiver's
-// jitterBufferTarget, so frames always show the moment they decode (measured 2026-10-07: target 250 ms, buffer 0 ms).
+// (zenoh-gateway's video policy: maxResolution, maxBitrate, minResolutionScale, minQuality, qualityToHzTradeoff,
+// playoutDelay): the gateway encodes a smaller picture at fewer bits (each frame is fewer packets: on the wire, decoded and
+// on screen sooner, and a squeezed link keeps the rate) or the full picture at more bits (dropping frames, not detail, when
+// short). playoutDelay is the browser side: the gateway marks each video packet with it, and the receiver may hold frames
+// that long to even out their arrival ([0, 0], the default, shows each the moment it decodes).
+// A change applies in place (Subscription.update, zenoh-gateway >= 0.5.1): same subscription and track, no gap.
 // The choice is per viewer (a phone on cellular wants low latency, a desktop on the LAN quality): localStorage, not the
 // backend's shared settings.
-import type { SubscribeOptions } from "./transport.ts"
+import type { SubscribeOptions, SubscriptionUpdate } from "./transport.ts"
 
 export type VideoQuality = "latency" | "balanced" | "quality"
 
@@ -17,9 +18,8 @@ export interface QualityPreset {
     options: SubscribeOptions
 }
 
-// No preset sets maxHz: zenoh-gateway 0.5 hands the encoder maxHz itself as the frame rate when the link isn't short
-// (subscription.rs key_hz), not the source's rate, so maxHz 30 on a 5 Hz camera made VideoToolbox spend bitrate/30 a
-// frame (a sixth of the grant) and shrink the picture as if it ran at 30. Without it the encoder gets the measured rate.
+// No preset sets maxHz: zenoh-gateway >= 0.5.1 encodes at min(maxHz, the source's measured rate), so a cap would only
+// matter for a camera faster than it, and every preset wants the camera's own rate.
 export const QUALITY_PRESETS: QualityPreset[] = [
     {
         id: "latency",
@@ -36,10 +36,21 @@ export const QUALITY_PRESETS: QualityPreset[] = [
     {
         id: "quality",
         label: "High quality",
-        about: "full size, never shrunk, up to 6 Mbit/s (at least 30% of it); drops frames before detail when the link is squeezed",
-        options: { minResolutionScale: 1, maxBitrate: 6_000_000, minQuality: 0.3, qualityToHzTradeoff: 0 },
+        about: "full size, never shrunk, up to 6 Mbit/s (at least 30% of it); drops frames before detail when the link is squeezed, and the browser buffers 100-400 ms to play frames out evenly",
+        // the buffer is here, not in Low latency or Balanced (what driving uses): it trades a fraction of a second for even
+        // motion, which is worth it when watching but not when steering; big full-size frames arrive the most unevenly
+        options: { minResolutionScale: 1, maxBitrate: 6_000_000, minQuality: 0.3, qualityToHzTradeoff: 0, playoutDelay: [100, 400] },
     },
 ]
+
+/** What `Subscription.update` needs to go from one preset to another: the new values, and null for what only `from` set. */
+export function presetChanges(from: QualityPreset, to: QualityPreset): SubscriptionUpdate {
+    const changes: Record<string, unknown> = {}
+    for (const name of Object.keys(from.options)) {
+        changes[name] = null
+    }
+    return { ...changes, ...to.options } as SubscriptionUpdate
+}
 
 /** presets before 2026-10-07 (a size-vs-rate choice) → the nearest one now */
 const RENAMED: Record<string, VideoQuality> = { auto: "balanced", smooth: "latency", sharp: "quality" }

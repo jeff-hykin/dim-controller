@@ -64,14 +64,16 @@ picture keeps its aspect, between 200 px wide and the window. The size is this v
 setting.
 
 The gear over a camera (on hover) picks where it sits between latency and quality, per camera and per viewer:
-**Low latency** (fits 640×360, at most 2 Mbit/s, up to 30 fps, keeps the rate when bandwidth is short: small frames
-are on the wire, decoded and on screen soonest), **Balanced** (the default: the gateway picks size and bitrate for the
-bandwidth, up to 30 fps) or **High quality** (full size, never shrunk, at least 60% quality, drops frames before
-detail). They are gateway subscription options (`maxHz`, `maxResolution`, `maxBitrate`, `minResolutionScale`,
-`minQuality`, `qualityToHzTradeoff`), so the gateway encodes and sends less or more; nothing is dropped in the browser
-([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). The browser always shows a frame the moment it decodes:
-zenoh-gateway marks video packets playout-delay 0/0, which overrides the receiver's jitter buffer target, so there is
-no buffering to trade for smoothness. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back); fullscreen, a
+**Low latency** (fits 640×360, keeps the rate when bandwidth is short: small frames are on the wire, decoded and on
+screen soonest), **Balanced** (the default: the gateway picks size and bitrate for the bandwidth) or **High quality**
+(full size, never shrunk, up to 6 Mbit/s, drops frames before detail, and a 100-400 ms playout buffer so motion is even).
+All run at the camera's own rate. They are gateway subscription options (`maxResolution`, `maxBitrate`,
+`minResolutionScale`, `minQuality`, `qualityToHzTradeoff`, `playoutDelay`), so the gateway encodes and sends less or
+more; nothing is dropped in the browser ([core/videoQuality.ts](frontend/src/core/videoQuality.ts)). A switch changes
+the running subscription in place (zenoh-gateway 0.5.1's `Subscription.update`: same track, no gap). `playoutDelay` is
+the one browser-side knob: the gateway marks each video packet with it, `[0, 0]` (Low latency, Balanced) shows a frame
+the moment it decodes, High quality's `[100, 400]` lets the jitter buffer hold frames to play them out evenly, which is
+worth a fraction of a second when watching but not when driving. A panel's ⤢ makes it fullscreen and turns the 3D view into a picture-in-picture (⤢ there swaps back); fullscreen, a
 button beside it switches **Fit** (the whole picture, letterboxed) and **Fill** (fills the screen, edges cropped),
 remembered per panel for this viewer. With no point
 cloud on the bus (a camera-only blueprint or recording) the camera takes the screen by itself, a few seconds after the
