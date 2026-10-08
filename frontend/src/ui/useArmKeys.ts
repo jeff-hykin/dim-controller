@@ -3,9 +3,9 @@
 import { useEffect } from "react"
 import type { ArmControl } from "../core/arm.ts"
 import type { EeAxis, RobotProfile } from "../profile/types.ts"
+import { isTypingTarget } from "./keymap.ts"
 import { overlay } from "./overlay.ts"
 
-const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))
 
 export function useArmKeys(arm: ArmControl | null, profile: RobotProfile | null) {
     useEffect(() => {
@@ -25,7 +25,7 @@ export function useArmKeys(arm: ArmControl | null, profile: RobotProfile | null)
             arm.setEe("keys", axes)
         }
         const down = (event: KeyboardEvent) => {
-            if (typing(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
+            if (isTypingTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) {
                 return
             }
             if (event.code === "Space") {
