@@ -15,6 +15,7 @@ import { followFrameOptions } from "../core/map2d.ts"
 import { useEffect, useState } from "react"
 import { useTfFrames } from "./useTfFrames.ts"
 import { MapChoiceFields } from "./MapPanel.tsx"
+import { CamerasIn3dToggle } from "./ScenePanel.tsx"
 import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -71,6 +72,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <h3 className="dim-label">3D view</h3>
                 <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
                 <FollowFramePicker app={app} frames={frames} />
+                <Field label="Cameras in 3D" hint="each camera's picture and frustum at its CameraInfo frame; an open camera panel's stream is shared, else a small one a few times a second"><CamerasIn3dToggle app={app} /></Field>
             </section>
             <h3 className="dim-label">Rendering</h3>
             <div className="field-block">

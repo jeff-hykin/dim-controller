@@ -1,8 +1,9 @@
-// Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription.
+// Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription (full while a
+// panel shows it, a small slow preview while only the 3D view does).
 // Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
-import type { Connection, LiveHandle, Topic } from "./transport.ts"
-import { loadQuality, presetChanges, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
+import type { Connection, LiveHandle, SubscribeOptions, SubscriptionUpdate, Topic } from "./transport.ts"
+import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
 
 export interface VideoState {
     stream: MediaStream | null
@@ -21,13 +22,45 @@ export interface DepthImage {
 
 export const isDepthTopic = (topic: Topic) => /depth/i.test(topic.name)
 
+/**
+ * Who uses a stream: a camera panel that's on screen ("view": the viewer's quality preset) or only the 3D view's
+ * projection ("preview": small and slow, PREVIEW_OPTIONS). One subscription per topic either way: a 3D projection of a
+ * camera whose panel is open rides the panel's stream.
+ */
+export type StreamUse = "view" | "preview"
+
+/** what the 3D view alone subscribes with: a small picture a few times a second */
+export const PREVIEW_OPTIONS: SubscribeOptions = { maxResolution: [320, 240], maxHz: 3, qualityToHzTradeoff: 1 }
+export const DEPTH_OPTIONS: SubscribeOptions = { maxHz: 15 }
+export const DEPTH_PREVIEW_OPTIONS: SubscribeOptions = { maxHz: 3 }
+
+/** The options a stream runs with for its users now: any panel on screen → the full stream, else the 3D preview. */
+export function streamOptions(depth: boolean, uses: Record<StreamUse, number>, quality: VideoQuality): SubscribeOptions {
+    const viewed = uses.view > 0
+    if (depth) {
+        return viewed ? DEPTH_OPTIONS : DEPTH_PREVIEW_OPTIONS
+    }
+    return viewed ? presetFor(quality).options : PREVIEW_OPTIONS
+}
+
+/** What `Subscription.update` needs to go from one set of options to another (null for what only `from` set). */
+export function optionChanges(from: SubscribeOptions, to: SubscribeOptions): SubscriptionUpdate {
+    const changes: Record<string, unknown> = {}
+    for (const name of Object.keys(from)) {
+        changes[name] = null
+    }
+    return { ...changes, ...to } as SubscriptionUpdate
+}
+
 interface Source {
-    users: number
+    uses: Record<StreamUse, number>
+    /** the options the bridge subscription runs with now */
+    options: SubscribeOptions
     /** the bridge subscription: calling it stops it, `update` changes its options in place */
     stop: (() => void) & Partial<Pick<LiveHandle, "update">>
     video: Store<VideoState>
     depth: Store<{ image: DepthImage | null }>
-    /** this viewer's latency/quality preset (core/videoQuality.ts): the bridge's size / bitrate / rate */
+    /** this viewer's latency/quality preset (core/videoQuality.ts): the bridge's size / bitrate / rate while viewed */
     quality: Store<{ quality: VideoQuality }>
     /** a playing element for textures (the 3D projection), made on first use */
     element: HTMLVideoElement | null
@@ -37,34 +70,42 @@ export class VideoSources {
     #sources = new Map<string, Source>()
     constructor(readonly connection: Connection) {}
 
-    acquire(topic: Topic): Source {
+    /** A stream of `topic` for a panel on screen ("view") or the 3D view's projection ("preview"); release it the same way. */
+    acquire(topic: Topic, use: StreamUse = "view"): Source {
         let source = this.#sources.get(topic.key)
         if (source) {
-            source.users++
+            source.uses[use]++
+            this.#retune(topic, source)
             return source
         }
         const video = new Store<VideoState>({ stream: null, width: 0, height: 0, fps: 0 })
         const depth = new Store<{ image: DepthImage | null }>({ image: null })
         const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "balanced" : loadQuality(topic.key) })
-        source = { users: 1, stop: () => {}, video, depth, quality, element: null }
+        source = { uses: { view: 0, preview: 0 }, options: {}, stop: () => {}, video, depth, quality, element: null }
+        source.uses[use] = 1
+        source.options = this.#wanted(topic, source)
         this.#open(topic, source)
         this.#sources.set(topic.key, source)
         return source
     }
 
-    /** Subscribes with the source's quality preset (color) or the lossless depth encoding. */
+    #wanted(topic: Topic, source: Source): SubscribeOptions {
+        return streamOptions(isDepthTopic(topic), source.uses, source.quality.get().quality)
+    }
+
+    /** Subscribes with the source's options: the color track, or the lossless depth encoding. */
     #open(topic: Topic, source: Source) {
         const { video, depth } = source
         const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos_lcm_compressed_" : "dimos_lcm_"
         let frames = 0
         let since = performance.now()
         source.stop = isDepthTopic(topic)
-            ? this.connection.subscribe(topic.key, { delivery: "latest", maxHz: 15, encoding: `${prefix}depth` }, (message) => {
+            ? this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}depth` }, (message) => {
                 if (message.decoded) {
                     depth.set({ image: message.decoded as DepthImage })
                 }
             })
-            : this.connection.subscribe(topic.key, { delivery: "latest", ...presetFor(source.quality.get().quality).options, encoding: `${prefix}image` }, (message) => {
+            : this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}image` }, (message) => {
                 frames++
                 const now = performance.now()
                 const state = video.get()
@@ -83,21 +124,20 @@ export class VideoSources {
     }
 
     /**
-     * Another quality preset for a color topic: saved for this viewer, and the running bridge subscription takes it in
-     * place (zenoh-gateway 0.5.1's update: same track, no resubscribe, so no gap); a gateway that refuses the update gets
-     * a new subscription instead (closed, then reopened: the client gives each video subscription a fresh transceiver).
+     * The running subscription takes the options its users want now (a panel opened or closed over a 3D projection, a
+     * new preset) in place (zenoh-gateway 0.5.1's update: same track, no resubscribe, so no gap); a gateway that refuses
+     * the update gets a new subscription instead (closed, then reopened: a fresh transceiver).
      */
-    setQuality(topic: Topic, quality: VideoQuality) {
-        saveQuality(topic.key, quality)
-        const source = this.#sources.get(topic.key)
-        const previous = source?.quality.get().quality
-        if (!source || isDepthTopic(topic) || previous === quality) {
+    #retune(topic: Topic, source: Source) {
+        const previous = source.options
+        const wanted = this.#wanted(topic, source)
+        if (JSON.stringify(previous) === JSON.stringify(wanted)) {
             return
         }
-        source.quality.set({ quality })
+        source.options = wanted
         const subscription = source.stop
         const reopen = () => {
-            if (source.stop === subscription && source.quality.get().quality === quality) {
+            if (source.stop === subscription && source.options === wanted) {
                 subscription()
                 this.#open(topic, source)
             }
@@ -105,10 +145,21 @@ export class VideoSources {
         if (!subscription.update) {
             return reopen()
         }
-        subscription.update(presetChanges(presetFor(previous), presetFor(quality))).catch((error) => {
-            console.warn(`[cameras] ${topic.name}: the gateway refused a preset update (${error?.message ?? error}); resubscribing`)
+        subscription.update(optionChanges(previous, wanted)).catch((error) => {
+            console.warn(`[cameras] ${topic.name}: the gateway refused an update (${error?.message ?? error}); resubscribing`)
             reopen()
         })
+    }
+
+    /** Another quality preset for a color topic: saved for this viewer; a viewed stream takes it now, a preview when viewed. */
+    setQuality(topic: Topic, quality: VideoQuality) {
+        saveQuality(topic.key, quality)
+        const source = this.#sources.get(topic.key)
+        if (!source || isDepthTopic(topic) || source.quality.get().quality === quality) {
+            return
+        }
+        source.quality.set({ quality })
+        this.#retune(topic, source)
     }
 
     /** A muted, playing <video> of the stream (not in the document), for VideoTexture. */
@@ -135,9 +186,14 @@ export class VideoSources {
         return source.element
     }
 
-    release(topic: Topic) {
+    release(topic: Topic, use: StreamUse = "view") {
         const source = this.#sources.get(topic.key)
-        if (!source || --source.users > 0) {
+        if (!source || source.uses[use] <= 0) {
+            return
+        }
+        source.uses[use]--
+        if (source.uses.view + source.uses.preview > 0) {
+            this.#retune(topic, source)
             return
         }
         source.stop()

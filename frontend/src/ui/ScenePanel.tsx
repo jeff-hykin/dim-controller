@@ -1,5 +1,6 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second and a point cloud menu (each PointCloud2 on the bus: on/off, this viewer's bandwidth preset, color and size).
+// second and its menu: cameras in 3D (the same setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
+// this viewer's bandwidth preset, color and size).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
 // bandwidth; expanded, they subscribe again. Follow sits over its corner, and in the dock while it's the main view.
 // View-only: nothing here moves the robot. The element the viewer draws into (`host`) is never remounted, wherever the
@@ -104,7 +105,7 @@ function CloudButton({ app, open, onOpen, buttonRef }: { app: ViewerApp; open: b
     const clouds = list.filter(isCloud)
     const on = clouds.filter((entry) => entry.enabled).length
     return (
-        <button ref={buttonRef} type="button" className="dim-btn icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`Point clouds: ${on} of ${clouds.length} shown`} aria-label="Point clouds" onClick={() => onOpen(!open)}>
+        <button ref={buttonRef} type="button" className="dim-btn icon icon-button scene-clouds" aria-haspopup="menu" aria-expanded={open} title={`3D view settings: cameras in 3D, point clouds (${on} of ${clouds.length} shown)`} aria-label="3D view settings" onClick={() => onOpen(!open)}>
             <Icon name="layers" size={15} />
             {clouds.length > 0 && <span className="scene-count">{on}/{clouds.length}</span>}
         </button>
@@ -126,12 +127,27 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
         return () => removeEventListener("pointerdown", close, true)
     }, [onClose])
     return createPortal(
-        <div className="dim-panel cloud-menu" role="menu" aria-label="Point clouds" style={popoverPosition(anchor, 320)}>
+        <div className="dim-panel cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
+            <CamerasIn3dRow app={app} />
             <div className="quality-title">Point clouds</div>
             {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
         </div>,
         document.body,
+    )
+}
+
+/** Cameras in 3D: the same setting as Settings → 3D view (lv.view camerasIn3d) */
+export function CamerasIn3dToggle({ app, label }: { app: ViewerApp; label?: string }) {
+    const { camerasIn3d } = useStore(app.settings)
+    return <Toggle value={camerasIn3d === true} onChange={(on) => app.settings.update({ camerasIn3d: on })} label={label} />
+}
+
+function CamerasIn3dRow({ app }: { app: ViewerApp }) {
+    return (
+        <div className="cloud-row cameras-3d-row" title="Each camera's picture and frustum at its CameraInfo frame. A camera whose panel is open shares its stream; otherwise the 3D view takes a small one a few times a second.">
+            <CamerasIn3dToggle app={app} label="Cameras in 3D" />
+        </div>
     )
 }
 

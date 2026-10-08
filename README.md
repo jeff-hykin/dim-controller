@@ -110,7 +110,10 @@ cloud on the bus (a camera-only blueprint or recording) the camera takes the scr
 topics settle, and gives it back when a cloud appears; a swap you make yourself wins for the session.
 
 The 3D view is a panel like the others. Collapsed (or off screen) every 3D layer unsubscribes (no bandwidth); expanded,
-they subscribe again. Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
+they subscribe again. **Cameras in 3D** (its menu, or Settings → 3D view: one setting, `lv.view.camerasIn3d`) draws every
+camera's picture and frustum at its CameraInfo frame. A camera whose panel is open shares that panel's stream (one
+subscription); otherwise the 3D view takes a small one (320×240, 3 Hz; depth 3 Hz) and switches that same
+subscription to the panel's preset when the panel opens ([core/video.ts](frontend/src/core/video.ts)). Its layers button lists every PointCloud2 on the bus, each with its own switch (the Layers tab's), color, point size,
 live points and bytes a second, and a bandwidth preset: **Low bandwidth** (up to 5 Hz, at most 1 point in 4),
 **Balanced** (the default: up to 20 Hz, every point unless the link is short) or **Full** (up to 30 Hz, never thinned),
 the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` ([core/cloudQuality.ts](frontend/src/core/cloudQuality.ts)).

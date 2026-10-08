@@ -7,7 +7,7 @@
 // A change applies in place (Subscription.update, zenoh-gateway >= 0.5.1): same subscription and track, no gap.
 // The choice is per viewer (a phone on cellular wants low latency, a desktop on the LAN quality): localStorage, not the
 // backend's shared settings.
-import type { SubscribeOptions, SubscriptionUpdate } from "./transport.ts"
+import type { SubscribeOptions } from "./transport.ts"
 
 export type VideoQuality = "latency" | "balanced" | "quality"
 
@@ -42,15 +42,6 @@ export const QUALITY_PRESETS: QualityPreset[] = [
         options: { minResolutionScale: 1, maxBitrate: 6_000_000, minQuality: 0.3, qualityToHzTradeoff: 0, playoutDelay: [100, 400] },
     },
 ]
-
-/** What `Subscription.update` needs to go from one preset to another: the new values, and null for what only `from` set. */
-export function presetChanges(from: QualityPreset, to: QualityPreset): SubscriptionUpdate {
-    const changes: Record<string, unknown> = {}
-    for (const name of Object.keys(from.options)) {
-        changes[name] = null
-    }
-    return { ...changes, ...to.options } as SubscriptionUpdate
-}
 
 /** presets before 2026-10-07 (a size-vs-rate choice) → the nearest one now */
 const RENAMED: Record<string, VideoQuality> = { auto: "balanced", smooth: "latency", sharp: "quality" }

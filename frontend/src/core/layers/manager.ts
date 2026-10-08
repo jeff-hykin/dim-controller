@@ -25,6 +25,8 @@ export class LayerManager {
     readonly paused = new Store<{ paused: boolean }>({ paused: false })
     #instances = new Map<string, LayerInstance>()
     #enabled = persistentStore<Record<string, boolean>>(ENABLED_KEY, {})
+    /** a layer type switched on or off as a whole (camera3d: Settings → 3D view → Cameras in 3D); its topics follow */
+    #typeEnabled: Record<string, boolean> = {}
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
         connection.status.subscribe(() => this.#sync(connection.status.get().topics))
@@ -54,7 +56,7 @@ export class LayerManager {
                 continue
             }
             const saved = this.#enabled.get()[topic.key]
-            const enabled = saved ?? (type.enabledByDefault?.(topic) ?? true)
+            const enabled = this.#typeEnabled[type.id] ?? saved ?? (type.enabledByDefault?.(topic) ?? true)
             const defaults = typeof type.defaults === "function" ? type.defaults(topic) : structuredClone(type.defaults)
             const settings = persistentStore(`lv.layer.${type.id}.${topic.key}`, defaults)
             added.push({ topic, type, enabled, status: {}, settings })
@@ -89,6 +91,16 @@ export class LayerManager {
             this.#start(entry)
         } else {
             this.#stop(key)
+        }
+    }
+
+    /** Every topic of a layer type on or off, now and as they show up (one setting for all of them). */
+    setTypeEnabled(typeId: string, enabled: boolean) {
+        this.#typeEnabled[typeId] = enabled
+        for (const entry of this.entries.get().list) {
+            if (entry.type.id === typeId && entry.enabled !== enabled) {
+                this.setEnabled(entry.topic.key, enabled)
+            }
         }
     }
 

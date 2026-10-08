@@ -62,7 +62,7 @@ class Camera3dLayer {
         this.#content.userData.noPick = true
         this.root.add(this.#content)
         this.#frustum = new FatLines(context.viewer.resolution, { width: 1.5, color: 0xffd166 })
-        this.#source = context.video.acquire(topic)
+        this.#source = context.video.acquire(topic, "preview")
         if (isDepthTopic(topic)) {
             // depth: a heat map coloured on the GPU, redrawn as each image arrives
             this.#depth = new DepthMaterial()
@@ -214,7 +214,7 @@ class Camera3dLayer {
         this.#depth?.dispose()
         this.#stopInfo?.()
         this.#stopFrame?.()
-        this.context.video.release(this.topic)
+        this.context.video.release(this.topic, "preview")
         this.#texture?.dispose()
         this.#plane.geometry.dispose()
         this.#video?.dispose()

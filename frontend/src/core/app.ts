@@ -38,6 +38,8 @@ export interface ViewSettings {
     robotModel: boolean
     /** driving holds (Reconnect on the drive panel) once the control link's latency goes over this (ms) */
     maxLatencyMs: number
+    /** every camera drawn in the 3D view (its picture and frustum at its CameraInfo frame; layers/camera3d.tsx) */
+    camerasIn3d: boolean
 }
 
 export class ViewerApp {
@@ -48,7 +50,7 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false })
     #profile: RobotProfile
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
@@ -107,6 +109,17 @@ export class ViewerApp {
         this.connection.status.subscribe(() => this.#updateRobot())
         // Settings → Robot here, in another viewer or by the agent
         this.settings.subscribe(() => this.#updateRobot())
+        // Cameras in 3D: one setting for every camera topic's 3D layer (the 3D panel's menu and Settings → 3D view)
+        let camerasIn3d: boolean | null = null
+        const applyCameras = () => {
+            const wanted = this.settings.get().camerasIn3d === true
+            if (wanted !== camerasIn3d) {
+                camerasIn3d = wanted
+                this.layers.setTypeEnabled("camera3d", wanted)
+            }
+        }
+        applyCameras()
+        this.settings.subscribe(applyCameras)
         this.#updateRobot()
     }
 
