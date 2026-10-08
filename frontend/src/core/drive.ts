@@ -79,7 +79,8 @@ export class Drive {
     #sources = new Map<string, Partial<Axes>>()
     /** one publisher per output topic (zenoh key), each with its own deadman */
     #publishers = new Map<string, { publisher: Publisher; deadman: boolean }>()
-    #stopFlush = 0
+    /** until when (ms) zeros keep going out after a release: a second by the clock, so a throttled background tab (timers at ~1 Hz) doesn't stretch it to 20 s */
+    #stopFlushUntil = 0
     #timer: ReturnType<typeof setInterval>
     #commandTimer: ReturnType<typeof setTimeout> | undefined
     #controlPublishers = new Map<string, Publisher>()
@@ -297,10 +298,9 @@ export class Drive {
         const { twist } = state
         const moving = isMoving(twist)
         if (moving) {
-            this.#stopFlush = Math.round(this.profile.drive.publishHz)
-        } else if (this.#stopFlush > 0) {
-            this.#stopFlush--
-        } else {
+            this.#stopFlushUntil = Date.now() + 1000
+        } else if (Date.now() >= this.#stopFlushUntil) {
+            // idle, the stop flush (zeros until the deadline) over: the deadman is cleared and nothing goes out
             for (const entry of this.#publishers.values()) {
                 if (entry.deadman) {
                     entry.deadman = false
