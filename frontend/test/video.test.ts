@@ -1,6 +1,6 @@
 // Camera latency/quality presets (core/videoQuality.ts) reach the bridge as subscription options; a change updates it in place.
 import { assertEquals } from "jsr:@std/assert@1"
-import { VideoSources } from "../src/core/video.ts"
+import { needsNewReceiver, VideoSources } from "../src/core/video.ts"
 import { loadQuality, presetChanges, presetFor, QUALITY_PRESETS, saveQuality } from "../src/core/videoQuality.ts"
 import type { Connection, SubscribeOptions, SubscriptionUpdate } from "../src/core/transport.ts"
 
@@ -55,9 +55,14 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it updat
     assertEquals(subscriptions[0].options.playoutDelay, [100, 400], "High quality buffers for smooth playout")
     sources.setQuality(camera, "balanced")
     await Promise.resolve()
-    assertEquals(subscriptions[0].options, { delivery: "latest", encoding: "dimos_lcm_image" })
-    assertEquals(subscriptions[0].updates[2].playoutDelay, null)
-    assertEquals(subscriptions.length, 1)
+    // leaving High quality's buffered playout takes a fresh receiver (Firefox froze on the change in place)
+    assertEquals(subscriptions.map((entry) => entry.open), [false, true])
+    assertEquals(subscriptions[1].openBefore, 0, "the old subscription closes first")
+    assertEquals(subscriptions[1].options, { delivery: "latest", encoding: "dimos_lcm_image" })
+    sources.setQuality(camera, "latency")
+    await Promise.resolve()
+    assertEquals(subscriptions.length, 2, "between low-latency presets: in place again")
+    assertEquals(subscriptions[1].options, { delivery: "latest", encoding: "dimos_lcm_image", ...preset("latency") })
     sources.setQuality(camera, "quality")
     sources.release(camera)
     assertEquals(subscriptions.every((entry) => !entry.open), true)
@@ -103,4 +108,13 @@ Deno.test("depth stays lossless whatever the preset", () => {
     sources.setQuality(depth, "latency")
     assertEquals(subscriptions.length, 1)
     assertEquals(subscriptions[0].options.encoding, "dimos_lcm_depth")
+})
+
+Deno.test("needsNewReceiver: only a change from buffered playout back to low-latency rendering", () => {
+    assertEquals(needsNewReceiver(preset("quality"), preset("latency")), true)
+    assertEquals(needsNewReceiver(preset("quality"), preset("balanced")), true)
+    assertEquals(needsNewReceiver(preset("balanced"), preset("quality")), false)
+    assertEquals(needsNewReceiver(preset("latency"), preset("balanced")), false)
+    assertEquals(needsNewReceiver({ playoutDelay: [0, 400] }, {}), false, "min 0 and max <= 500 ms is low latency too")
+    assertEquals(needsNewReceiver({ playoutDelay: [0, 600] }, {}), true)
 })

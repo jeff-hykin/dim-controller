@@ -1,7 +1,7 @@
 // Camera streams, shared: a panel and the 3D projection of the same topic use one bridge subscription.
 // Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
-import type { Connection, LiveHandle, Topic } from "./transport.ts"
+import type { Connection, LiveHandle, SubscribeOptions, Topic } from "./transport.ts"
 import { loadQuality, presetChanges, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
 
 export interface VideoState {
@@ -31,6 +31,22 @@ interface Source {
     quality: Store<{ quality: VideoQuality }>
     /** a playing element for textures (the 3D projection), made on first use */
     element: HTMLVideoElement | null
+}
+
+/** Whether options keep the browser in low-latency rendering (playoutDelay min 0, max <= 500 ms; the default [0, 0]). */
+export function lowLatencyRendering(options: SubscribeOptions): boolean {
+    const [min, max] = options.playoutDelay ?? [0, 0]
+    return min === 0 && max <= 500
+}
+
+/**
+ * Whether a change can't be made in place: back to low-latency rendering from a buffered playout (High quality's
+ * playoutDelay [100, 400] -> any other preset). Firefox stops showing a receiver's frames for good once their render
+ * time drops back to 0 (they decode, the picture stays frozen), so that change takes a new subscription (a fresh
+ * receiver); zenoh-gateway >= 0.5.3 never sends it on a running track either (it sends [10, 10] ms there).
+ */
+export function needsNewReceiver(from: SubscribeOptions, to: SubscribeOptions): boolean {
+    return !lowLatencyRendering(from) && lowLatencyRendering(to)
 }
 
 export class VideoSources {
@@ -84,8 +100,9 @@ export class VideoSources {
 
     /**
      * Another quality preset for a color topic: saved for this viewer, and the running bridge subscription takes it in
-     * place (zenoh-gateway 0.5.1's update: same track, no resubscribe, so no gap); a gateway that refuses the update gets
-     * a new subscription instead (closed, then reopened: the client gives each video subscription a fresh transceiver).
+     * place (zenoh-gateway 0.5.1's update: same track, no resubscribe, so no gap); a gateway that refuses the update, or a
+     * change back to low-latency rendering (needsNewReceiver), gets a new subscription instead (closed, then reopened:
+     * the client gives each video subscription a fresh transceiver).
      */
     setQuality(topic: Topic, quality: VideoQuality) {
         saveQuality(topic.key, quality)
@@ -102,7 +119,7 @@ export class VideoSources {
                 this.#open(topic, source)
             }
         }
-        if (!subscription.update) {
+        if (!subscription.update || needsNewReceiver(presetFor(previous).options, presetFor(quality).options)) {
             return reopen()
         }
         subscription.update(presetChanges(presetFor(previous), presetFor(quality))).catch((error) => {
