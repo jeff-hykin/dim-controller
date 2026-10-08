@@ -29,7 +29,7 @@ import {
 
 const IDS = ["camera:1", ...FIXED_PANELS]
 const desktop: Frame = { width: 1440, height: 900, top: 44, bottom: 900 - 64, mobile: false, gap: 8 }
-const phone: Frame = { width: 390, height: 844, top: 48, bottom: 844, mobile: true, gap: 8 }
+const phone: Frame = { width: 390, height: 844, top: 48, bottom: 520, mobile: true, gap: 8 }
 const shown = { drawer: null, hide: [] }
 
 const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
@@ -212,10 +212,12 @@ Deno.test("splitters: the pair's share moves, their total height doesn't; rails 
 Deno.test("phone: the main view fills the screen; a rail is a drawer, its panels shown only while it's open", () => {
     const arrangement = defaultArrangement(IDS)
     const closed = layoutWorkspace(arrangement, phone, shown)
-    assertEquals(closed.slots["camera:1"].rect, { x: 0, y: 48, width: 390, height: 796 })
+    assertEquals(closed.slots["camera:1"].rect, { x: 0, y: 48, width: 390, height: 472 })
     assert(["map", "scene", "status", "settings"].every((id) => closed.slots[id].hidden))
     const left = layoutWorkspace(arrangement, phone, { drawer: "left", hide: [] })
     assert(left.drawer && left.drawer.x === 0 && left.drawer.width < phone.width)
+    // it ends where the sticks start
+    assertEquals(left.drawer.y + left.drawer.height, phone.bottom)
     assert(!left.slots.map.hidden && !left.slots.scene.hidden && within(left.slots.map.rect, left.drawer))
     assert(left.slots.settings.hidden)
     const right = layoutWorkspace(arrangement, phone, { drawer: "right", hide: [] })
