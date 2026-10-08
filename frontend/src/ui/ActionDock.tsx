@@ -1,7 +1,7 @@
 // The page's one bar, along the bottom (desktop): on the left the drive keys lighting up as they're held with what's
-// being sent (or, disengaged, why and Reconnect; or why nothing can be driven yet); in the middle the main view's own
+// being sent (or, disengaged, why and Reconnect; or why nothing can be driven yet) and Record (away from STOP); in the middle the main view's own
 // actions (ui/dockActions.ts: a camera's, the 3D view's or the map's), focus and the palette; on the right the problem
-// and gamepad chips (ui/BarChips.tsx), Record, the shortcut list and STOP, always in the same corner. The two sides
+// and gamepad chips (ui/BarChips.tsx), the shortcut list and STOP, always in the same corner. The two sides
 // share the width equally, so the middle stays centred. On a phone the bar is the two thumb sticks with STOP between
 // them (ui/DriveHud.tsx) and the rest sits over the main view's top corners (ui/PhoneCorners.tsx).
 import type { ViewerApp } from "../core/app.ts"
@@ -31,6 +31,7 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
                     : arm
                     ? <ArmHud app={app} mobile={false} />
                     : <DriveKeys app={app} />}
+                <RecordControl app={app} />
             </div>
             <div className="dock-group dock-actions" role="toolbar" aria-label="Actions">
                 {actions.map((action) => (
@@ -52,7 +53,6 @@ export function ActionDock({ app, api, onboarding }: { app: ViewerApp; api: Work
             </div>
             <div className="dock-stop-slot">
                 <BarChips app={app} api={api} />
-                <RecordControl app={app} />
                 <button type="button" className="dim-btn icon dock-help" title="Keyboard and gamepad shortcuts (?)" aria-label="Shortcuts" onClick={() => openOverlay("help")}>
                     <Icon name="keyboard" size={16} />
                 </button>

@@ -48,27 +48,24 @@ h3.dim-label { display: block; margin: 14px 0 6px; }
 /* recording sits in the bar (a phone: its top-right corner): the Record button and "…" (ui/RecordControl.tsx) */
 .action-dock .record-control, .phone-corners .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
     /* recording is red in every skin (Portal's --danger is amber, and a record button should read as one) */
-    --record: var(--lv-stop); --record-hover: var(--lv-stop-hover); --record-fg: var(--primary-fg); --record-glow: 0 0 10px color-mix(in srgb, var(--lv-stop) 55%, transparent); }
+    --record: var(--lv-stop); }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .record-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
 .record-toggle.recording .record-dot { background: var(--record); border-radius: 2px; animation: blink 1s infinite; }
 .record-live { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
 .record-clock, .record-extra { font-size: 11.5px; }
 .record-more { width: 30px; height: 30px; padding: 0; }
-/* Record │ … as one red box: the split owns the border and fill, each segment just its hover */
-.record-split { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--record); border-radius: var(--radius); background: var(--record); overflow: hidden; }
-body.dark .record-split { box-shadow: var(--record-glow); }
+/* Record │ … as one red outline: red border and red text on no fill (never a solid red block: STOP is the one) */
+.record-split { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--record); border-radius: var(--radius); background: transparent; overflow: hidden; }
 .record-control .record-split > .dim-btn { height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.record-control .record-split > .record-toggle { padding: 0 11px; color: var(--record-fg); font-weight: 600; }
-.record-control .record-split > .record-more { width: 30px; padding: 0; border-left: 1px solid color-mix(in srgb, var(--record-fg) 35%, transparent); color: var(--record-fg); }
-.record-control .record-split > .dim-btn:hover:not(:disabled), .record-control .record-split > .record-more.on { background: var(--record-hover); }
-.record-control .record-split > .dim-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--record-fg); }
+.record-control .record-split > .record-toggle { padding: 0 11px; color: var(--record); font-weight: 600; }
+.record-control .record-split > .record-more { width: 30px; padding: 0; border-left: 1px solid var(--record); color: var(--record); }
+.record-control .record-split > .dim-btn:hover:not(:disabled), .record-control .record-split > .record-more.on { background: color-mix(in srgb, var(--record) 14%, transparent); }
+.record-control .record-split > .dim-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--record); }
 .record-control .record-split > .dim-btn:disabled { opacity: 0.6; }
-/* while recording: the box goes dark with a red outline, and the button is "Stop recording" */
-.record-control.recording .record-split { background: var(--card); }
-.record-control.recording .record-split > .record-toggle { color: var(--record); }
-.record-control.recording .record-split > .record-more { border-left-color: var(--record); color: var(--fg); }
-.record-control.recording .record-split > .dim-btn:hover:not(:disabled), .record-control.recording .record-split > .record-more.on { background: color-mix(in srgb, var(--record) 18%, transparent); }
+/* while recording: the same outline with a soft red pulse, the dot blinking and the clock running */
+.record-control.recording .record-split { animation: record-pulse 1.6s ease-in-out infinite; }
+@keyframes record-pulse { 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--record) 22%, transparent); } }
 .record-error { cursor: help; }
 .record-options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 .record-options-head h2 { margin: 0; }
@@ -186,6 +183,7 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .dock-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* the two sides share what the actions leave equally (never narrower than what's in them), so the actions sit centred */
 .dock-drive-slot, .dock-stop-slot { flex: 1 1 0; min-width: max-content; }
+.dock-drive-slot { gap: 12px; }
 .dock-stop-slot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .dock-drive { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 6px; border: 1px solid transparent; border-radius: var(--radius); }
 .dock-drive.moving { border-color: var(--primary); box-shadow: var(--glow-accent); }
