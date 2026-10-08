@@ -73,8 +73,10 @@ screen): collapse / expand, make it the main view (swap: the main view's panel t
 no close: collapse a panel instead, and the others in its rail take its height. A collapsed panel stops its stream (the
 3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. A panel's
 own in-panel buttons (a camera's topic tabs and gear, the 3D view's follow and point clouds, the map's cog and follow)
-show while it's hovered (on touch, for a few seconds after a tap on it). The map's topic, costmap, followed frame and
-fit sit behind its cog; the topic, costmap and frame are also in Settings → Map (the same setting), and the 3D view's
+show while it's hovered (on touch, for a few seconds after a tap on it). The map's choices sit behind its cog and in
+Settings → Map (the same setting): what it shows (the lidar map, or a costmap when one is on the bus; with nothing yet,
+"no lidar data on <topic> yet" / "no costmap data on <topic> yet"), which topic, a costmap overlay on the lidar map,
+and the followed frame, and the 3D view's
 follow frame in Settings → 3D view. Drag a header into a rail (it goes in at the
 pointer's height), onto the main view's middle (swap), or anywhere else to float; a floating panel's edges snap to the
 main view, the rails and the other floating panels, and it resizes from its corner. Splitters share a rail's height, a
@@ -82,7 +84,7 @@ rail's edge sets its width. The arrangement is this device's (`lv.workspace` in 
 layout" restores it.
 
 Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
-palette (every action: panels, layout, cameras, view, recording, robot type, the profile's buttons), `?` lists every
+palette (every action: panels, layout, cameras, view, recording, controller format, the profile's buttons), `?` lists every
 key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while you type in a field or with an overlay
 open, and leaving the window lets go of everything. On a phone the rails are drawers (the strip's buttons) and driving
 is two thumb sticks with STOP between them.
@@ -125,9 +127,10 @@ following to reframe the robot) and look straight down on the area around the ro
 in every open page; its lookAt stops following). Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.
 
-## Robot type
+## Controller format
 
-Settings → **Robot** picks the kind of robot: **dog**, **humanoid**, **wheeled base**, **arm** or **drone** (the
+Settings → **Controller format** picks how you control it (a control format, not what the robot is: an RC car can use
+Dog): **dog**, **humanoid**, **wheeled base**, **arm** or **drone** (the
 Launcher's five robot icons), or **Auto** (the default). The type sets the keys, speeds and controls
 (`frontend/src/profile/<type>.ts`), the stand-in model drawn at the robot's pose, and whether Settings shows the drive
 controls or the [arm panel](#arm-control). Changing it applies at once in every open page (no reload), and disarms.

@@ -316,21 +316,24 @@ const rank = (topic: Topic) =>
         ? (/^\/global_map$/.test(topic.name) ? 0 : /map|global|voxel/i.test(topic.name) ? 1 : 2)
         : 10 + (/^\/map$/.test(topic.name) ? 0 : /global/.test(topic.name) ? 1 : /map/.test(topic.name) ? 2 : 3)
 
-/** The topics the panel can draw as its base, best first: point clouds (as a top-down heatmap), then occupancy grids. */
-export function mapCandidates(topics: Topic[]): Topic[] {
-    return topics.filter((topic) => isGridTopic(topic) || isCloudTopic(topic)).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+/** What the map draws as its base: the lidar map (a point cloud as a top-down heatmap) or a costmap (an occupancy grid). */
+export type MapBase = "lidar" | "costmap"
+
+/** The topics of `source` the panel can draw as its base, best first. */
+export function mapCandidates(topics: Topic[], source: MapBase): Topic[] {
+    return topics.filter(source === "costmap" ? isGridTopic : isCloudTopic).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
 }
 
-/** The picked topic when it's on the bus, else the best candidate ("" picks automatically). */
-export function chooseMapTopic(topics: Topic[], picked: string): Topic | null {
-    const candidates = mapCandidates(topics)
+/** The picked topic when it's on the bus and of `source`, else that source's best ("" picks automatically). */
+export function chooseMapTopic(topics: Topic[], picked: string, source: MapBase): Topic | null {
+    const candidates = mapCandidates(topics, source)
     return candidates.find((topic) => topic.key === picked) ?? candidates[0] ?? null
 }
 
-/** The occupancy grids (costmaps) the panel can lay over its base, best first. */
-export const overlayCandidates = (topics: Topic[]): Topic[] => mapCandidates(topics).filter(isGridTopic)
+/** The occupancy grids (costmaps) the panel can lay over a lidar base, best first. */
+export const overlayCandidates = (topics: Topic[]): Topic[] => mapCandidates(topics, "costmap")
 
-/** The overlay grid: the picked one when it's on the bus and isn't the base; "" (the default) is none. */
-export function chooseOverlay(topics: Topic[], picked: string, base: Topic | null): Topic | null {
-    return picked && picked !== base?.key ? overlayCandidates(topics).find((topic) => topic.key === picked) ?? null : null
+/** The overlay grid (a lidar base only): the picked one when it's on the bus; "" (the default) is none. */
+export function chooseOverlay(topics: Topic[], picked: string, source: MapBase): Topic | null {
+    return picked && source === "lidar" ? overlayCandidates(topics).find((topic) => topic.key === picked) ?? null : null
 }

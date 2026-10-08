@@ -30,9 +30,9 @@ export function StatusPanel({ app }: { app: ViewerApp }) {
     ]
     return (
         <div className="status-panel" data-testid="status-panel">
-            <div className="status-robot">
+            <div className="status-robot" title="Controller format (Settings)">
                 <RobotIcon type={robot.type} size={32} />
-                <span>{profiles.find((profile) => profile.type === robot.type)?.name ?? robot.type}{robot.auto ? " (auto)" : ""}</span>
+                <span className="status-format"><span className="status-format-label">Controller format</span>{profiles.find((profile) => profile.type === robot.type)?.name ?? robot.type}{robot.auto ? " (auto)" : ""}</span>
             </div>
             <dl className="status-rows">
                 {rows.map(([label, value, tone]) => (

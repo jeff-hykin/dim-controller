@@ -96,10 +96,10 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         },
         ...[{ type: "", name: "Auto" }, ...profiles].map((profile): Command => ({
             id: `robot.type.${profile.type || "auto"}`,
-            label: `Robot type: ${profile.name}`,
+            label: `Controller format: ${profile.name}`,
             group: "Robot",
             hint: (view.profile || "") === profile.type ? "current" : undefined,
-            words: "profile keys model",
+            words: "robot type profile keys model controls",
             run: () => app.settings.update({ profile: profile.type }),
         })),
         { id: "help.keys", label: "Keyboard shortcuts", group: "Help", keys: ["?"], words: "help keys bindings", run: () => openOverlay("help") },

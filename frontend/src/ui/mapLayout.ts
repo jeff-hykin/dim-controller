@@ -1,11 +1,13 @@
 // What the 2D map panel remembers per viewer (localStorage: a phone and a desktop each keep their own), checked on load.
 // One store: the map's cog and Settings → Map change the same choices. Where the panel is and whether it's folded is
 // the workspace's (ui/workspace.ts).
-import { DEFAULT_FOLLOW_FRAME, isValidView, type MapView } from "../core/map2d.ts"
+import { DEFAULT_FOLLOW_FRAME, isValidView, type MapBase, type MapView } from "../core/map2d.ts"
 import { Store } from "../core/store.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
 export interface MapLayout {
+    /** what the base is: the lidar map (the default) or a costmap */
+    source: MapBase
     /** the base map: "" = the best on the bus (the global map) */
     topic: string
     /** a costmap drawn over the base: "" = none (the default) */
@@ -21,6 +23,7 @@ export const LAYOUT_KEY = "lv.map2d"
 export function loadMapLayout(saved: Partial<MapLayout> = readLocal<Partial<MapLayout>>(LAYOUT_KEY, {})): MapLayout {
     const text = (value: unknown) => typeof value === "string" ? value : ""
     return {
+        source: saved?.source === "costmap" ? "costmap" : "lidar",
         topic: text(saved?.topic),
         overlay: text(saved?.overlay),
         followFrame: text(saved?.followFrame) || DEFAULT_FOLLOW_FRAME,

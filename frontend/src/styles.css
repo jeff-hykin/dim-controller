@@ -476,6 +476,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* ── status panel ── */
 .status-panel { display: grid; gap: 8px; }
 .status-robot { display: flex; align-items: center; gap: 10px; font: 600 13px var(--sans); }
+.status-format { display: flex; flex-direction: column; gap: 1px; }
+.status-format-label { font: 10px var(--mono); text-transform: var(--label-case); letter-spacing: 0.08em; color: var(--muted-fg); font-weight: 400; }
 .status-rows { margin: 0; display: grid; gap: 2px; }
 .status-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hair, var(--border)); }
 .status-row dt { color: var(--muted-fg); font-size: 11px; }

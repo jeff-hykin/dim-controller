@@ -134,25 +134,29 @@ Deno.test("heat ramp: cold to hot, never black (the floor shows on a dark backgr
     assertEquals(lut[3], 255)
 })
 
-Deno.test("layers: the global map (a cloud) is the base, a costmap is an overlay only when picked", () => {
+Deno.test("layers: the base is the lidar map (a cloud) or a costmap (a grid), as picked; a costmap overlays a lidar base only when picked", () => {
     const lidar = topic("/lidar", "sensor_msgs.PointCloud2")
     const globalMap = topic("/global_map", "sensor_msgs.PointCloud2")
     const costmap = topic("/global_costmap", "nav_msgs.OccupancyGrid")
     const map = topic("/map", "nav_msgs.OccupancyGrid")
-    // the Go2 sim's bus: the global map, not the costmap
-    assertEquals(chooseMapTopic([lidar, globalMap, costmap], "")?.name, "/global_map")
-    assertEquals(chooseMapTopic([lidar, costmap, map], "")?.name, "/lidar")
-    assertEquals(chooseMapTopic([costmap, map], "")?.name, "/map")
-    assertEquals(chooseMapTopic([lidar, costmap], costmap.key)?.name, "/global_costmap")
-    assertEquals(chooseMapTopic([globalMap], lidar.key)?.name, "/global_map")
-    assertEquals(chooseMapTopic([topic("/odom", "geometry_msgs.PoseStamped")], ""), null)
-    // the overlay: off by default, the picked grid when it's on the bus and isn't already the base
-    const base = chooseMapTopic([globalMap, costmap], "")
-    assertEquals(chooseOverlay([globalMap, costmap], "", base), null)
-    assertEquals(chooseOverlay([globalMap, costmap], costmap.key, base)?.name, "/global_costmap")
-    assertEquals(chooseOverlay([globalMap], costmap.key, base), null)
-    assertEquals(chooseOverlay([globalMap, costmap], globalMap.key, base), null)
-    assertEquals(chooseOverlay([costmap], costmap.key, costmap), null)
+    // lidar (the default): the Go2 sim's global map, else a scan; never a grid
+    assertEquals(chooseMapTopic([lidar, globalMap, costmap], "", "lidar")?.name, "/global_map")
+    assertEquals(chooseMapTopic([lidar, costmap, map], "", "lidar")?.name, "/lidar")
+    assertEquals(chooseMapTopic([costmap, map], "", "lidar"), null)
+    assertEquals(chooseMapTopic([globalMap], lidar.key, "lidar")?.name, "/global_map")
+    // a picked grid isn't a lidar map
+    assertEquals(chooseMapTopic([lidar, costmap], costmap.key, "lidar")?.name, "/lidar")
+    // costmap: /map first, else the picked grid; none on the bus → none
+    assertEquals(chooseMapTopic([lidar, costmap, map], "", "costmap")?.name, "/map")
+    assertEquals(chooseMapTopic([lidar, costmap, map], costmap.key, "costmap")?.name, "/global_costmap")
+    assertEquals(chooseMapTopic([lidar, globalMap], "", "costmap"), null)
+    assertEquals(chooseMapTopic([topic("/odom", "geometry_msgs.PoseStamped")], "", "lidar"), null)
+    // the overlay: off by default, the picked grid when it's on the bus, over a lidar base only
+    assertEquals(chooseOverlay([globalMap, costmap], "", "lidar"), null)
+    assertEquals(chooseOverlay([globalMap, costmap], costmap.key, "lidar")?.name, "/global_costmap")
+    assertEquals(chooseOverlay([globalMap], costmap.key, "lidar"), null)
+    assertEquals(chooseOverlay([globalMap, costmap], globalMap.key, "lidar"), null)
+    assertEquals(chooseOverlay([globalMap, costmap], costmap.key, "costmap"), null)
 })
 
 Deno.test("discovery: a slow topic that misses a round stays listed until it's been gone a while", () => {
@@ -227,7 +231,9 @@ Deno.test("follow frame options: the tree's frames, the chosen one first and wai
 
 Deno.test("layout: the map's own choices are remembered and checked; following is not", () => {
     const fresh = loadMapLayout({})
-    assertEquals([fresh.topic, fresh.overlay, fresh.followFrame, fresh.view], ["", "", DEFAULT_FOLLOW_FRAME, null])
+    assertEquals([fresh.source, fresh.topic, fresh.overlay, fresh.followFrame, fresh.view], ["lidar", "", "", DEFAULT_FOLLOW_FRAME, null])
+    assertEquals(loadMapLayout({ source: "costmap" }).source, "costmap")
+    assertEquals(loadMapLayout({ source: "nope" } as never).source, "lidar")
     assertEquals(loadMapLayout({ followFrame: "odom" }).followFrame, "odom")
     assertEquals(loadMapLayout({ followFrame: 7 } as never).followFrame, DEFAULT_FOLLOW_FRAME)
     assertEquals(loadMapLayout({ topic: 3 } as never).topic, "")

@@ -16,6 +16,7 @@ import { rememberTopics } from "../core/transport.ts"
 import {
     chooseMapTopic,
     chooseOverlay,
+    type MapBase,
     followFrameOptions,
     MapFollow,
     fitView,
@@ -82,29 +83,52 @@ function useMapTopics(app: ViewerApp) {
         seenTopics.set(app, new Map())
     }
     const topics = rememberTopics(seenTopics.get(app)!, live, Date.now(), Infinity)
-    const topic = chooseMapTopic(topics, layout.topic)
+    const topic = chooseMapTopic(topics, layout.topic, layout.source)
     return {
         layout,
         topic,
-        overlay: chooseOverlay(topics, layout.overlay, topic),
-        candidates: mapCandidates(topics),
-        grids: overlayCandidates(topics).filter((grid) => grid.key !== topic?.key),
+        overlay: chooseOverlay(topics, layout.overlay, layout.source),
+        candidates: mapCandidates(topics, layout.source),
+        grids: overlayCandidates(topics),
     }
 }
 
 const topicName = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
 
 /**
- * The map's choices: its topic, the costmap over it and the TF frame it follows. The same fields (the same setting) in
+ * The map's choices: what it draws (the lidar map or a costmap; the costmap choice only when one is on the bus), which
+ * topic, a costmap over a lidar map, and the TF frame it follows. The same fields (the same setting) in
  * the map's cog menu and in Settings → Map; `frames` are the TF frames to offer.
  */
 export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: string[] }) {
     const { layout, topic, overlay, candidates, grids } = useMapTopics(app)
-    const label = topic ? topicName(topic) : "no map on the bus"
+    const label = topic ? topicName(topic) : layout.source === "costmap" ? "no costmap on the bus" : "no lidar map on the bus"
     return (
         <>
+            <div className="map-setting">
+                <span>Show</span>
+                <span className="dim-tabs segmented map-base" role="radiogroup" aria-label="Map source">
+                    {([["lidar", "Lidar map"], ["costmap", "Costmap"]] as const).map(([source, name]) => {
+                        const unavailable = source === "costmap" && !grids.length
+                        return (
+                            <button
+                                key={source}
+                                type="button"
+                                role="radio"
+                                aria-checked={layout.source === source}
+                                className={`dim-tab ${layout.source === source ? "on" : ""}`}
+                                disabled={unavailable && layout.source !== source}
+                                title={unavailable ? "No costmap (nav_msgs.OccupancyGrid) on the bus" : source === "costmap" ? "The costmap as the map" : "The lidar map (a point cloud from above)"}
+                                onClick={() => updateMapLayout({ source, topic: "" })}
+                            >
+                                {name}{unavailable ? " (none)" : ""}
+                            </button>
+                        )
+                    })}
+                </span>
+            </div>
             <label className="map-setting">
-                <span>Map</span>
+                <span>Topic</span>
                 {candidates.length > 1
                     ? (
                         <select className="dim-select map-topic" value={layout.topic} onChange={(event) => updateMapLayout({ topic: event.target.value })} aria-label="Map topic">
@@ -114,11 +138,11 @@ export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: strin
                     )
                     : <span className="map-source">{label}</span>}
             </label>
-            {grids.length > 0 && (
+            {layout.source === "lidar" && grids.length > 0 && (
                 <label className="map-setting">
-                    <span>Costmap</span>
-                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => updateMapLayout({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
-                        <option value="">none</option>
+                    <span>Overlay</span>
+                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => updateMapLayout({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the lidar map">
+                        <option value="">no costmap</option>
                         {grids.map((grid) => <option key={grid.key} value={grid.key}>{grid.name}</option>)}
                     </select>
                 </label>
@@ -169,8 +193,8 @@ export function MapPanel({ app }: { app: ViewerApp }) {
     const frames = useTfFrames(app, open)
 
     useEffect(() => {
-        renderer.current?.setTopics(topic, overlay)
-    }, [topic?.key, overlay?.key, open])
+        renderer.current?.setTopics(topic, overlay, layout.source)
+    }, [topic?.key, overlay?.key, layout.source, open])
 
     const recenter = () => renderer.current?.recenter()
     const fit = () => renderer.current?.fit()
@@ -256,7 +280,7 @@ interface MapStatus {
 }
 
 /** before the first message: what the map is listening to */
-const emptyText = (topic: Topic) => isGridTopic(topic) ? `no map data on ${topic.name} yet` : `no lidar data on ${topic.name} yet`
+const emptyText = (topic: Topic) => isGridTopic(topic) ? `no costmap data on ${topic.name} yet` : `no lidar data on ${topic.name} yet`
 
 interface Palette {
     background: Rgba
@@ -505,6 +529,8 @@ class MapRenderer {
     #palette = themePalette()
     #base: MapSource | null = null
     #overlay: MapSource | null = null
+    /** what the base is (for what to say when there is none) */
+    #source: MapBase = "lidar"
     #robot: { x: number; y: number; yaw: number } | null = null
     #trail = new Trail()
     #fixedFrame = ""
@@ -577,7 +603,8 @@ class MapRenderer {
     }
 
     /** the base map and the costmap over it (null: none); a source that didn't change keeps its data */
-    setTopics(base: Topic | null, overlay: Topic | null) {
+    setTopics(base: Topic | null, overlay: Topic | null, source: MapBase) {
+        this.#source = source
         const changed = () => {
             this.#report()
             this.requestDraw()
@@ -596,7 +623,8 @@ class MapRenderer {
     #report() {
         const base = this.#base, overlay = this.#overlay
         const info = [base?.info, overlay?.info && `+ ${overlay.topic.name} ${overlay.info}`].filter(Boolean).join(" · ")
-        const problem = !base ? "no lidar data yet: no point cloud or occupancy grid on the bus" : base.problem || overlay?.problem || ""
+        const none = this.#source === "costmap" ? "no costmap data yet: no costmap (occupancy grid) on the bus" : "no lidar data yet: no point cloud on the bus"
+        const problem = !base ? none : base.problem || overlay?.problem || ""
         this.events.onStatus({ info, problem, empty: !base || base.empty })
     }
 

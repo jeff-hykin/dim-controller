@@ -1,4 +1,4 @@
-// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), the map's choices (the same
+// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (or the arm panel, for an arm; it was its own tab), the map's choices (the same
 // setting as the map's cog), the 3D view's follow frame (the same as its follow button follows), then rendering.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -28,12 +28,12 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     return (
         <div className="settings-panel">
             <div className="field-block robot-type" data-testid="robot-type">
-                <span className="field-label">Robot</span>
+                <span className="field-label">Controller format</span>
                 <div className="robot-type-row">
                     <RobotIcon type={robot.type} size={40} />
                     <select
                         className="dim-select"
-                        aria-label="Robot type"
+                        aria-label="Controller format"
                         value={robot.auto ? "" : robot.type}
                         // every open viewer switches with it (app.ts), no reload
                         onChange={(event) => (app.settings.update({ profile: event.target.value }), event.target.value === "arm" && armShading())}
@@ -43,7 +43,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     </select>
                 </div>
                 <p className="hint" data-testid="robot-type-reason">
-                    {robot.auto ? `Auto: ${robot.reason}.` : "Picked here; Auto follows what's running."} Sets the keys, speeds, the drive or arm controls and the model in the view.
+                    {robot.auto ? `Auto: picked from the blueprint (${robot.reason}).` : "Picked here; Auto picks from the blueprint."} How you control it: the keys, speeds, the drive or arm controls and the model in the view. Choose any format, e.g. Dog for an RC car.
                 </p>
             </div>
             {robot.type === "arm"
