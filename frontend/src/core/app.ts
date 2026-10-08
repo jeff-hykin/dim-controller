@@ -20,6 +20,7 @@ import { RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
 import type { RobotProfile, RobotType } from "../profile/types.ts"
+import { checkLink, DEFAULT_MAX_LATENCY_MS, LINK_CHECK_MS, maxLatencyOf } from "./linkWatch.ts"
 import { chosenType, type ResolvedType, resolveType, type RobotsAnswer } from "./robotType.ts"
 
 export interface ViewSettings {
@@ -35,6 +36,8 @@ export interface ViewSettings {
     showStats: boolean
     /** the robot type's stand-in model at the robot's pose */
     robotModel: boolean
+    /** driving holds (Reconnect on the drive panel) once the control link's latency goes over this (ms) */
+    maxLatencyMs: number
 }
 
 export class ViewerApp {
@@ -45,7 +48,7 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS })
     #profile: RobotProfile
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
@@ -100,10 +103,43 @@ export class ViewerApp {
         })
         this.runs.start()
         setInterval(() => this.#checkTf(), 2000)
+        setInterval(() => this.#checkLink(), LINK_CHECK_MS)
         this.connection.status.subscribe(() => this.#updateRobot())
         // Settings → Robot here, in another viewer or by the agent
         this.settings.subscribe(() => this.#updateRobot())
         this.#updateRobot()
+    }
+
+    #checkLink() {
+        const action = checkLink({
+            state: this.connection.status.get().state,
+            latencyMs: this.connection.latencyMs(),
+            maxMs: maxLatencyOf(this.settings.get().maxLatencyMs),
+            halt: this.drive.state.get().halt,
+            hidden: typeof document !== "undefined" && document.hidden,
+        })
+        if (action && "halt" in action) {
+            this.drive.halt(action.halt)
+        } else if (action) {
+            this.drive.resume()
+        }
+    }
+
+    /** The drive panel's Reconnect: a new gateway session (video and control), then driving from the next input. */
+    async reconnect() {
+        this.drive.stop()
+        this.drive.halt({ reason: this.drive.state.get().halt?.reason ?? "latency", latencyMs: null, maxMs: maxLatencyOf(this.settings.get().maxLatencyMs) })
+        this.drive.setReconnecting(true)
+        try {
+            await this.connection.reconnect()
+            this.drive.resume()
+        } catch (error) {
+            console.warn("reconnect failed; the client keeps retrying", error)
+            // the link watch resumes once the client's own retry connects
+            this.drive.halt({ reason: "lost", latencyMs: null, maxMs: maxLatencyOf(this.settings.get().maxLatencyMs) })
+        } finally {
+            this.drive.setReconnecting(false)
+        }
     }
 
     /** the robot profile in use (it changes with Settings → Robot, or when auto changes its mind) */

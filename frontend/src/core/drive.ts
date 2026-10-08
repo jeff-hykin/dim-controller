@@ -38,6 +38,16 @@ export interface DriveState {
     error: string | null
     /** the last endpoint command (POST api/drive), shown until it ends */
     command: DriveCommand | null
+    /** driving is held (link too slow, or lost) until a reconnect; nothing but the stop goes out */
+    halt: DriveHalt | null
+}
+
+/** Why driving is held: the link's latency went over Settings' max, or the link dropped. */
+export interface DriveHalt {
+    reason: "latency" | "lost"
+    latencyMs: number | null
+    maxMs: number
+    reconnecting: boolean
 }
 
 /** What POST api/drive sent (or would have, for a dry run), as the backend describes it. */
@@ -61,7 +71,7 @@ const LEGACY_DRIVE_KEYS: Partial<Record<RobotProfile["type"], string>> = { dog: 
 const zeroAxes = (): Axes => ({ forward: 0, strafe: 0, turn: 0, vertical: 0 })
 
 export class Drive {
-    readonly state = new Store<DriveState>({ armed: true, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, command: null })
+    readonly state = new Store<DriveState>({ armed: true, axes: zeroAxes(), boost: false, twist: { linear: [0, 0, 0], angular: [0, 0, 0] }, topics: [], topic: "", publishing: false, sent: 0, error: null, command: null, halt: null })
     settings: Store<DriveSettings>
     readonly controlValues = new Store<Record<string, number>>({})
     /** axis contributions by source (keys, stick, pad), summed and clamped */
@@ -157,10 +167,43 @@ export class Drive {
         }
     }
 
-    /** A source (e.g. "keys", "stick") sets its share of the axes; the sum (clamped to ±1) drives. */
+    /** A source (e.g. "keys", "stick") sets its share of the axes; the sum (clamped to ±1) drives. Ignored while halted. */
     setAxes(source: string, axes: Partial<Axes>) {
+        if (this.state.get().halt) {
+            return
+        }
         this.#sources.set(source, axes)
         this.#recompute()
+    }
+
+    /** Holds driving (latency over the max, or the link lost): stopped now (the usual zeros if it was moving), input ignored until resume(). */
+    halt(halt: Omit<DriveHalt, "reconnecting">) {
+        const current = this.state.get().halt
+        if (current?.reason === halt.reason) {
+            return
+        }
+        this.state.update({ halt: { ...halt, reconnecting: current?.reconnecting ?? false } })
+        this.#sources.clear()
+        this.#recompute()
+    }
+
+    /** The reconnect is under way (the HUD says so). */
+    setReconnecting(reconnecting: boolean) {
+        const halt = this.state.get().halt
+        if (halt) {
+            this.state.update({ halt: { ...halt, reconnecting } })
+        }
+    }
+
+    /** Reconnected: driving is allowed again, from the next input (nothing held over), on fresh publishers. */
+    resume() {
+        if (!this.state.get().halt) {
+            return
+        }
+        this.#sources.clear()
+        this.#recompute()
+        this.#closeAll()
+        this.state.update({ halt: null })
     }
 
     setBoost(boost: boolean) {

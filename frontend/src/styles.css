@@ -475,3 +475,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .map-panel .camera-head .camera-info, .mobile .map-panel .camera-head select { display: none; }
 .map-panel .camera-head .dim-select { max-width: 40%; }
 .map-panel .camera-head .dim-select.map-overlay { max-width: 30%; }
+
+/* driving held (latency over Settings' max, or the link lost): why, and Reconnect (ui/DriveHud.tsx) */
+.drive-hud.corner.halted { border-color: #e5484d; flex-wrap: wrap; max-width: 340px; }
+.drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: #e5484d; }
+.drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: #fff; background: #e5484d; border-color: #e5484d; }
+.drive-hud.mobile .drive-halt { flex-direction: column; gap: 6px; text-align: center; background: color-mix(in srgb, var(--card) 88%, transparent); padding: 6px; }
+.drive-hud.mobile .drive-halt .reconnect-button { margin-left: 0; width: 100%; height: 44px; touch-action: manipulation; }

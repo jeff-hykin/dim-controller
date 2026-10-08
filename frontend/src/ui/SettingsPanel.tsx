@@ -6,6 +6,7 @@ import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
 import { ArmPanel } from "./ArmPanel.tsx"
 import { Field, Toggle } from "./controls.tsx"
+import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
@@ -53,6 +54,9 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <section className="settings-section" data-section="drive">
                         <h3 className="dim-label">Drive</h3>
                         <DrivePanel app={app} />
+                        <Field label="Max latency (ms)" hint="Over this, the drive panel stops driving and shows Reconnect (also when the link drops).">
+                            <MaxLatencyInput app={app} />
+                        </Field>
                     </section>
                 )}
             <h3 className="dim-label">Rendering</h3>
@@ -74,6 +78,35 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</p>
         </div>
+    )
+}
+
+/** Settings → Max latency: saved on Enter or leaving the field, so "1" on the way to "1500" never holds driving */
+function MaxLatencyInput({ app }: { app: ViewerApp }) {
+    const saved = maxLatencyOf(useStore(app.settings).maxLatencyMs)
+    const [text, setText] = useState(String(saved))
+    useEffect(() => setText(String(saved)), [saved])
+    const commit = () => {
+        const value = Math.round(Number(text))
+        if (Number.isFinite(value) && value > 0) {
+            app.settings.update({ maxLatencyMs: value })
+        } else {
+            setText(String(saved))
+        }
+    }
+    return (
+        <input
+            type="number"
+            className="dim-input number"
+            aria-label="Max latency (ms)"
+            data-testid="max-latency"
+            min={1}
+            step={100}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => event.key === "Enter" && commit()}
+        />
     )
 }
 

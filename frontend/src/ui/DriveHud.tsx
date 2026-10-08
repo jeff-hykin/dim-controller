@@ -5,6 +5,20 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Axis } from "../profile/types.ts"
 import { Joystick, releaseAllSticks } from "./Joystick.tsx"
+import type { DriveHalt } from "../core/drive.ts"
+
+/** Driving is held (latency over the max, or the link lost): why, and the Reconnect button. */
+function HaltNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+    const why = halt.reason === "lost" ? "Link lost" : `Latency over ${halt.maxMs} ms${halt.latencyMs !== null ? ` (${halt.latencyMs} ms)` : ""}`
+    return (
+        <div className="drive-halt" role="alert" data-testid="drive-halt">
+            <span>{why} · driving stopped</span>
+            <button type="button" className="dim-btn reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
+                {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
+            </button>
+        </div>
+    )
+}
 
 export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const drive = app.drive
@@ -28,6 +42,7 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     onMove={(x, y) => drive.setAxes("left-stick", { forward: y, strafe: usesStrafe ? -x : 0 })}
                 />
                 <div className="hud-center">
+                    {state.halt && <HaltNotice app={app} halt={state.halt} />}
                     <span className="dim-badge hud-note" data-testid="drive-readout">
                         {command ? `${command.dryRun ? "dry run" : command.source} · ${velocity(command.linear, command.angular)}` : velocity(state.twist.linear, state.twist.angular)}
                     </span>
@@ -64,7 +79,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         return key ? <span className={`key ${lit(axis, sign) ? "down" : ""}`}>{key}</span> : <span className="key empty" />
     }
     return (
-        <div className={`dim-panel glass drive-hud corner ${state.publishing ? "moving" : ""}`} data-testid="drive-hud">
+        <div className={`dim-panel glass drive-hud corner ${state.publishing ? "moving" : ""} ${state.halt ? "halted" : ""}`} data-testid="drive-hud">
+            {state.halt && <HaltNotice app={app} halt={state.halt} />}
             <div className="keys" aria-label="drive keys">
                 <div>{usesStrafe ? cell("strafe", 1) : usesVertical ? cell("vertical", -1) : <span className="key empty" />}{cell("forward", 1)}{usesStrafe ? cell("strafe", -1) : usesVertical ? cell("vertical", 1) : <span className="key empty" />}</div>
                 <div>{cell("turn", 1)}{cell("forward", -1)}{cell("turn", -1)}</div>

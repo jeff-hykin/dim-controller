@@ -129,6 +129,10 @@ straight to the output topics through Desktop's gateway, each with its own deadm
 disconnects, the gateway sends a zero on every one. Nothing is sent while nobody steers (a release is followed by a second
 of zeros, then silence), so a parked browser never drowns out other teleop.
 
+If the control link's latency (the gateway heartbeat's round trip, or how long it has gone unanswered) passes Settings →
+Drive → Max latency (default 1000 ms), or the link drops, driving stops (the usual zeros, once) and the drive panel shows
+Reconnect: a new gateway session, video and control alike. Driving picks up again only on new input.
+
 ### Driving: which topics
 
 Settings → Drive's **Topics** is **auto** by default, or a list you type (one per line, `/my_cmd_vel` or

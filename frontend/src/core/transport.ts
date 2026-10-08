@@ -66,6 +66,9 @@ export class Connection {
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
     #shared: ReturnType<typeof getZenoh>
+    /** the last RTT sample seen and when (performance.now()): a link that stops answering stops changing it */
+    #lastRtt: { value: number | null; at: number } = { value: null, at: 0 }
+    #reconnecting: Promise<void> | null = null
 
     /** Makes the page's shared connection (the first getZenoh() call: its options win), with the heartbeat drive needs. */
     constructor(deadmanMs = 400) {
@@ -86,6 +89,7 @@ export class Connection {
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null })
             this.#lastDropped = dropped
         }, 1000)
+        this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
         const lastSeen = new Map<string, { topic: Topic; at: number }>()
         for (;;) {
             try {
@@ -100,6 +104,52 @@ export class Connection {
             }
             await new Promise((resolve) => setTimeout(resolve, DISCOVERY_MS))
         }
+    }
+
+    /**
+     * The control link's latency now (ms): the heartbeat's round trip, or, once replies stop coming, how long since the
+     * last one (a stalled link keeps its last RTT forever). Null before the first sample.
+     */
+    latencyMs(now = performance.now()): number | null {
+        const client = this.client
+        if (!client || this.#reconnecting) {
+            return null
+        }
+        const rtt = client.rttMs ?? null
+        if (rtt !== this.#lastRtt.value) {
+            this.#lastRtt = { value: rtt, at: now }
+        }
+        if (rtt === null) {
+            return null
+        }
+        const heartbeat = client.options?.heartbeatHz ?? 0
+        // without a heartbeat RTT is sampled only now and then, so its age says nothing
+        const silence = heartbeat > 0 ? now - this.#lastRtt.at - 1000 / heartbeat : 0
+        return Math.max(rtt, silence)
+    }
+
+    /**
+     * Drops the gateway session and opens a new one the way the first connect does (the client's _open: a new peer,
+     * every subscription and publisher re-attached, declarations remade). If that fails the client keeps retrying.
+     */
+    reconnect(): Promise<void> {
+        const client = this.client
+        if (!client) {
+            return Promise.resolve()
+        }
+        this.#reconnecting ??= (async () => {
+            this.status.update({ state: "connecting", rttMs: null })
+            // the old peer's close events come after _open bumps the client's generation, so they're ignored
+            client._peer?.close()
+            try {
+                await client._open()
+            } finally {
+                this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
+                this.status.update({ state: client.state, rttMs: client.rttMs ?? null })
+                this.#reconnecting = null
+            }
+        })()
+        return this.#reconnecting
     }
 
     /** Subscribes now or once connected; the returned function unsubscribes. */
