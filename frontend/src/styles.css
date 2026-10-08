@@ -397,7 +397,7 @@ h3.dim-label.first { margin-top: 4px; }
 .map-controls { position: absolute; right: 8px; top: 8px; z-index: 3; display: flex; gap: 6px; }
 .map-control.dim-btn.icon { width: 30px; height: 30px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
 .map-settings.on { color: var(--primary); border-color: var(--primary); }
-.map-settings-menu { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); max-width: calc(100vw - 16px); box-sizing: border-box; }
+.map-settings-menu { padding: 8px 10px 10px; background: var(--card); display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); max-width: calc(100vw - 16px); box-sizing: border-box; }
 .map-setting { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--muted-fg); }
 .map-setting .dim-select { width: 100%; }
 .map-source { min-width: 0; font: 10.5px var(--mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
