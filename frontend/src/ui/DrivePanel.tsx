@@ -31,6 +31,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                         <textarea
                             className="dim-textarea"
                             data-testid="drive-topics"
+                            key={settings.topics.join("\n")}
                             rows={Math.max(2, settings.topics.length + 1)}
                             defaultValue={settings.topics.join("\n")}
                             onBlur={(event) => drive.settings.update({ topics: event.target.value.split("\n").map((line) => line.trim()).filter(Boolean) })}

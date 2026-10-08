@@ -207,7 +207,14 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .key.empty { visibility: hidden; }
 .key.down { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
 .key.shift { width: 30px; }
-.hud-readout { font: 11px var(--mono); min-width: 190px; }
+.hud-readout { font: 11px var(--mono); font-variant-numeric: tabular-nums; min-width: 190px; flex: none; white-space: pre; }
+.hud-readout .line { overflow: hidden; text-overflow: ellipsis; }
+.drive-topic-chip { all: unset; box-sizing: border-box; cursor: pointer; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--muted-fg);
+    font: inherit; padding: 0 3px; margin-left: -3px; border: 1px solid transparent; }
+.drive-topic-chip:hover, .drive-topic-chip:focus-visible, .drive-topic-chip[aria-expanded="true"] { color: var(--fg); border-color: var(--border-strong); background: var(--accent); }
+.drive-topic-menu .quality-name { font-family: var(--mono); }
+.drive-topic-custom { display: flex; gap: 4px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+.drive-topic-custom .dim-input { flex: 1; min-width: 0; font: 12px var(--mono); }
 .drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); }
 .drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: var(--fg); background: var(--lv-stop); border-color: var(--lv-stop); }
 .drive-hud.mobile .drive-halt { flex-direction: column; gap: 6px; text-align: center; background: color-mix(in srgb, var(--card) 88%, transparent); padding: 6px; }
