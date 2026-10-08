@@ -1,5 +1,5 @@
-// The Tiles layout's status tile: the link, the robot, driving and rendering at a glance (each also lives elsewhere: the
-// top bar, Settings, the drive keys, Settings → Stats). Read-only.
+// The Status panel: the link, the robot, driving and rendering at a glance, in more detail than the status strip.
+// Read-only.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"

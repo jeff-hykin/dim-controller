@@ -1,9 +1,8 @@
-// The 3D view as a panel (ui/Panel.tsx): Classic's full window behind everything, or (while a camera is main) a
-// picture-in-picture with a header (drag it, double-click or the expand button for fullscreen) and a resize corner, or
-// a layout's docked region. Its header has a point cloud menu (each PointCloud2 on the bus: on/off, this viewer's
-// bandwidth preset, color and size, live points and bytes a second) and an off switch: off, every 3D layer stops
-// (nothing subscribed, no bandwidth) and only a small bar to turn it back on is left. View-only: nothing here moves the
-// robot. The element the viewer draws into (`host`) is never remounted: only the panel's placement changes.
+// The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
+// second, a point cloud menu (each PointCloud2 on the bus: on/off, this viewer's bandwidth preset, color and size) and
+// an off switch: off, every 3D layer stops (nothing subscribed, no bandwidth). Follow and top-down sit over its corner.
+// View-only: nothing here moves the robot. The element the viewer draws into (`host`) is never remounted, wherever the
+// panel goes.
 import { type RefObject, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
@@ -15,12 +14,11 @@ import type { PointLook } from "../core/render/pointMaterial.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
 import { Toggle } from "./controls.tsx"
-import { clampPanelBox, PANEL_HEAD_PX, popoverPosition } from "./panelDrag.ts"
-import { type Dock, Panel, type Placement } from "./Panel.tsx"
+import { popoverPosition } from "./panelDrag.ts"
+import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
 import { TfFootnote } from "./TfFootnote.tsx"
-
-const MIN_WIDTH = 220, MIN_HEIGHT = 150 + PANEL_HEAD_PX
+import { panelTitle } from "./commands.ts"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -37,17 +35,7 @@ export function totalRate(rates: Record<string, CloudRate>): CloudRate & { cloud
     }
 }
 
-export function ScenePanel({ host, app, placement, dock, mobile, onMain, onTf }: {
-    host: RefObject<HTMLDivElement | null>
-    app: ViewerApp | null
-    /** "main": Classic's full window; "float": the picture-in-picture while a camera is main; "dock": a layout's region */
-    placement: Placement
-    dock: Dock | null
-    mobile: boolean
-    /** Classic: make the 3D view fullscreen again */
-    onMain: () => void
-    onTf: () => void
-}) {
+export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement | null>; app: ViewerApp | null; onTf: () => void }) {
     const state = useStore(scenePanel)
     const off = state.off
     const [menuOpen, setMenuOpen] = useState(false)
@@ -61,50 +49,26 @@ export function ScenePanel({ host, app, placement, dock, mobile, onMain, onTf }:
         }
     }, [app, off])
 
-    const floating = placement === "float"
-    // the handle on the corner facing into the screen (bottom-left while it sits on the right half: the default)
-    const handleLeft = state.x < 0 || state.x + Math.max(state.width, MIN_WIDTH) / 2 > (globalThis.innerWidth || 1280) / 2
-    // the remembered box made safe for this window (a smaller screen, a bad saved value); unset = the CSS corner and size
-    const box = clampPanelBox({ ...state, width: state.width > 0 ? state.width : undefined, height: state.height > 0 ? state.height : undefined }, { x: -1, y: -1, width: MIN_WIDTH, height: MIN_HEIGHT }, { width: globalThis.innerWidth, height: globalThis.innerHeight }, { width: MIN_WIDTH, height: MIN_HEIGHT })
-    const placed: React.CSSProperties = box.x >= 0 ? { left: box.x, top: box.y, right: "auto", bottom: "auto" } : {}
-    const sized: React.CSSProperties = state.width > 0 && !off ? { width: box.width, height: box.height } : {}
-    const style = floating && !mobile ? { ...placed, ...sized } : {}
     const setOff = (next: boolean) => updateScenePanel({ off: next })
-    // a header (float, dock) carries the tools; the full window has them over its corner instead
-    const headed = placement !== "main"
-
     return (
         <Panel
-            placement={placement}
-            dock={dock}
+            id="scene"
+            title={panelTitle("scene")}
+            icon="cube"
             className={`scene-slot ${off ? "off" : ""}`}
-            style={style}
             testid="scene-panel"
-            onHeadDoubleClick={off ? undefined : onMain}
-            onDrag={floating && !mobile ? (x, y) => updateScenePanel({ x, y }) : undefined}
-            resize={floating && !off && !mobile ? { corner: handleLeft ? "left" : "right", minimum: { width: MIN_WIDTH, height: MIN_HEIGHT }, onDone: (next) => updateScenePanel(next) } : null}
-            head={headed && (
-                <>
-                    <span className="map-title"><Icon name="cube" size={14} />3D</span>
-                    {app && !off && <SceneRate />}
-                    {off && <span className="camera-info scene-off-note">off · nothing subscribed</span>}
+            info={off ? "off · nothing subscribed" : app ? <SceneRate /> : undefined}
+            tools={
+                <div className="scene-tools">
                     {app && !off && <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />}
-                    {floating && !off && <button type="button" className="dim-btn icon icon-button" title="Fullscreen 3D view (the camera becomes a popup)" aria-label="Fullscreen 3D view" onClick={onMain}><Icon name="expand" size={15} /></button>}
-                    <PowerButton off={off} onChange={setOff} />
-                </>
-            )}
-        >
-            <div ref={host} className="scene" />
-            {app && !off && placement !== "float" && <ViewControls app={app} />}
-            {app && !off && placement !== "float" && <TfFootnote app={app} onOpen={onTf} />}
-            {app && !headed && !off && (
-                <div className="scene-tools dim-panel">
-                    <SceneRate />
-                    <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />
                     <PowerButton off={off} onChange={setOff} />
                 </div>
-            )}
-            {off && !headed && (
+            }
+        >
+            <div ref={host} className="scene" />
+            {app && !off && <ViewControls app={app} />}
+            {app && !off && <TfFootnote app={app} onOpen={onTf} />}
+            {off && (
                 <div className="dim-panel scene-off">
                     <Icon name="cube" size={15} />
                     <span>3D view off · nothing subscribed</span>
@@ -128,7 +92,7 @@ function PowerButton({ off, onChange }: { off: boolean; onChange: (off: boolean)
 function SceneRate() {
     const total = totalRate(useStore(cloudRates))
     const text = total.clouds ? `${formatCount(total.pointsPerSecond)} pts/s · ${formatBytes(total.bytesPerSecond)}/s` : "no cloud"
-    return <span className="camera-info scene-rate" title={`${total.clouds} point cloud${total.clouds === 1 ? "" : "s"} drawn: points and bytes received a second`}>{text}</span>
+    return <span className="scene-rate" title={`${total.clouds} point cloud${total.clouds === 1 ? "" : "s"} drawn: points and bytes received a second`}>{text}</span>
 }
 
 function CloudButton({ app, open, onOpen, buttonRef }: { app: ViewerApp; open: boolean; onOpen: (open: boolean) => void; buttonRef: RefObject<HTMLButtonElement | null> }) {

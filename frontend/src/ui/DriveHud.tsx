@@ -1,5 +1,5 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
-// in the bottom-left corner. Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
+// in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost. Both show the agent's commands (POST api/drive), dry runs included.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -26,10 +26,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const keys = app.profile.drive.keys
     const usesVertical = Object.values(keys).some((action) => "axis" in action && action.axis === "vertical")
     const usesStrafe = Object.values(keys).some((action) => "axis" in action && action.axis === "strafe")
-    const keyFor = (axis: Axis, sign: number) => Object.entries(keys).find(([code, action]) => !code.startsWith("Arrow") && "axis" in action && action.axis === axis && Math.sign(action.value) === sign)?.[0].replace(/^Key/, "")
     const command = state.command
     const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`
-    const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
 
     if (mobile) {
         const moving = state.publishing && [...state.twist.linear, ...state.twist.angular].some((value) => value !== 0)
@@ -74,23 +72,39 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         )
     }
 
+    return <DriveKeys app={app} />
+}
+
+/** The desktop's drive keys (lit while held), what's being sent (or the agent's command), and the hold with Reconnect. */
+export function DriveKeys({ app }: { app: ViewerApp }) {
+    const state = useStore(app.drive.state)
+    const keys = app.profile.drive.keys
+    const usesVertical = Object.values(keys).some((action) => "axis" in action && action.axis === "vertical")
+    const usesStrafe = Object.values(keys).some((action) => "axis" in action && action.axis === "strafe")
+    const keyFor = (axis: Axis, sign: number) => Object.entries(keys).find(([code, action]) => !code.startsWith("Arrow") && "axis" in action && action.axis === axis && Math.sign(action.value) === sign)?.[0].replace(/^Key/, "")
+    const command = state.command
+    const velocity = (linear: number[], angular: number[]) => `${linear[0].toFixed(2)}${usesStrafe ? ` / ${linear[1].toFixed(2)}` : ""}${usesVertical ? ` / ${linear[2].toFixed(2)}` : ""} m/s · ${angular[2].toFixed(2)} rad/s`
+    const lit = (axis: Axis, sign: number) => Math.sign(state.axes[axis]) === sign && state.axes[axis] !== 0
     const cell = (axis: Axis, sign: number) => {
         const key = keyFor(axis, sign)
         return key ? <span className={`key ${lit(axis, sign) ? "down" : ""}`}>{key}</span> : <span className="key empty" />
     }
     return (
-        <div className={`dim-panel glass drive-hud corner ${state.publishing ? "moving" : ""} ${state.halt ? "halted" : ""}`} data-testid="drive-hud">
-            {state.halt && <HaltNotice app={app} halt={state.halt} />}
+        <div className={`dock-drive ${state.publishing ? "moving" : ""} ${state.halt ? "halted" : ""}`} data-testid="drive-hud">
             <div className="keys" aria-label="drive keys">
                 <div>{usesStrafe ? cell("strafe", 1) : usesVertical ? cell("vertical", -1) : <span className="key empty" />}{cell("forward", 1)}{usesStrafe ? cell("strafe", -1) : usesVertical ? cell("vertical", 1) : <span className="key empty" />}</div>
                 <div>{cell("turn", 1)}{cell("forward", -1)}{cell("turn", -1)}</div>
             </div>
-            <span className={`key shift ${state.boost ? "down" : ""}`}>⇧</span>
-            <div className="hud-readout" data-testid="drive-readout">
-                {command
-                    ? <>{command.dryRun ? "dry run · nothing sent" : `${command.source} driving`}<br /><span className="dim">{velocity(command.linear, command.angular)} · {command.seconds} s</span></>
-                    : <>{velocity(state.twist.linear, state.twist.angular)}<br /><span className="dim">→ {state.topic || "nothing"}</span></>}
-            </div>
+            <span className={`key shift ${state.boost ? "down" : ""}`} title="Shift: boost">⇧</span>
+            {state.halt
+                ? <HaltNotice app={app} halt={state.halt} />
+                : (
+                    <div className="hud-readout" data-testid="drive-readout">
+                        {command
+                            ? <>{command.dryRun ? "dry run · nothing sent" : `${command.source} driving`}<br /><span className="dim">{velocity(command.linear, command.angular)} · {command.seconds} s</span></>
+                            : <>{velocity(state.twist.linear, state.twist.angular)}<br /><span className="dim">→ {state.topic || "no drive topic"}</span></>}
+                    </div>
+                )}
         </div>
     )
 }

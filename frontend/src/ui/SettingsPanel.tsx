@@ -1,4 +1,4 @@
-// Settings: the layout, the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
+// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
@@ -13,7 +13,6 @@ import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
 import { useEffect, useState } from "react"
 import { useTfFrames } from "./useTfFrames.ts"
-import { LAYOUTS, setLayoutMode, useLayout } from "./layout.ts"
 import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -23,7 +22,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const current = profiles.find((profile) => profile.type === robot.type)
     return (
         <div className="settings-panel">
-            <LayoutPicker />
             <div className="field-block robot-type" data-testid="robot-type">
                 <span className="field-label">Robot</span>
                 <div className="robot-type-row">
@@ -79,7 +77,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <FollowFramePicker app={app} />
             <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</p>
+            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
         </div>
     )
 }
@@ -126,24 +124,5 @@ function FollowFramePicker({ app }: { app: ViewerApp }) {
                 {others.map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
             </select>
         </Field>
-    )
-}
-
-/** Settings → Layout: Classic or one of the docked arrangements (ui/layout.ts); every open page follows */
-function LayoutPicker() {
-    const { mode } = useLayout()
-    const current = LAYOUTS.find((layout) => layout.id === mode)!
-    return (
-        <div className="field-block layout-picker" data-testid="layout-picker">
-            <span className="field-label">Layout</span>
-            <span className="dim-tabs segmented layout-choices" role="radiogroup" aria-label="Layout">
-                {LAYOUTS.map((layout) => (
-                    <button type="button" key={layout.id} role="radio" data-layout={layout.id} className={`dim-tab ${mode === layout.id ? "on" : ""}`} aria-checked={mode === layout.id} title={layout.about} onClick={() => setLayoutMode(layout.id)}>
-                        {layout.label}
-                    </button>
-                ))}
-            </span>
-            <p className="hint" data-testid="layout-about">{current.about}</p>
-        </div>
     )
 }

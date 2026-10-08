@@ -1,127 +1,103 @@
-// Every panel's chrome (the camera, the 2D map, the 3D view, and the Tiles layout's status and settings): a header with
-// its title and buttons, the body, and how it's placed:
-//  - "float": Classic's floating panel, moved by its header and resized from the corner facing into the screen
-//  - "dock": a layout (ui/layout.ts) places it at `rect`; its maximize button fills the page with it
-//  - "main": fills the page behind everything (Classic's fullscreen camera or map)
-// Folding (the map) and turning off (the 3D view) are the caller's buttons in `head`.
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type Ref, useRef } from "react"
+// Every panel's frame, the same everywhere: a header (its icon and title, a live note, then the same four buttons in
+// the same place on every panel: fold, main view, pop out / dock, close), an optional row of the panel's own tools, and
+// its body. The workspace (ui/Workspace.tsx) gives it its box; dragging the header moves it (rails, main view,
+// floating; ui/workspace.ts snaps it), a double-click on the header folds it (on the main view: focus), and a floating
+// panel resizes from its corner. Hidden (closed, a shut drawer) it stays mounted, so a video or the 3D view never restarts.
+import { type ReactNode, useRef } from "react"
 import { Icon } from "./icons.tsx"
-import type { Rect, Region } from "./layout.ts"
-import { swapTiles } from "./layout.ts"
-import { startPanelDrag, startPanelResize, type PanelBox } from "./panelDrag.ts"
+import { panelActionStates, type PanelAction } from "./commands.ts"
+import { useWorkspaceApi } from "./Workspace.tsx"
+import { arrange, clampFloat, FLOAT_MIN, movePanel, normalizeArrangement } from "./workspace.ts"
+import { startPointerDrag } from "./panelDrag.ts"
 
-export type Placement = "float" | "dock" | "main"
-
-/** A docked panel's part of the layout: its box, whether it's hidden or maximized, and how the header moves it. */
-export interface Dock {
-    region: Region
-    rect: Rect | null
-    maximized: boolean
-    onMaximize: () => void
-    /** Tiles: dropping the header on another tile swaps them */
-    tiles?: { order: Region[]; onOrder: (order: Region[]) => void }
+const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; onStage: boolean; floating: boolean; focused: boolean }) => string> = {
+    collapse: ({ collapsed }) => collapsed ? "chevron-down" : "chevron-up",
+    main: ({ onStage, focused }) => onStage ? (focused ? "fullscreen-exit" : "fullscreen") : "expand",
+    popout: ({ floating }) => floating ? "dock" : "float",
+    close: () => "close",
 }
 
-export function Panel({ placement, dock, className = "", style, testid, title, head, children, bodyClassName = "", bodyOnClick, onHeadDoubleClick, onDrag, resize, panelRef }: {
-    placement: Placement
-    dock?: Dock | null
-    className?: string
-    /** float: where it is and how big */
-    style?: CSSProperties
-    testid?: string
-    /** the header's tooltip */
-    title?: string
-    head: ReactNode
+export function Panel({ id, title, icon, info, tools, children, className = "", bodyClassName = "", testid, onBodyClick }: {
+    id: string
+    title: string
+    icon: string
+    /** a short live note in the header (resolution, rate, source) */
+    info?: ReactNode
+    /** the panel's own controls: a row under the header (not while folded) */
+    tools?: ReactNode
     children?: ReactNode
+    className?: string
     bodyClassName?: string
-    bodyOnClick?: () => void
-    onHeadDoubleClick?: () => void
-    /** float: the header drag ended here */
-    onDrag?: (x: number, y: number) => void
-    /** float: the corner handle (null: none) */
-    resize?: { corner: "left" | "right"; minimum: { width: number; height: number }; aspect?: number; onDone: (box: PanelBox) => void } | null
-    panelRef?: Ref<HTMLDivElement>
+    testid?: string
+    onBodyClick?: () => void
 }) {
-    const element = useRef<HTMLDivElement | null>(null)
-    const setRef = (node: HTMLDivElement | null) => {
-        element.current = node
-        if (typeof panelRef === "function") {
-            panelRef(node)
-        } else if (panelRef) {
-            ;(panelRef as { current: HTMLDivElement | null }).current = node
-        }
+    const api = useWorkspaceApi()
+    const element = useRef<HTMLDivElement>(null)
+    const slot = api.layout.slots[id]
+    if (!slot) {
+        return null
     }
-    const fromControl = (event: ReactPointerEvent) => !!(event.target as HTMLElement).closest("button, select, input, label, [role=tab]")
-
-    const startHeadDrag = (event: ReactPointerEvent) => {
-        if (fromControl(event) || event.button !== 0) {
-            return
-        }
-        if (placement === "float" && onDrag) {
-            startPanelDrag(event, element.current!, onDrag)
-        } else if (placement === "dock" && dock?.tiles && !dock.maximized) {
-            startTileSwap(event, dock.region, dock.tiles)
-        }
-    }
-
-    const docked = placement === "dock"
-    const hidden = docked && !dock?.rect
-    const placed: CSSProperties = docked
-        ? dock?.rect ? { left: dock.rect.x, top: dock.rect.y, width: dock.rect.width, height: dock.rect.height } : {}
-        : style ?? {}
-    const classes = ["dim-panel", "camera-panel", "lv-panel", placement === "float" ? "floating" : placement, hidden ? "hidden" : "", dock?.maximized ? "maximized" : "", dock?.tiles ? "tile" : "", className]
+    const onStage = slot.zone === "stage"
+    const floating = slot.zone === "float"
+    const focused = onStage && api.view.hide.length === 2
+    const states = panelActionStates(api.arrangement, id, { mobile: api.mobile, focused })
+    const fromControl = (target: EventTarget) => !!(target as HTMLElement).closest("button, select, input, label, textarea, [role=tab]")
+    const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", className]
     return (
-        <div ref={setRef} className={classes.filter(Boolean).join(" ")} style={placed} data-testid={testid} data-region={dock?.region} aria-hidden={hidden || undefined}>
-            <div className="camera-head" onPointerDown={startHeadDrag} onDoubleClick={(event) => !(event.target as HTMLElement).closest("button, select, input") && (docked ? dock?.onMaximize() : onHeadDoubleClick?.())} title={title}>
-                {head}
-                {docked && dock && (
-                    <button type="button" className="dim-btn icon icon-button panel-maximize" aria-pressed={dock.maximized} title={dock.maximized ? "Back to the layout" : "Maximize (fill the page)"} aria-label={dock.maximized ? "Restore" : "Maximize"} onClick={dock.onMaximize}>
-                        <Icon name={dock.maximized ? "fullscreen-exit" : "fullscreen"} size={15} />
-                    </button>
-                )}
-            </div>
-            <div className={`camera-body ${bodyClassName}`} onClick={bodyOnClick}>{children}</div>
-            {placement === "float" && resize && (
+        <section
+            ref={element}
+            className={classes.filter(Boolean).join(" ")}
+            style={{ left: slot.rect.x, top: slot.rect.y, width: slot.rect.width, height: slot.rect.height }}
+            data-panel={id}
+            data-testid={testid}
+            aria-hidden={slot.hidden || undefined}
+            aria-label={title}
+        >
+            <header
+                className="panel-head"
+                onPointerDown={(event) => !fromControl(event.target) && element.current && api.startDrag(id, event, element.current)}
+                onDoubleClick={(event) => !fromControl(event.target) && api.act(id, onStage ? "main" : "collapse")}
+                title={api.mobile ? undefined : "Drag to move: into a rail, onto the main view's middle, or anywhere to float"}
+            >
+                <span className="panel-title"><Icon name={icon} size={14} /><span>{title}</span></span>
+                {info !== undefined && <span className="panel-info">{info}</span>}
+                <span className="panel-actions" role="toolbar" aria-label={`${title} panel`}>
+                    {states.map((state) => (
+                        <button
+                            key={state.action}
+                            type="button"
+                            className={`dim-btn icon icon-button panel-action action-${state.action}`}
+                            data-action={state.action}
+                            disabled={state.disabled}
+                            title={state.label}
+                            aria-label={`${title}: ${state.label}`}
+                            aria-pressed={state.action === "main" && onStage ? focused : undefined}
+                            onClick={() => api.act(id, state.action)}
+                        >
+                            <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, onStage, floating, focused })} size={14} />
+                        </button>
+                    ))}
+                </span>
+            </header>
+            {tools && !slot.collapsed && <div className="panel-tools">{tools}</div>}
+            <div className={`panel-content ${bodyClassName}`} onClick={onBodyClick}>{children}</div>
+            {floating && !slot.collapsed && !api.mobile && (
                 <div
-                    className={`camera-resize ${resize.corner}`}
+                    className="panel-resize"
                     title="Drag to resize"
                     aria-label="Resize"
-                    onPointerDown={(event) => startPanelResize(event, element.current!, resize)}
+                    onPointerDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        const start = slot.rect
+                        startPointerDrag(event, (dx, dy) => {
+                            const box = clampFloat({ ...start, width: Math.max(FLOAT_MIN.width, start.width + dx), height: Math.max(FLOAT_MIN.height, start.height + dy) }, api.layout.area)
+                            arrange((current) => movePanel(normalizeArrangement(current, api.ids), id, { zone: "float", box: { ...box, x: start.x, y: start.y } }))
+                        })
+                    }}
                 />
             )}
-        </div>
+        </section>
     )
 }
 
-/** Tiles: a header dragged onto another tile swaps the two (the tile under the pointer lights up on the way). */
-function startTileSwap(event: ReactPointerEvent, region: Region, tiles: NonNullable<Dock["tiles"]>) {
-    const startX = event.clientX, startY = event.clientY
-    let target: HTMLElement | null = null
-    const tileAt = (x: number, y: number) => document.elementsFromPoint(x, y).map((node) => (node as HTMLElement).closest?.<HTMLElement>("[data-region].tile")).find((tile) => tile && tile.dataset.region !== region) ?? null
-    const move = (moved: PointerEvent) => {
-        if (Math.hypot(moved.clientX - startX, moved.clientY - startY) < 6) {
-            return
-        }
-        document.body.classList.add("tile-dragging")
-        const next = tileAt(moved.clientX, moved.clientY)
-        if (next !== target) {
-            target?.classList.remove("drop-target")
-            next?.classList.add("drop-target")
-            target = next
-        }
-    }
-    const up = () => {
-        removeEventListener("pointermove", move)
-        removeEventListener("pointerup", up)
-        removeEventListener("pointercancel", up)
-        document.body.classList.remove("tile-dragging")
-        target?.classList.remove("drop-target")
-        const other = target?.dataset.region as Region | undefined
-        if (other) {
-            tiles.onOrder(swapTiles(tiles.order, region, other))
-        }
-    }
-    addEventListener("pointermove", move)
-    addEventListener("pointerup", up)
-    addEventListener("pointercancel", up)
-}

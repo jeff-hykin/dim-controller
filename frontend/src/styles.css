@@ -1,15 +1,18 @@
-/* Layout: Classic has the scene (or a camera) fill the window and everything else float over it; Cockpit, Split and
-   Tiles (.docked, ui/layout.ts) place each panel in the box the layout works out. Components and colors come from
-   Desktop's /theme.css (every skin's tokens; dim-app/theme.css is the off-Desktop fallback): this file only places and
-   sizes them, and every color here is a theme token. */
+/* The page: a status strip, the workspace (a main view between two rails, panels floating over it; ui/workspace.ts
+   places every panel inline) and the action dock. Components and colors come from Desktop's /theme.css (every skin's
+   tokens; dim-app/theme.css is the off-Desktop fallback): this file only places and sizes them, and every color here
+   is a theme token. */
 :root {
-    /* the space between and around docked panels (ui/layout.ts reads it) */
+    /* the space between and around panels (ui/Workspace.tsx reads it) */
     --lv-gap: 8px;
     /* the red for STOP, recording and a held drive, in every skin (Portal's --danger is amber) */
     --lv-stop: var(--close-red, var(--danger));
     --lv-stop-hover: var(--close-red-hover, var(--lv-stop));
     /* a light line or glow over video (sticks, the resize corner, the quality gear) */
     --lv-over-video: color-mix(in srgb, var(--fg) 55%, transparent);
+    /* the frosted bars and panel headers over the view */
+    --lv-bar: color-mix(in srgb, var(--card) 92%, transparent);
+    --lv-strip-h: 44px;
 }
 
 html, body, #root { height: 100%; margin: 0; overflow: hidden; }
@@ -25,50 +28,238 @@ h3.dim-label { display: block; margin: 14px 0 6px; }
 
 .app { position: fixed; inset: 0; }
 
-/* ── the 3D view: fullscreen, or a picture-in-picture while a camera is main ── */
-/* every panel (ui/Panel.tsx): a header, then the body; "floating" (Classic), "main" (Classic's full window) or "dock" */
-.lv-panel { pointer-events: auto; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; background: var(--scene-bg, var(--bg)); }
-.lv-panel > .camera-head:empty { display: none; }
-.lv-panel.floating { position: absolute; }
-.lv-panel.main { position: absolute; inset: 48px 0 0 0; border-radius: 0; border: 0; z-index: 1; }
-.lv-panel.dock { position: absolute; z-index: 2; }
-.lv-panel.dock > .camera-head { cursor: default; }
-.lv-panel.dock.hidden { inset: 0; visibility: hidden; pointer-events: none; }
-.lv-panel.dock.maximized { z-index: 4; }
-.lv-panel.tile > .camera-head { cursor: grab; }
-.lv-panel.tile.maximized > .camera-head { cursor: default; }
-.lv-panel.tile.drop-target { outline: 2px solid var(--primary); outline-offset: -2px; }
-body.tile-dragging, body.tile-dragging * { cursor: grabbing !important; user-select: none; }
-.panel-maximize[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.lv-panel > .camera-body.panel-body { padding: var(--lv-gap) 12px; background: var(--card); }
+/* ── status strip (ui/StatusStrip.tsx) ── */
+.status-strip { position: absolute; top: 0; left: 0; right: 0; height: var(--lv-strip-h); z-index: 30; display: flex; align-items: center; gap: 6px;
+    padding: env(safe-area-inset-top) calc(8px + var(--dim-inset-right)) 0 calc(10px + var(--dim-inset-left)); box-sizing: content-box;
+    background: var(--lv-bar); backdrop-filter: var(--blur); border-bottom: 1px solid var(--border); }
+.status-strip .brand { width: 20px; height: 20px; }
+.status-strip .title { white-space: nowrap; margin-right: 6px; }
+.strip-spacer { flex: 1; }
+.strip-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; min-width: 0; white-space: nowrap; font: 500 12px var(--sans);
+    color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.strip-key { font: 10px var(--mono); text-transform: var(--label-case); letter-spacing: 0.08em; color: var(--muted-fg); }
+.strip-key:empty { display: none; }
+.strip-value { font: 500 12px var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.strip-run .strip-value { max-width: 260px; }
+.strip-extra { font: 11px var(--mono); color: var(--warn); }
+.strip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-fg); flex: none; }
+.strip-chip.tone-ok .strip-dot { background: var(--ok); box-shadow: 0 0 6px var(--ok-line); }
+.strip-chip.tone-warn { border-color: var(--warn-line); }
+.strip-chip.tone-warn .strip-dot, .strip-chip.tone-warn svg { background: var(--warn); color: var(--warn); }
+.strip-chip.tone-warn svg { background: none; }
+.strip-chip.tone-bad { border-color: var(--lv-stop); color: var(--lv-stop); }
+.strip-chip.tone-bad .strip-dot { background: var(--lv-stop); animation: blink 1s infinite; }
+.strip-chip.tone-busy { border-color: var(--primary); }
+.strip-chip.tone-busy .strip-dot { background: var(--primary); box-shadow: var(--glow-accent); }
+.strip-button { cursor: pointer; }
+.strip-button:hover { background: var(--hover); }
+.strip-command { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; }
+.strip-help.dim-btn.icon, .strip-drawer.dim-btn.icon { width: 32px; height: 32px; padding: 0; flex: none; }
+.strip-drawer.on { color: var(--primary); border-color: var(--primary); }
+.lv-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; box-sizing: border-box; font: 10.5px var(--mono); line-height: 1; }
+@keyframes blink { 50% { opacity: 0.3; } }
 
-.scene-slot.lv-panel { z-index: 0; background: radial-gradient(120% 90% at 50% 0%, var(--card), var(--scene-bg) 70%); }
-body.dark .scene-slot.lv-panel { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--card) 70%, var(--scene-bg)), var(--scene-bg) 60%); }
-.scene-slot.lv-panel.main { inset: 0; z-index: 0; }
+/* recording sits in the strip: the Record button and "…" (ui/RecordControl.tsx), the options drop below it */
+.status-strip .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
+    /* recording is red in every skin (Portal's --danger is amber, and a record button should read as one) */
+    --record: var(--lv-stop); --record-hover: var(--lv-stop-hover); --record-fg: var(--primary-fg); --record-glow: 0 0 10px color-mix(in srgb, var(--lv-stop) 55%, transparent); }
+.record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.record-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
+.record-toggle.recording .record-dot { background: var(--record); border-radius: 2px; animation: blink 1s infinite; }
+.record-live { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.record-clock, .record-extra { font-size: 11.5px; }
+.record-more { width: 30px; height: 30px; padding: 0; }
+/* Record │ … as one red box: the split owns the border and fill, each segment just its hover */
+.record-split { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--record); border-radius: var(--radius); background: var(--record); overflow: hidden; }
+body.dark .record-split { box-shadow: var(--record-glow); }
+.record-control .record-split > .dim-btn { height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.record-control .record-split > .record-toggle { padding: 0 11px; color: var(--record-fg); font-weight: 600; }
+.record-control .record-split > .record-more { width: 30px; padding: 0; border-left: 1px solid color-mix(in srgb, var(--record-fg) 35%, transparent); color: var(--record-fg); }
+.record-control .record-split > .dim-btn:hover:not(:disabled), .record-control .record-split > .record-more.on { background: var(--record-hover); }
+.record-control .record-split > .dim-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--record-fg); }
+.record-control .record-split > .dim-btn:disabled { opacity: 0.6; }
+/* while recording: the box goes dark with a red outline, and the button is "Stop recording" */
+.record-control.recording .record-split { background: var(--card); }
+.record-control.recording .record-split > .record-toggle { color: var(--record); }
+.record-control.recording .record-split > .record-more { border-left-color: var(--record); color: var(--fg); }
+.record-control.recording .record-split > .dim-btn:hover:not(:disabled), .record-control.recording .record-split > .record-more.on { background: color-mix(in srgb, var(--record) 18%, transparent); }
+.record-error { cursor: help; }
+.record-options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.record-options-head h2 { margin: 0; }
+.record-now { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; margin: 4px 0; border: 1px solid var(--danger); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--danger) 10%, transparent); font-size: 12px; }
+.record-now .dim-badge { align-self: flex-start; }
+.record-now .hint, .record-now .problem { margin: 0; }
+.record-path { font: 10.5px var(--mono); overflow-wrap: anywhere; }
+.record-folder { display: flex; gap: 6px; }
+.record-folder .dim-input { flex: 1; font-size: 11.5px; }
+.warn-text { color: var(--warn); }
+.top-streams { display: flex; flex-direction: column; gap: 2px; }
+.stream-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.stream-row .topic-name { flex: 1; min-width: 0; }
+.stream-rate { font-size: 11px; color: var(--muted-fg); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.advanced-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 8px; padding: 4px 0; border: 0; background: none;
+    font: 600 12px var(--sans); color: var(--muted-fg); cursor: pointer; }
+.advanced-toggle svg { transition: transform 0.15s; }
+.advanced-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.advanced-toggle:hover { color: var(--fg); }
+.record-advanced { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
+.all-streams-head { display: flex; align-items: baseline; justify-content: space-between; margin: 12px 0 6px; }
+.record-topics { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 6px; }
+.record-topic { display: grid; grid-template-columns: 18px minmax(0, 1fr) 64px 56px; align-items: center; gap: 6px; padding: 2px 0; }
+.record-topic.legend { font-size: 10px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.record-topic.off .topic-name { color: var(--muted-fg); text-decoration: line-through; }
+.record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
+.record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
+.record-options { position: fixed; top: calc(var(--lv-strip-h) + 8px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); width: 380px; z-index: 45; display: flex; flex-direction: column;
+    max-height: calc(100vh - var(--lv-strip-h) - 24px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
+.mobile .record-options { left: 8px; right: 8px; width: auto; }
+.mobile .record-extra, .mobile .record-control .record-label { display: none; }
+.mobile .record-control .record-split > .record-toggle { padding: 0 9px; }
+
+/* ── the workspace (ui/Workspace.tsx): every panel absolutely placed in one layer, by zone ── */
+.workspace { position: absolute; inset: 0; z-index: 1; }
+.lv-panel { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; color: var(--fg);
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.lv-panel.zone-stage { z-index: 1; background: var(--scene-bg, var(--bg)); }
+.lv-panel.zone-left, .lv-panel.zone-right { z-index: 3; }
+.lv-panel.zone-float { z-index: 6; border-color: var(--border-strong); box-shadow: var(--shadow-lg); }
+.lv-panel.hidden { visibility: hidden; pointer-events: none; }
+.lv-panel.collapsed > .panel-content { display: none; }
+.lv-panel.dragging { z-index: 50; opacity: 0.88; box-shadow: var(--shadow-lg); border-color: var(--primary); transition: none; }
+body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-select: none; }
+/* the header: icon + title, a live note, then the same four actions on every panel */
+.panel-head { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px; cursor: grab; touch-action: none; user-select: none;
+    background: var(--lv-bar); border-bottom: 1px solid var(--border); }
+.lv-panel.collapsed > .panel-head { border-bottom: 0; }
+.mobile .panel-head { cursor: default; }
+.panel-title { display: inline-flex; align-items: center; gap: 6px; flex: none; font: 600 12px var(--sans); color: var(--fg); white-space: nowrap; }
+.panel-title svg { color: var(--muted-fg); }
+.zone-stage > .panel-head .panel-title svg { color: var(--primary); }
+.panel-info { flex: 1 1 auto; min-width: 0; text-align: right; font: 10.5px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
+.panel-info + .panel-actions { margin-left: 0; }
+.panel-action.dim-btn.icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
+.panel-action.dim-btn.icon.icon-button:hover:not(:disabled) { color: var(--fg); background: var(--hover); border-color: var(--border); }
+.panel-action.dim-btn.icon.icon-button:disabled { opacity: 0.28; }
+.panel-action[aria-pressed="true"] { color: var(--primary); }
+.panel-action.action-close:hover:not(:disabled) { color: var(--lv-stop); }
+.has-issues > .panel-head .panel-info { color: var(--warn); }
+/* the panel's own tools: one row under the header (scrolls sideways when narrow) */
+.panel-tools { flex: none; display: flex; align-items: center; min-height: 32px; padding: 0 6px; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    background: color-mix(in srgb, var(--card) 80%, transparent); border-bottom: 1px solid var(--hair); }
+.panel-tools::-webkit-scrollbar { display: none; }
+.panel-tools .dim-select { width: auto; flex: 0 1 auto; min-width: 0; padding: 2px 28px 2px 6px; font-size: 11px; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background-position: right 12px center, right 7px center; }
+.panel-tools .dim-btn.icon.icon-button { width: 26px; height: 26px; }
+.panel-content { position: relative; flex: 1; min-height: 0; }
+.panel-content.panel-body { overflow: auto; padding: 6px 12px 12px; -webkit-overflow-scrolling: touch; }
+/* a floating panel's resize corner */
+.panel-resize { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; z-index: 3; cursor: nwse-resize; touch-action: none; }
+.panel-resize::before { content: ""; position: absolute; right: 4px; bottom: 4px; width: 9px; height: 9px; border-right: 2px solid var(--lv-over-video); border-bottom: 2px solid var(--lv-over-video); opacity: 0.7; }
+.panel-resize:hover::before { border-color: var(--fg); opacity: 1; }
+/* between two panels in a rail, and along a rail's inner edge: drag to resize */
+.ws-splitter, .ws-rail-edge { position: absolute; z-index: 4; touch-action: none; }
+.ws-splitter { cursor: row-resize; }
+.ws-rail-edge { cursor: col-resize; }
+.ws-splitter::after, .ws-rail-edge::after { content: ""; position: absolute; background: var(--primary); opacity: 0; transition: opacity 0.12s; }
+.ws-splitter::after { left: 30%; right: 30%; top: calc(50% - 1px); height: 2px; }
+.ws-rail-edge::after { top: 30%; bottom: 30%; left: calc(50% - 1px); width: 2px; }
+.ws-splitter:hover::after, .ws-rail-edge:hover::after { opacity: 0.8; }
+/* while a header is dragged: where it would land, the main view's swap target, the hidden rails' edges */
+.ws-drop-preview { position: absolute; z-index: 40; pointer-events: none; box-sizing: border-box; border: 2px solid var(--primary); border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--primary) 12%, transparent); transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s; }
+.ws-drop-preview.zone-float { border-style: dashed; background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.ws-stage-target { position: absolute; z-index: 39; pointer-events: none; display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg); background: color-mix(in srgb, var(--bg) 40%, transparent); font: 600 12px var(--sans); color: var(--muted-fg); }
+.ws-stage-target.on { border: 2px solid var(--primary); color: var(--fg); background: color-mix(in srgb, var(--primary) 18%, transparent); }
+.ws-edge-hint { position: absolute; z-index: 39; width: 6px; pointer-events: none; background: color-mix(in srgb, var(--primary) 25%, transparent); }
+.ws-edge-hint.on { width: 10px; background: var(--primary); }
+.ws-empty-stage { position: absolute; z-index: 1; display: grid; place-items: center; border: 1px dashed var(--border); border-radius: var(--radius-lg); }
+.ws-empty-note { text-align: center; max-width: 360px; padding: 16px; color: var(--muted-fg); }
+.ws-empty-note p { margin: 4px 0; }
+.stage-message { position: absolute; z-index: 8; pointer-events: none; }
+.stage-message > .dim-empty-layer { inset: 0; }
+/* a phone: the rails are drawers over the main view */
+.ws-scrim { position: absolute; inset: 0; z-index: 19; background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px); }
+.ws-drawer { position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); animation: drawer-left 0.16s ease-out; }
+.ws-drawer.right { animation-name: drawer-right; }
+@keyframes drawer-left { from { transform: translateX(-24px); opacity: 0; } }
+@keyframes drawer-right { from { transform: translateX(24px); opacity: 0; } }
+.mobile .lv-panel:not(.zone-stage) { z-index: 21; }
+.mobile .lv-panel.zone-stage { border: 0; border-radius: 0; }
+
+/* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
+.action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: 64px; box-sizing: border-box;
+    padding: 0 calc(10px + var(--dim-inset-right)) 0 calc(10px + var(--dim-inset-left)); background: var(--lv-bar); backdrop-filter: var(--blur); border-top: 1px solid var(--border); }
+.dock-group { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dock-drive-slot { flex: 0 1 auto; }
+.dock-drive { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 6px; border: 1px solid transparent; border-radius: var(--radius); }
+.dock-drive.moving { border-color: var(--primary); box-shadow: var(--glow-accent); }
+.dock-drive.halted { border-color: var(--lv-stop); }
+.dock-note { margin: 0; max-width: 300px; }
+.dock-actions { flex: 1 1 auto; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+.dock-actions::-webkit-scrollbar { display: none; }
+.dock-action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.dock-action.on { color: var(--primary); border-color: var(--primary); }
+@media (max-width: 1100px) { .dock-action span { display: none; } }
+.app .action-dock .dim-btn.dock-stop { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 18px; flex: none; font: 800 16px var(--sans); letter-spacing: 0.1em;
+    color: var(--primary-fg); background: var(--lv-stop); border: 1px solid var(--lv-stop); box-shadow: 0 0 12px color-mix(in srgb, var(--lv-stop) 40%, transparent); }
+.app .action-dock .dim-btn.dock-stop:hover { background: var(--lv-stop-hover); }
+.dock-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
+.action-dock .arm-hud { position: static; transform: none; padding: 4px 8px; box-shadow: none; }
+.keys { display: grid; gap: 3px; }
+.keys > div { display: flex; gap: 3px; justify-content: center; }
+.key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 0; font: 700 11px var(--mono);
+    border: 1px solid var(--border); background: var(--card); color: var(--muted-fg); transition: background 0.06s; }
+.key.empty { visibility: hidden; }
+.key.down { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.key.shift { width: 30px; }
+.hud-readout { font: 11px var(--mono); min-width: 190px; }
+.drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); }
+.drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: var(--fg); background: var(--lv-stop); border-color: var(--lv-stop); }
+.drive-hud.mobile .drive-halt { flex-direction: column; gap: 6px; text-align: center; background: color-mix(in srgb, var(--card) 88%, transparent); padding: 6px; }
+.drive-hud.mobile .drive-halt .reconnect-button { margin-left: 0; width: 100%; height: 44px; touch-action: manipulation; }
+.dock-drive .drive-halt { flex-basis: auto; }
+
+/* ── overlays (ui/Overlays.tsx): the palette and the shortcut list ── */
+.lv-overlay { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding: calc(10vh + env(safe-area-inset-top)) 12px 12px;
+    background: color-mix(in srgb, var(--bg) 45%, transparent); backdrop-filter: blur(3px); }
+.palette, .shortcut-help { width: min(640px, 100%); max-height: min(72vh, 640px); display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
+.palette-search { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--muted-fg); }
+.palette-input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--fg); font: 15px var(--sans); }
+.palette-list { overflow-y: auto; padding: 4px; }
+.palette-empty { color: var(--muted-fg); padding: 10px; margin: 0; }
+.palette-item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; font: 13px var(--sans); color: var(--fg); }
+.palette-item.on { background: var(--sel); box-shadow: inset 2px 0 0 var(--primary); }
+.palette-item.danger .palette-label { color: var(--lv-stop); font-weight: 650; }
+.palette-item.blocked { opacity: 0.5; cursor: default; }
+.palette-group { flex: none; width: 64px; font: 10px var(--mono); text-transform: var(--label-case); letter-spacing: 0.06em; color: var(--muted-fg); }
+.palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-hint { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--muted-fg); }
+.palette-foot { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-fg); }
+.palette-foot span { display: inline-flex; align-items: center; gap: 4px; }
+.help-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.help-head h2 { margin: 0; }
+.help-head .hint { flex: 1; margin: 0; }
+.help-groups { overflow-y: auto; padding: 4px 14px 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 24px; }
+.help-group dl { margin: 0; }
+.help-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--hair); }
+.help-row dt { display: flex; gap: 3px; width: 92px; flex: none; }
+.help-row dd { margin: 0; font-size: 12px; }
+
+/* ── the 3D view (ui/ScenePanel.tsx) ── */
+.scene-slot > .panel-content { background: radial-gradient(120% 90% at 50% 0%, var(--card), var(--scene-bg, var(--bg)) 70%); }
+body.dark .scene-slot > .panel-content { background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--card) 70%, var(--scene-bg, var(--bg))), var(--scene-bg, var(--bg)) 60%); }
 .scene { position: absolute; inset: 0; touch-action: none; }
 .scene canvas { display: block; }
 .label-layer { position: absolute; inset: 0; pointer-events: none; }
-.camera-main .scene-slot.floating {
-    inset: auto 16px 96px auto; width: min(36vw, 420px); height: min(26vw, 300px); z-index: 6;
-    border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-}
-.mobile.camera-main .scene-slot.floating { width: 42vw; height: 30vw; bottom: calc(min(40vh, 330px) + 28px + env(safe-area-inset-bottom) + var(--dim-inset-bottom)); right: 10px; }
-/* the 3D view as a panel (ui/ScenePanel.tsx): the picture-in-picture gets the camera's header, handle and a cloud menu */
-.scene-slot > .camera-head .camera-info { flex: 1 1 auto; }
-.mobile .scene-slot.floating > .camera-head .camera-info { display: none; }
-.mobile .scene-slot.floating > .camera-head { padding: 2px 4px; justify-content: flex-end; }
+.scene-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.scene-rate { font: 10.5px var(--mono); }
 .scene-slot.off .scene { display: none; }
-.camera-main .scene-slot.off { width: auto; height: auto; }
 .scene-power.on { color: var(--primary); border-color: var(--primary); }
 .scene-clouds.dim-btn.icon.icon-button { width: auto; min-width: 24px; gap: 3px; padding: 0 5px; }
 .scene-count { font: 10px var(--mono); }
-.scene-tools { position: absolute; right: calc(60px + var(--dim-inset-right)); bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; align-items: center; gap: 4px;
-    padding: 3px 4px 3px 10px; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
-.scene-tools .camera-info { max-width: 220px; }
-.scene-tools .dim-btn.icon.icon-button { width: 28px; height: 28px; }
-.scene-tools .scene-clouds.dim-btn.icon.icon-button { width: auto; }
-.mobile .scene-tools { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: calc(52px + var(--dim-inset-right)); padding: 3px; }
-.mobile .scene-tools .camera-info { display: none; }
 .scene-off { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px;
     font: 12px var(--sans); color: var(--muted-fg); box-shadow: var(--shadow-md); }
 .cloud-menu { padding: 4px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow-md); max-height: min(70vh, 520px); overflow-y: auto; max-width: calc(100vw - 16px); }
@@ -88,18 +279,18 @@ body.dark .scene-slot.lv-panel { background: radial-gradient(120% 90% at 50% 0%,
 .cloud-solid { width: 28px; height: 22px; padding: 0; border: 1px solid var(--border); background: none; }
 .cloud-size { display: flex; align-items: center; gap: 6px; flex: 1 1 120px; font: 10px var(--mono); color: var(--muted-fg); }
 .cloud-size input { flex: 1; min-width: 60px; }
-/* recenter / top-down, over the view's bottom-right corner (above the add-camera button) */
-.view-controls { position: absolute; right: 12px; bottom: calc(62px + var(--dim-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 6px; }
-.view-control { width: 36px; height: 36px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
-.mobile .view-controls { bottom: auto; top: calc(62px + 28vw + env(safe-area-inset-top)); right: 8px; }
-/* the broken-TF note: one quiet line over the view's bottom-right corner, above recenter / top-down */
-.tf-footnote { position: absolute; right: calc(12px + var(--dim-inset-right)); bottom: calc(148px + var(--dim-inset-bottom)); z-index: 4; max-width: min(46vw, 440px);
-    display: flex; align-items: center; gap: 5px; padding: 3px 8px; border: 0; border-radius: 6px; cursor: pointer; font: 500 11px/1.4 var(--sans); color: var(--warn);
+/* follow / top-down over the view's bottom-right corner, the TF note beside them */
+.view-controls { position: absolute; right: 8px; bottom: 8px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
+.view-control { width: 32px; height: 32px; padding: 0; box-shadow: var(--shadow-md); background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(8px); }
+.tf-footnote { position: absolute; right: 48px; bottom: 8px; z-index: 4; max-width: calc(100% - 64px);
+    display: flex; align-items: center; gap: 5px; padding: 3px 8px; border: 0; border-radius: var(--radius-sm); cursor: pointer; font: 500 11px/1.4 var(--sans); color: var(--warn);
     background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(6px); }
 .tf-footnote svg { flex: none; }
 .tf-footnote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tf-footnote:hover span { text-decoration: underline; }
-.mobile .tf-footnote { bottom: auto; top: calc(62px + 28vw + 86px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); max-width: calc(100vw - 16px - var(--dim-inset-right)); }
+/* a small 3D panel (a rail, a phone's drawer): its corner buttons get out of the way of the picture */
+@container (max-width: 360px) { .tf-footnote { display: none; } }
+.mobile .zone-stage .view-controls { bottom: auto; top: 8px; }
 .scene-label.frame-highlight { font-size: 12.5px; font-weight: 700; color: var(--primary-fg); background: var(--primary); border-left-color: var(--fg); z-index: 2; }
 
 .scene-label { font: 600 11px/1.2 var(--sans); color: var(--fg); padding: 2px 6px; border-radius: 4px; white-space: nowrap;
@@ -109,41 +300,7 @@ body.dark .scene-slot.lv-panel { background: radial-gradient(120% 90% at 50% 0%,
 .scene-label { transition: opacity 0.15s; }
 .scene-label.covered { opacity: 0; }
 
-/* ── top bar ── */
-.topbar { position: absolute; top: 0; left: 0; right: 0; height: 48px; z-index: 10; display: flex; align-items: center; gap: 10px;
-    padding: 0 10px 0 14px; padding-top: env(safe-area-inset-top);
-    background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
-.topbar .brand { width: 22px; height: 22px; }
-.topbar .title { white-space: nowrap; }
-.topbar .spacer { flex: 1; }
-.topbar .dim-badge { white-space: nowrap; }
-.pill-extra { color: var(--warn); }
-.tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; }
-.tab-badge { position: absolute; top: 0; right: 0; padding: 0 4px; min-width: 14px; height: 14px; justify-content: center; font-size: 9px; letter-spacing: 0; }
-/* the bar's panel tabs fill its height: no group box or inset, only a hairline between tabs (every skin) */
-.topbar .dim-tabs.tabs { align-self: stretch; flex-wrap: nowrap; gap: 0; padding: 0; margin-right: -10px; border: 0; border-radius: 0; background: transparent; }
-.topbar .dim-tabs.tabs .dim-tab { margin: 0; padding: 0 14px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
-.topbar .dim-tabs.tabs .dim-tab:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
-.topbar .dim-tabs.tabs .dim-tab.active { background: var(--sel, var(--card)); box-shadow: inset 0 -2px 0 var(--primary); }
-.topbar .tab-badge { top: 5px; right: 3px; }
-.tab-badge.rec { padding: 0; min-width: 0; width: 12px; height: 12px; animation: blink 1s infinite; }
-.tab-badge .dot { width: 6px; height: 6px; }
-@keyframes blink { 50% { opacity: 0.3; } }
-
-/* ── side panel / bottom sheet ── */
-.side-panel { position: absolute; top: 108px; left: calc(10px + var(--dim-inset-left)); bottom: calc(10px + var(--dim-inset-bottom)); width: 340px; z-index: 8; display: flex; flex-direction: column; }
-/* Cockpit and Tiles: a drawer over the right side; Split: the column it makes room for (placed inline) */
-.side-panel.drawer { left: auto; right: calc(var(--lv-gap) + var(--dim-inset-right)); top: calc(48px + var(--lv-gap)); bottom: calc(var(--lv-gap) + var(--dim-inset-bottom));
-    width: min(360px, calc(100vw - 2 * var(--lv-gap))); z-index: 12; box-shadow: var(--shadow-lg); animation: drawer-in 0.18s ease-out; }
-@keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } }
-.side-panel.column { bottom: auto; z-index: 3; }
-.side-panel.sheet { top: auto; left: 0; right: 0; bottom: var(--dim-inset-bottom); width: auto; max-height: 62vh; border-radius: 14px 14px 0 0;
-    padding-bottom: env(safe-area-inset-bottom); z-index: 12; }
-.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px 4px 14px; }
-.panel-head h2 { margin: 0; }
-.panel-head .icon-button { width: 28px; height: 28px; padding: 0; }
-.panel-body { overflow: auto; padding: 4px 14px 14px; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
-
+/* ── fields, lists (settings, layers, TF, drive) ── */
 .field { display: flex; align-items: center; gap: 10px; padding: 4px 0; min-height: 30px; }
 .field-label { width: 78px; flex: none; color: var(--muted-fg); font-size: 11px; }
 .field-control { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -183,74 +340,6 @@ body.dark .scene-slot.lv-panel { background: radial-gradient(120% 90% at 50% 0%,
 /* drive */
 .controls { margin-top: 6px; }
 .twist-readout { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted-fg); margin-top: 10px; }
-
-/* recorder: the Record button and "…", floating at the top left (a side panel opens below it), and the options popover
-   (ui/RecordControl.tsx) */
-.record-control { position: absolute; top: 58px; left: calc(10px + var(--dim-inset-left)); z-index: 9; display: flex; align-items: center; gap: 4px; padding: 5px;
-    /* recording is red in every skin (Portal's --danger is amber, and a record button should read as one) */
-    --record: var(--lv-stop); --record-hover: var(--lv-stop-hover); --record-fg: var(--primary-fg); --record-glow: 0 0 10px color-mix(in srgb, var(--lv-stop) 55%, transparent); }
-.record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.record-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
-.record-toggle.recording .record-dot { background: var(--record); border-radius: 2px; animation: blink 1s infinite; }
-.record-live { display: inline-flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
-.record-clock, .record-extra { font-size: 11.5px; }
-.record-more { width: 30px; height: 30px; padding: 0; }
-/* Record │ … as one red box: the split owns the border and fill, each segment just its hover */
-.record-split { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--record); border-radius: var(--radius); background: var(--record); overflow: hidden; }
-body.dark .record-split { box-shadow: var(--record-glow); }
-.record-control .record-split > .dim-btn { height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.record-control .record-split > .record-toggle { padding: 0 11px; color: var(--record-fg); font-weight: 600; }
-.record-control .record-split > .record-more { width: 30px; padding: 0; border-left: 1px solid color-mix(in srgb, var(--record-fg) 35%, transparent); color: var(--record-fg); }
-.record-control .record-split > .dim-btn:hover:not(:disabled), .record-control .record-split > .record-more.on { background: var(--record-hover); }
-.record-control .record-split > .dim-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--record-fg); }
-.record-control .record-split > .dim-btn:disabled { opacity: 0.6; }
-/* while recording: the box goes dark with a red outline, and the button is "Stop recording" */
-.record-control.recording .record-split { background: var(--card); }
-.record-control.recording .record-split > .record-toggle { color: var(--record); }
-.record-control.recording .record-split > .record-more { border-left-color: var(--record); color: var(--fg); }
-.record-control.recording .record-split > .dim-btn:hover:not(:disabled), .record-control.recording .record-split > .record-more.on { background: color-mix(in srgb, var(--record) 18%, transparent); }
-.record-error { cursor: help; }
-.record-options { position: fixed; top: calc(108px + env(safe-area-inset-top)); left: calc(10px + var(--dim-inset-left)); width: 380px; z-index: 20; display: flex; flex-direction: column;
-    max-height: calc(100vh - 70px - var(--dim-inset-bottom) - env(safe-area-inset-top)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
-.record-options-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.record-options-head h2 { margin: 0; }
-.record-now { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; margin: 4px 0; border: 1px solid var(--danger); border-radius: var(--radius);
-    background: color-mix(in srgb, var(--danger) 10%, transparent); font-size: 12px; }
-.record-now .dim-badge { align-self: flex-start; }
-.record-now .hint, .record-now .problem { margin: 0; }
-.record-path { font: 10.5px var(--mono); overflow-wrap: anywhere; }
-.record-folder { display: flex; gap: 6px; }
-.record-folder .dim-input { flex: 1; font-size: 11.5px; }
-.warn-text { color: var(--warn); }
-.top-streams { display: flex; flex-direction: column; gap: 2px; }
-.stream-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.stream-row .topic-name { flex: 1; min-width: 0; }
-.stream-rate { font-size: 11px; color: var(--muted-fg); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-.advanced-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin-top: 8px; padding: 4px 0; border: 0; background: none;
-    font: 600 12px var(--sans); color: var(--muted-fg); cursor: pointer; }
-.advanced-toggle svg { transition: transform 0.15s; }
-.advanced-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
-.advanced-toggle:hover { color: var(--fg); }
-.record-advanced { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
-.all-streams-head { display: flex; align-items: baseline; justify-content: space-between; margin: 12px 0 6px; }
-.record-topics { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 6px; }
-.record-topic { display: grid; grid-template-columns: 18px minmax(0, 1fr) 64px 56px; align-items: center; gap: 6px; padding: 2px 0; }
-.record-topic.legend { font-size: 10px; color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-.record-topic.off .topic-name { color: var(--muted-fg); text-decoration: line-through; }
-.record-topic .topic-type { font: 10px var(--sans); color: var(--muted-fg); }
-.record-topic .max-rate { width: 56px; padding: 2px 4px; font-size: 11px; }
-.mobile .record-control { top: calc(52px + env(safe-area-inset-top)); left: calc(8px + var(--dim-inset-left)); padding: 4px; }
-/* a camera on the whole screen keeps its header (topic picker) clear of Record */
-.mobile.camera-main .record-control { top: calc(92px + env(safe-area-inset-top)); }
-.mobile.camera-main .record-options { top: calc(138px + env(safe-area-inset-top)); }
-/* the full-screen camera's tabs start right of the Record button */
-.desktop .camera-video.main .camera-tabs { margin-left: 150px; }
-.mobile .record-options { left: 8px; right: 8px; width: auto; top: calc(98px + env(safe-area-inset-top)); }
-.mobile .record-extra { display: none; }
-.mobile .record-control .record-split > .record-toggle { padding: 0 8px; }
-.mobile .record-split { height: 36px; }
-.mobile .record-control .record-split > .record-more { width: 36px; }
-
 /* settings: Drive is its first section */
 h3.dim-label.first { margin-top: 4px; }
 .settings-section { padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
@@ -263,21 +352,29 @@ h3.dim-label.first { margin-top: 4px; }
 .tf-frame.flagged { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .tf-age { color: var(--muted-fg); }
 
-/* ── cameras ── */
-.camera-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
-/* the video's letterbox: the scene's background, in every skin */
-.camera-video.floating { min-width: 180px; min-height: 120px; }
-/* drag-to-resize: the corner facing into the screen (bottom-left for a panel on the right), aspect kept (CameraPanels.tsx) */
-.camera-resize { position: absolute; bottom: 0; width: 22px; height: 22px; z-index: 3; touch-action: none; }
-.camera-resize.left { left: 0; cursor: nesw-resize; }
-.camera-resize.right { right: 0; cursor: nwse-resize; }
-.camera-resize::before { content: ""; position: absolute; bottom: 4px; width: 11px; height: 11px; border-bottom: 2px solid var(--lv-over-video); opacity: 0.7;
-    transition: opacity 0.15s, border-color 0.15s, filter 0.15s; }
-.camera-resize.left::before { left: 4px; border-left: 2px solid var(--lv-over-video); }
-.camera-resize.right::before { right: 4px; border-right: 2px solid var(--lv-over-video); }
-.camera-panel:hover .camera-resize::before { opacity: 1; }
-.camera-resize:hover::before, .camera-resize:active::before { border-color: var(--fg); filter: drop-shadow(0 0 4px var(--lv-over-video)); }
-/* the quality gear: over the picture's top-right corner, on hover (always on a touch screen) */
+/* ── cameras (ui/CameraPanels.tsx) ── */
+.camera-tools { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; align-self: stretch; }
+/* every image topic on the bus, one tab each (core/cameraChoice.ts cameraTabs); scrolls sideways when they don't fit */
+.camera-tabs { position: relative; display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; align-self: stretch; margin: -4px 0 -4px -6px; padding: 0 0 0 6px;
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.camera-tabs::-webkit-scrollbar { display: none; }
+.camera-tab { all: unset; box-sizing: border-box; cursor: pointer; flex: none; padding: 0 9px; display: flex; align-items: center; font: 11px var(--mono); color: var(--muted-fg); white-space: nowrap;
+    border: 0; }
+.camera-tab:hover, .camera-tab:focus-visible { color: var(--fg); background: var(--accent); }
+.camera-tab.on { color: var(--fg); background: var(--accent); border-color: var(--border); box-shadow: inset 0 -2px 0 var(--primary); }
+/* a phone's small floating camera names only the one it shows (full screen has them all) */
+.mobile .camera-video.floating .camera-tab:not(.on) { display: none; }
+.camera-tab.depth { font-style: italic; }
+.camera-tab.gone { cursor: default; opacity: 0.6; }
+.camera-tabs { margin: 0; padding: 0; }
+.camera-body { background: var(--scene-bg, var(--bg)); }
+.camera-body { position: relative; flex: 1; min-height: 0; }
+.camera-media, .camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-overlay { pointer-events: none; }
+/* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
+.camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
+.camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted-fg); font-size: 12px; }
 .camera-quality { position: absolute; top: 6px; right: 6px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .quality-gear.dim-btn.icon { width: 26px; height: 26px; padding: 0; color: var(--fg); background: color-mix(in srgb, var(--bg) 55%, transparent); border-color: var(--border-strong);
     opacity: 0; transition: opacity 0.15s, box-shadow 0.15s; }
@@ -291,41 +388,25 @@ h3.dim-label.first { margin-top: 4px; }
 .quality-option.on { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
 .quality-name { font-size: 12px; font-weight: 600; color: var(--fg); }
 .quality-about { font-size: 10.5px; color: var(--muted-fg); line-height: 1.3; }
-.camera-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px; cursor: move; flex: none;
-    background: color-mix(in srgb, var(--card) 88%, transparent); border-bottom: 1px solid var(--border); }
-.camera-head .dim-select { width: auto; flex: 0 1 auto; min-width: 0; padding: 2px 32px 2px 6px; font-size: 11px; max-width: 60%;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background-position: right 13px center, right 8px center; }
-.camera-head .dim-btn.icon.icon-button { width: 24px; height: 24px; }
-.camera-info { flex: 0 1 auto; min-width: 0; font: 10px var(--mono); color: var(--muted-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
-/* narrow: the resolution is the header's tooltip instead */
-@container (max-width: 380px) { .camera-info { visibility: hidden; } }
-.camera-body { position: relative; flex: 1; min-height: 0; }
-.camera-media, .camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.camera-overlay { pointer-events: none; }
-/* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
-.camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
-.camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.add-camera { position: absolute; right: 12px; bottom: calc(16px + var(--dim-inset-bottom)); pointer-events: auto; gap: 1px; padding: 8px 10px; border-radius: 999px; }
+.depth-host canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.camera-head .depth-range { width: 52px; padding: 2px 4px; font-size: 11px; }
+.panel-tools .depth-range { width: 52px; padding: 2px 4px; font-size: 11px; }
 
-/* ── drive HUD ── */
-.drive-hud { position: absolute; left: 50%; bottom: calc(14px + var(--dim-inset-bottom)); transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 12px;
-    padding: 8px 12px; }
-/* the key guide sits in the bottom-left corner (under the stats overlay), beside the side panel when it's open */
-.drive-hud.corner { left: calc(12px + var(--dim-inset-left)); transform: none; }
-.desktop .side-panel.side ~ .drive-hud.corner { left: calc(362px + var(--dim-inset-left)); }
-.drive-hud.corner.moving { border-color: var(--primary); }
-/* on a desktop the dock is centered, so the corner guide (and the stats above it) sit at the real bottom, not above the dock's inset */
-.desktop .drive-hud.corner { bottom: 14px; }
-.desktop .stats-overlay { bottom: 96px; }
-.keys { display: grid; gap: 3px; }
-.keys > div { display: flex; gap: 3px; justify-content: center; }
-.key { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 0; font: 700 11px var(--mono);
-    border: 1px solid var(--border); background: var(--card); color: var(--muted-fg); transition: background 0.06s; }
-.key.empty { visibility: hidden; }
-.key.down { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
-.key.shift { width: 30px; }
-.hud-readout { font: 11px var(--mono); min-width: 190px; }
+/* ── the 2D map (ui/MapPanel.tsx) ── */
+.map-tools { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.map-source { flex: 1 1 auto; min-width: 0; font: 10.5px var(--mono); color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-body { overflow: hidden; background: var(--scene-bg, var(--bg)); }
+.map-follow[aria-pressed="true"], .view-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.map-recenter.dim-btn { position: absolute; right: 8px; bottom: 26px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    font: 11px var(--sans); background: color-mix(in srgb, var(--card) 88%, transparent); border-color: var(--primary); color: var(--fg); }
+.map-panel .camera-head .dim-select.map-frame { max-width: 28%; }
+.map-body { overflow: hidden; }
+.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.map-canvas:active { cursor: grabbing; }
+.map-problem { position: absolute; left: 8px; right: 8px; top: 8px; pointer-events: none; font: 11px var(--sans); color: var(--warn);
+    padding: 3px 7px; background: color-mix(in srgb, var(--card) 80%, transparent); width: fit-content; max-width: calc(100% - 16px); }
 
+/* ── phone: two thumb zones over the bottom of the main view, STOP between them (ui/Joystick.tsx) ── */
 /* phone: two thumb zones filling the bottom of the screen, STOP between them (ui/Joystick.tsx). The zones take the
    thumb anywhere (the stick centers where it lands); nothing under them scrolls or zooms. */
 .drive-hud.mobile { left: 0; right: 0; bottom: var(--dim-inset-bottom); transform: none; border-radius: 0; padding: 0 0 env(safe-area-inset-bottom);
@@ -368,35 +449,27 @@ h3.dim-label.first { margin-top: 4px; }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
     .drive-hud.mobile .hud-note { position: static; transform: none; order: 3; max-width: 100%; }
 }
-
-.stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(96px + var(--dim-inset-bottom)); z-index: 6; font-size: 11px; padding: 6px 9px; pointer-events: none; }
-.desktop .side-panel.side ~ .stats-overlay { left: calc(362px + var(--dim-inset-left)); }
-
-/* ── phone ── */
-/* no pan, pinch or double-tap zoom anywhere but the panels that scroll (ui/useMobile.ts does the same for iOS) */
+.drive-hud.mobile { position: absolute; z-index: 7; }
 html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll-behavior: none; }
 .mobile .panel-body, .mobile .record-options, .mobile .record-topics { touch-action: pan-y; }
-.mobile .topbar { height: calc(44px + env(safe-area-inset-top)); gap: 6px; padding-left: 10px; padding-right: 4px; }
-.mobile .topbar .title, .mobile .stats-pill, .mobile .tab-label, .mobile .fullscreen-tab { display: none; }
-.mobile .topbar .dim-badge { padding: 3px 8px; }
-/* a phone's top bar keeps its tabs on one line: the topic pill gives way (drops show on a wider screen) */
-.mobile .pill-extra { display: none; }
-.mobile .conn-pill { min-width: 0; flex-shrink: 1; overflow: hidden; }
-.mobile .tabs { flex-wrap: nowrap; flex-shrink: 0; }
-.mobile .topbar .dim-tabs.tabs { margin-right: -4px; }
-.mobile .topbar .dim-tabs.tabs .dim-tab { padding: 0 11px; }
-.mobile .camera-video.floating { top: calc(52px + env(safe-area-inset-top)); right: 8px; --cam-w: 42vw; width: var(--cam-w); height: calc(var(--cam-w) * var(--cam-aspect, 0.5625) + 33px); }
-.mobile .camera-video.floating ~ .camera-video.floating { display: none; }
-.mobile .camera-video.floating .camera-head select, .mobile .camera-video.floating .camera-info { display: none; }
-.mobile .lv-panel.main:not(.scene-slot) { inset: calc(44px + env(safe-area-inset-top)) 0 0 0; }
-.mobile .add-camera { display: none; }
-.mobile .stats-overlay { bottom: auto; top: calc(98px + env(safe-area-inset-top)); }
 .mobile .field-label { width: 70px; }
 .mobile .gradients { margin-left: 0; }
 .mobile .dim-select, .mobile .dim-input { font-size: 16px; } /* iOS zooms into anything smaller */
+.mobile .panel-tools .dim-select { font-size: 16px; }
 
-.depth-host canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.camera-head .depth-range { width: 52px; padding: 2px 4px; font-size: 11px; }
+.stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(76px + var(--dim-inset-bottom)); z-index: 9; font-size: 11px; padding: 6px 9px; pointer-events: none; }
+.mobile .stats-overlay { bottom: auto; top: calc(var(--lv-strip-h) + 8px + env(safe-area-inset-top)); }
+
+/* ── status panel ── */
+.status-panel { display: grid; gap: var(--lv-gap); }
+.status-robot { display: flex; align-items: center; gap: 10px; font: 600 13px var(--sans); }
+.status-rows { margin: 0; display: grid; gap: 2px; }
+.status-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hair, var(--border)); }
+.status-row dt { color: var(--muted-fg); font-size: 11px; }
+.status-row dd { margin: 0; font: 11px var(--mono); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.status-row dd.tone-ok { color: var(--ok); }
+.status-row dd.tone-warn { color: var(--warn); }
+.status-row dd.tone-bad { color: var(--lv-stop); }
 
 /* point-style picker */
 .style-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; width: 100%; }
@@ -405,13 +478,12 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .style-name { font-size: 12px; font-weight: 650; grid-column: 2; }
 .style-about { font-size: 10px; color: var(--muted-fg); grid-column: 1 / 3; margin-top: 3px; line-height: 1.3; }
 .style-swatch { grid-row: 1; width: 18px; height: 18px; border-radius: 4px; align-self: center;
-    background: linear-gradient(135deg, #6e1eaa, #285aeb 40%, #28c8e6 70%, #96f096); }
+    background: linear-gradient(135deg, var(--violet), var(--primary) 40%, var(--info) 70%, var(--ok)); }
 .swatch-splat { border-radius: 50%; filter: blur(2px); }
-.swatch-disc { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #96f096, #28c8e6 45%, #285aeb 75%, #6e1eaa); }
-.swatch-square { border-radius: 0; background: #28c8e6; }
+.swatch-disc { border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--ok), var(--info) 45%, var(--primary) 75%, var(--violet)); }
+.swatch-square { border-radius: 0; background: var(--info); }
 .swatch-default { background: none; border: 1px dashed var(--muted-fg); }
 .field-block { padding: 4px 0 8px; display: grid; gap: 6px; }
-
 /* live annotations' labels: the label, then a note line */
 .scene-label.annotation-label { white-space: pre; text-align: center; color: var(--label-color, var(--warn)); font-size: 12px; }
 
@@ -448,108 +520,3 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .ok-text { color: var(--ok); }
 .warn-text { color: var(--warn); font-size: 12px; margin: 6px 0; }
 .arm-panel code, .drive-panel code { font: 11px var(--mono); }
-
-/* landscape phone: the camera sits top-center between the sticks; recenter / top-down move left, under Record */
-@media (orientation: landscape) and (max-height: 520px) {
-    .mobile .camera-video.floating { right: auto; left: 50%; transform: translateX(-50%); --cam-w: min(30vw, 260px); }
-    .mobile .view-controls { top: calc(100px + env(safe-area-inset-top)); right: auto; left: calc(8px + var(--dim-inset-left)); flex-direction: row; }
-    .mobile .tf-footnote { top: calc(100px + env(safe-area-inset-top)); right: calc(8px + var(--dim-inset-right)); max-width: 30vw; }
-    /* with the camera main, the 3D picture-in-picture takes the same spot between the sticks */
-    .mobile.camera-main .scene-slot.floating { top: calc(52px + env(safe-area-inset-top)); bottom: auto; right: auto; left: 50%; transform: translateX(-50%); width: min(30vw, 260px); height: min(18vw, 156px); }
-    .mobile .scene-tools { top: calc(100px + env(safe-area-inset-top)); right: auto; left: calc(96px + var(--dim-inset-left)); }
-}
-/* every image topic on the bus, one tab each (core/cameraChoice.ts cameraTabs); scrolls sideways when they don't fit */
-.camera-tabs { position: relative; display: flex; gap: 2px; flex: 1 1 auto; min-width: 0; align-self: stretch; margin: -4px 0 -4px -6px; padding: 0 0 0 6px;
-    overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-.camera-tabs::-webkit-scrollbar { display: none; }
-.camera-tab { all: unset; box-sizing: border-box; cursor: pointer; flex: none; padding: 0 9px; display: flex; align-items: center; font: 11px var(--mono); color: var(--muted-fg); white-space: nowrap;
-    border: 0; }
-.camera-tab:hover, .camera-tab:focus-visible { color: var(--fg); background: var(--accent); }
-.camera-tab.on { color: var(--fg); background: var(--accent); border-color: var(--border); box-shadow: inset 0 -2px 0 var(--primary); }
-/* a phone's small floating camera names only the one it shows (full screen has them all) */
-.mobile .camera-video.floating .camera-tab:not(.on) { display: none; }
-.camera-tab.depth { font-style: italic; }
-.camera-tab.gone { cursor: default; opacity: 0.6; }
-
-/* ── the 2D map: a floating top-down panel (ui/MapPanel.tsx), the camera panel's header, handle and fullscreen ── */
-/* above a main (fullscreen) camera and level with the 3D inset (later in the page, so over it); under the HUD and side panel */
-.map-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
-/* in its default corner with a side panel (TF, Layers, Settings) open: beside it, not under it */
-.desktop .side-panel.side ~ .map-layer .map-panel.default-spot:not(.main) { left: calc(360px + var(--dim-inset-left)); }
-.map-panel.floating { left: calc(10px + var(--dim-inset-left)); top: 108px; }
-/* folded: just the header, sized to it (inline-size containment, from .lv-panel, would make that 0 px wide: gone) */
-.map-panel.collapsed { height: auto; width: auto; min-width: 0; container-type: normal; border: 1px solid var(--border-strong); }
-.map-panel.collapsed > .camera-body { display: none; }
-.map-panel.collapsed .map-title { cursor: pointer; }
-.map-panel.collapsed .map-show { font: 11px var(--sans); color: var(--muted-fg); }
-.map-panel.collapsed .camera-head { cursor: move; }
-.desktop .map-panel.main .camera-head { padding-left: 160px; }
-.map-title { display: inline-flex; align-items: center; gap: 5px; flex: none; font: 600 11px var(--sans); color: var(--fg); padding-right: 2px; }
-.map-panel .camera-head .camera-info { flex: 1 1 auto; }
-.map-panel .camera-head .camera-info.map-source { text-align: left; }
-.map-follow[aria-pressed="true"], .view-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.map-recenter.dim-btn { position: absolute; right: 8px; bottom: 26px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
-    font: 11px var(--sans); background: color-mix(in srgb, var(--card) 88%, transparent); border-color: var(--primary); color: var(--fg); }
-.map-panel .camera-head .dim-select.map-frame { max-width: 28%; }
-.map-body { overflow: hidden; }
-.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
-.map-canvas:active { cursor: grabbing; }
-.map-problem { position: absolute; left: 8px; right: 8px; top: 8px; pointer-events: none; font: 11px var(--sans); color: var(--warn);
-    padding: 3px 7px; background: color-mix(in srgb, var(--card) 80%, transparent); width: fit-content; max-width: calc(100% - 16px); }
-.mobile .map-panel.floating { left: calc(8px + var(--dim-inset-left)); top: calc(98px + env(safe-area-inset-top)); }
-.mobile .map-panel.floating.open { width: 46vw; height: calc(46vw + 33px); }
-.mobile .map-panel .camera-head .camera-info, .mobile .map-panel .camera-head select { display: none; }
-.map-panel .camera-head .dim-select { max-width: 40%; }
-.map-panel .camera-head .dim-select.map-overlay { max-width: 30%; }
-
-/* driving held (latency over Settings' max, or the link lost): why, and Reconnect (ui/DriveHud.tsx) */
-.drive-hud.corner.halted { border-color: var(--lv-stop); flex-wrap: wrap; max-width: 340px; }
-.drive-halt { display: flex; align-items: center; gap: 8px; flex-basis: 100%; font: 600 11px var(--sans); color: var(--lv-stop); }
-.drive-halt .reconnect-button { margin-left: auto; font-weight: 700; color: var(--fg); background: var(--lv-stop); border-color: var(--lv-stop); }
-.drive-hud.mobile .drive-halt { flex-direction: column; gap: 6px; text-align: center; background: color-mix(in srgb, var(--card) 88%, transparent); padding: 6px; }
-.drive-hud.mobile .drive-halt .reconnect-button { margin-left: 0; width: 100%; height: 44px; touch-action: manipulation; }
-
-/* ── docked layouts (Cockpit, Split, Tiles; ui/layout.ts places each panel inline) ── */
-/* Record moves into the top bar (its corner is a panel's now); on a phone, just its dot and "…" */
-.docked .record-control { top: calc(6px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 11; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; }
-.desktop.docked .record-options { top: calc(56px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); }
-.mobile.docked .record-control { top: calc(4px + env(safe-area-inset-top)); left: auto; right: calc(132px + var(--dim-inset-right)); transform: none; }
-.mobile.docked .record-control .record-label { display: none; }
-.mobile.docked .conn-pill { max-width: calc(100vw - 230px); }
-/* the 3D view docked: over a Cockpit's camera; its own buttons in its corner */
-.docked .scene-slot.dock { z-index: 6; }
-.docked .map-layer .map-panel.dock { z-index: 6; }
-.app.docked .lv-panel.dock .view-controls { top: auto; left: auto; bottom: var(--lv-gap); right: var(--lv-gap); flex-direction: column; }
-.app.docked .lv-panel.dock .view-control { width: 30px; height: 30px; }
-.app.docked .lv-panel.dock .tf-footnote { top: auto; bottom: var(--lv-gap); right: calc(2 * var(--lv-gap) + 30px); max-width: calc(100% - 60px); }
-.layout-cockpit .lv-panel.dock:not(.camera-video) { border: 1px solid var(--border-strong); box-shadow: var(--shadow-md); }
-.layout-cockpit .camera-video.dock { border: 0; z-index: 1; }
-.layout-cockpit .camera-video.dock:not(.maximized) .camera-head { background: color-mix(in srgb, var(--card) 70%, transparent); }
-.lv-panel.dock { border: 1px solid var(--border); }
-/* an empty camera region: one button */
-.camera-empty > .camera-body { display: flex; align-items: center; justify-content: center; }
-.camera-empty-add { display: inline-flex; align-items: center; gap: 6px; }
-/* the drive keys in a layout's box (Split's rail, the Cockpit's bottom middle) or tile */
-.drive-region { position: absolute; z-index: 7; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-.layout-cockpit .drive-region { align-items: flex-end; }
-.drive-region > * { pointer-events: auto; }
-.drive-region .drive-hud.corner, .drive-tile .drive-hud.corner { position: static; transform: none; max-width: 100%; }
-.layout-split .drive-region .drive-hud.corner { width: 100%; height: 100%; box-sizing: border-box; justify-content: center; flex-wrap: wrap; }
-.drive-tile > .drive-region-body { display: flex; align-items: center; justify-content: center; background: var(--card); }
-.drive-tile .drive-hud.corner { border: 0; box-shadow: none; background: none; backdrop-filter: none; }
-.layout-split .drive-region .hud-readout { min-width: 0; }
-/* Tiles: the status tile */
-.status-panel { display: grid; gap: var(--lv-gap); }
-.status-robot { display: flex; align-items: center; gap: 10px; font: 600 13px var(--sans); }
-.status-rows { margin: 0; display: grid; gap: 2px; }
-.status-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--hair, var(--border)); }
-.status-row dt { color: var(--muted-fg); font-size: 11px; }
-.status-row dd { margin: 0; font: 11px var(--mono); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.status-row dd.tone-ok { color: var(--ok); }
-.status-row dd.tone-warn { color: var(--warn); }
-.status-row dd.tone-bad { color: var(--lv-stop); }
-/* Settings → Layout */
-.layout-choices { flex-wrap: wrap; }
-.layout-choices .dim-tab.on { box-shadow: inset 0 -2px 0 var(--primary); }
-/* a small map (an inset, a narrow tile): its pickers go, the buttons stay */
-@container (max-width: 380px) { .map-panel .camera-head .dim-select { display: none; } }

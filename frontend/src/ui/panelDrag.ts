@@ -1,119 +1,101 @@
-// Moving and resizing a floating panel (a camera, the 2D map, the 3D picture-in-picture) by its header and corner: it
-// stays on screen, below the top bar. And where a panel's popover menu goes.
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
+// Dragging a panel by its header (ui/Panel.tsx): while dragged it takes its floating size under the pointer, and the
+// workspace shows where it would land (ui/workspace.ts dropTarget: a rail slot, the main view, or a snapped floating
+// box). Releasing applies that; Escape (or a press that never moved: a click) puts everything back. And where a panel's
+// popover menu goes.
+import type { CSSProperties } from "react"
+import type { DropTarget, Rect } from "./workspace.ts"
 
-/** the top bar's height: a panel's header never goes under it */
+/** the status strip's height: a popover never goes under it */
 export const TOP_BAR_PX = 48
-/** every panel's header (ui/Panel.tsx): a panel is this plus its body */
-export const PANEL_HEAD_PX = 33
-/** how much of a panel always stays on screen (its header's left part) */
-const KEEP_VISIBLE_X = 80, KEEP_VISIBLE_Y = 40
+/** a press has to move this far before it's a drag (a click or double-click stays one) */
+const DRAG_SLOP = 5
 
-/** Drags `element` with the pointer from `event` (a header's pointerdown); `onDone` gets where it was dropped. */
-export function startPanelDrag(event: ReactPointerEvent, element: HTMLElement, onDone: (x: number, y: number) => void) {
-    const box = element.getBoundingClientRect()
-    const offsetX = event.clientX - box.left, offsetY = event.clientY - box.top
-    let moved = false
+export interface DragPlan {
+    /** the box it has while dragged */
+    size: { width: number; height: number }
+    /** where the pointer holds it, from its top-left corner */
+    grab: { x: number; y: number }
+    /** where it would land with the pointer here and its box at `box` */
+    target: (pointer: { x: number; y: number }, box: Rect) => DropTarget
+    /** show (or, null, clear) the landing preview */
+    preview: (target: DropTarget | null) => void
+    drop: (target: DropTarget) => void
+}
+
+/** Starts a header drag from its pointerdown. */
+export function startHeaderDrag(event: { clientX: number; clientY: number }, element: HTMLElement, plan: DragPlan) {
+    const start = { x: event.clientX, y: event.clientY }
+    const before = element.style.cssText
+    let dragging = false
+    let target: DropTarget | null = null
     const move = (pointer: PointerEvent) => {
-        moved = true
-        const x = Math.max(0, Math.min(innerWidth - KEEP_VISIBLE_X, pointer.clientX - offsetX))
-        const y = Math.max(TOP_BAR_PX, Math.min(innerHeight - KEEP_VISIBLE_Y, pointer.clientY - offsetY))
-        element.style.left = `${x}px`
-        element.style.top = `${y}px`
-        element.style.right = "auto"
-        element.style.bottom = "auto"
+        if (!dragging && Math.hypot(pointer.clientX - start.x, pointer.clientY - start.y) < DRAG_SLOP) {
+            return
+        }
+        dragging = true
+        element.classList.add("dragging")
+        globalThis.document?.body.classList.add("panel-dragging")
+        const box = { x: pointer.clientX - plan.grab.x, y: pointer.clientY - plan.grab.y, ...plan.size }
+        Object.assign(element.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })
+        target = plan.target({ x: pointer.clientX, y: pointer.clientY }, box)
+        plan.preview(target)
+    }
+    const finish = (apply: boolean) => {
+        removeEventListener("pointermove", move)
+        removeEventListener("pointerup", up)
+        removeEventListener("pointercancel", cancel)
+        removeEventListener("keydown", key, true)
+        // React placed it: its own inline box back, then the arrangement change places it again
+        element.style.cssText = before
+        element.classList.remove("dragging")
+        globalThis.document?.body.classList.remove("panel-dragging")
+        plan.preview(null)
+        if (apply && dragging && target) {
+            plan.drop(target)
+        }
+    }
+    const up = () => finish(true)
+    const cancel = () => finish(false)
+    const key = (pressed: KeyboardEvent) => {
+        if (pressed.key === "Escape" && dragging) {
+            pressed.preventDefault()
+            pressed.stopPropagation()
+            finish(false)
+        }
+    }
+    addEventListener("pointermove", move)
+    addEventListener("pointerup", up)
+    addEventListener("pointercancel", cancel)
+    addEventListener("keydown", key, true)
+}
+
+/** A drag on a splitter, a rail's edge or a resize corner: `onMove` gets how far the pointer went (px) since the press,
+ * at most once a frame and once more on release. */
+export function startPointerDrag(event: { clientX: number; clientY: number }, onMove: (dx: number, dy: number) => void) {
+    const start = { x: event.clientX, y: event.clientY }
+    let frame = 0
+    let last = { x: 0, y: 0 }
+    const move = (pointer: PointerEvent) => {
+        last = { x: pointer.clientX - start.x, y: pointer.clientY - start.y }
+        if (!frame) {
+            frame = requestAnimationFrame(() => {
+                frame = 0
+                onMove(last.x, last.y)
+            })
+        }
     }
     const up = () => {
         removeEventListener("pointermove", move)
         removeEventListener("pointerup", up)
-        if (!moved) {
-            return
-        }
-        // hand the edges back to React: a right/bottom left inline would outlive the drag (React never set them, so it
-        // never clears them) and squash the panel when it goes fullscreen (inset: … 0 0 0 loses to an inline "auto")
-        element.style.right = ""
-        element.style.bottom = ""
-        const after = element.getBoundingClientRect()
-        onDone(after.left, after.top)
+        removeEventListener("pointercancel", up)
+        cancelAnimationFrame(frame)
+        globalThis.document?.body.classList.remove("panel-dragging")
+        onMove(last.x, last.y)
     }
+    globalThis.document?.body.classList.add("panel-dragging")
     addEventListener("pointermove", move)
     addEventListener("pointerup", up)
-}
-
-export interface PanelBox {
-    /** -1: the panel's default corner */
-    x: number
-    y: number
-    width: number
-    height: number
-}
-
-/**
- * A remembered panel box made safe for this window: a size that fits (at least the minimum), a position that keeps
- * the header reachable (on screen, below the top bar); anything not a finite number goes back to its default.
- */
-export function clampPanelBox(box: Partial<PanelBox>, defaults: PanelBox, viewport: { width: number; height: number }, minimum: { width: number; height: number }): PanelBox {
-    const finite = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback
-    const viewWidth = viewport.width > 0 ? viewport.width : 1280, viewHeight = viewport.height > 0 ? viewport.height : 800
-    const width = Math.round(Math.max(minimum.width, Math.min(Math.max(minimum.width, viewWidth - 16), finite(box.width, defaults.width))))
-    const height = Math.round(Math.max(minimum.height, Math.min(Math.max(minimum.height, viewHeight - TOP_BAR_PX - 8), finite(box.height, defaults.height))))
-    const x = finite(box.x, defaults.x), y = finite(box.y, defaults.y)
-    if (x < 0 || y < 0) {
-        return { x: -1, y: -1, width, height }
-    }
-    return {
-        x: Math.round(Math.max(0, Math.min(viewWidth - KEEP_VISIBLE_X, x))),
-        y: Math.round(Math.max(TOP_BAR_PX, Math.min(viewHeight - KEEP_VISIBLE_Y, y))),
-        width,
-        height,
-    }
-}
-
-/**
- * Resizes `element` from a bottom corner (the pointer from `event`, the handle's pointerdown): "left" grows it leftward
- * (its right edge stays put), "right" rightward. With `aspect` (body height / width) the height follows the width so
- * the picture never gets bars. It stays inside the window; `onDone` gets the final box.
- */
-export function startPanelResize(event: ReactPointerEvent, element: HTMLElement, options: {
-    corner: "left" | "right"
-    minimum: { width: number; height: number }
-    aspect?: number
-    onDone: (box: PanelBox) => void
-}) {
-    event.preventDefault()
-    event.stopPropagation()
-    const { corner, minimum, aspect } = options
-    const box = element.getBoundingClientRect()
-    const startX = event.clientX, startY = event.clientY
-    const handle = event.currentTarget as HTMLElement
-    handle.setPointerCapture(event.pointerId)
-    let width = box.width, height = box.height, left = box.left
-    // from here on it's placed by its top-left corner, so the far edges stay put while it grows
-    Object.assign(element.style, { left: `${box.left}px`, top: `${box.top}px`, right: "auto", bottom: "auto" })
-    const maxWidth = corner === "left" ? box.right - 8 : innerWidth - box.left - 8
-    const maxHeight = innerHeight - box.top - 8
-    const move = (moved: PointerEvent) => {
-        const grown = corner === "left" ? startX - moved.clientX : moved.clientX - startX
-        const widest = aspect ? Math.min(maxWidth, (maxHeight - PANEL_HEAD_PX) / aspect) : maxWidth
-        width = Math.round(Math.max(Math.min(minimum.width, widest), Math.min(widest, box.width + grown)))
-        height = aspect
-            ? Math.round(width * aspect) + PANEL_HEAD_PX
-            : Math.round(Math.max(minimum.height, Math.min(maxHeight, box.height + moved.clientY - startY)))
-        left = corner === "left" ? box.right - width : box.left
-        Object.assign(element.style, { width: `${width}px`, height: `${height}px`, left: `${left}px` })
-    }
-    const up = () => {
-        handle.removeEventListener("pointermove", move)
-        handle.removeEventListener("pointerup", up)
-        handle.removeEventListener("pointercancel", up)
-        // the edges back to React (as after a drag): the caller keeps the box, placed by its top-left corner
-        element.style.right = ""
-        element.style.bottom = ""
-        options.onDone({ x: Math.round(left), y: Math.round(box.top), width, height })
-    }
-    handle.addEventListener("pointermove", move)
-    handle.addEventListener("pointerup", up)
-    handle.addEventListener("pointercancel", up)
+    addEventListener("pointercancel", up)
 }
 
 /**

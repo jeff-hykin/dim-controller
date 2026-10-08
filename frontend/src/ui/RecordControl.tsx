@@ -12,6 +12,17 @@ import { Field, Select, Toggle } from "./controls.tsx"
 import { Icon } from "./icons.tsx"
 import { appInstalled, openApp, underDesktop } from "../dim-app/source/desktop.js"
 
+/** Start recording (what the options pick) or stop the one running: the Record button's and the palette's. */
+export function toggleRecording(app: ViewerApp): Promise<unknown> {
+    const status = recorder.status.get()
+    if (status.recording.active) {
+        return recorder.stop()
+    }
+    const chosen = recordedTopics.get()
+    const selected = app.connection.status.get().topics.filter((topic) => isRecorded(topic.key, chosen))
+    return recorder.start(status.options.recordNew ? null : selected.map((topic) => topic.key))
+}
+
 /** topic key → recorded or not; a topic not in it is recorded (so new ones are too) */
 export const recordedTopics = persistentStore<Record<string, boolean>>("lv.record.topics", {})
 export function RecordControl({ app }: { app: ViewerApp }) {
@@ -34,8 +45,7 @@ export function RecordControl({ app }: { app: ViewerApp }) {
 
     const toggle = () => {
         setError(null)
-        const work = active ? recorder.stop() : recorder.start(status.options.recordNew ? null : selected.map((topic) => topic.key))
-        work.catch((problem) => setError(String(problem.message ?? problem)))
+        toggleRecording(app).catch((problem) => setError(String(problem.message ?? problem)))
     }
     const label = busy
         ? (pending.action === "start" ? "Starting…" : "Stopping…")
