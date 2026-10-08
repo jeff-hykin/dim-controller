@@ -52,31 +52,38 @@ Point clouds are GL point sprites, never meshes. The styles (Settings → Render
 settings to override): **Glow** (default: soft gaussian splats fading into the background with distance), **Cubes**
 (MemWorld's: snaps each point to a grid and ray-casts an axis-aligned cube inside the sprite), **Spheres** (MemWorld's
 lit balls) and **Squares**. Over 3M points a glow cloud draws a stable random subset, and if frames stay over 16 ms
-the viewer switches glow to cubes and says so in the top bar. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
+the viewer switches glow to cubes and says so in the status strip. Coloring is a gradient lookup in the shader; scans stream into preallocated GPU buffers (a ring when
 accumulating, aged out in the shader), so a new scan costs one partial buffer upload. The view only redraws when
 something changed. Settings → Stats shows fps, CPU per frame and gateway-to-screen latency.
 
-## Layouts
+## Layout
 
-Settings → Layout picks how the page is arranged (saved as the `lv.layout` setting, so every open page follows):
+One arrangement, made of panels:
 
-- **Classic** (the default): the 3D view fills the window; the camera and the 2D map float over it (drag, resize, fold).
-- **Cockpit**: the camera fills the window; the map and the 3D view are small insets over it, the drive keys sit
-  bottom-center and Settings slides over from the right.
-- **Split**: camera and 3D view as two equal halves (stacked when the space is taller than wide), the map and drive
-  keys in a rail on the left, Settings in a column on the right.
-- **Tiles**: equal tiles (camera, 3D, map, drive, status, settings); drag a tile's header onto another to swap them.
+- **Status strip** (top): the link and its round trip, what's running, what the drive is doing (Ready, Driving, the
+  agent driving, Held), TF and render warnings, Record, the command palette and the shortcut list.
+- **Main view** between a **left rail** (the 2D map, the 3D view) and a **right rail** (Status, Settings, Layers, TF);
+  the camera is the main view by default.
+- **Action dock** (bottom): the drive keys lit while held, what's being sent (or the hold and Reconnect), recenter,
+  top-down, 3D on/off, focus, all actions, and STOP.
 
-In the docked layouts every panel has a maximize button (Escape gives it back), Record moves into the top bar, and the
-first camera panel is the one shown. Driving is the same in all of them: keys or sticks only, the latency hold and
-Reconnect, and the drive keys never hide (a maximized panel leaves them in their corner).
+Every panel has the same header with the same four buttons in the same place: fold, main view (swap it in; on the main
+view: focus, hiding both rails), pop out / dock, close. Drag a header into a rail (it goes in at the pointer's height),
+onto the main view's middle (swap), or anywhere else to float; a floating panel's edges snap to the main view, the rails
+and the other floating panels, and it resizes from its corner. Splitters share a rail's height, a rail's edge sets its
+width. The arrangement is this device's (`lv.workspace` in localStorage); the palette's "Reset the layout" restores it.
+
+Keys: WASD / arrows drive while held (Q/E strafe), release stops, Shift boosts, **Space stops, always**, `/` opens the
+palette (every action: panels, layout, cameras, view, recording, robot type, the profile's buttons), `?` lists every
+key, Escape closes, `[` `]` `\` hide and show the rails. Keys never drive while you type in a field or with an overlay
+open, and leaving the window lets go of everything. On a phone the rails are drawers (the strip's buttons) and driving
+is two thumb sticks with STOP between them.
 
 ## Cameras
 
-One camera panel opens on the profile's preferred camera; `+` adds more, each with its own topic and an optional 2D
-detection overlay. Drag a floating panel's inner corner (bottom-left for one on the right) to resize it; the
-picture keeps its aspect, between 200 px wide and the window. The size is this viewer's (localStorage), not a shared
-setting.
+One camera panel opens on the profile's preferred camera; the palette's "Add a camera panel" adds more, each with its own topic and an optional 2D
+detection overlay. Each is a panel like any other (main view, a rail, floating); its fit / fill button letterboxes
+the whole picture or fills the panel, cropped.
 
 The gear over a camera (on hover) picks where it sits between latency and quality, per camera and per viewer:
 **Low latency** (fits 640×360, keeps the rate when bandwidth is short: small frames are on the wire, decoded and on

@@ -126,7 +126,7 @@ body.dark .record-split { box-shadow: var(--record-glow); }
 .lv-panel.zone-float { z-index: 6; border-color: var(--border-strong); box-shadow: var(--shadow-lg); }
 .lv-panel.hidden { visibility: hidden; pointer-events: none; }
 .lv-panel.collapsed > .panel-content { display: none; }
-.lv-panel.dragging { z-index: 50; opacity: 0.88; box-shadow: var(--shadow-lg); border-color: var(--primary); transition: none; }
+.lv-panel.dragging { z-index: 50; opacity: 0.72; box-shadow: var(--shadow-lg); border-color: var(--primary); transition: none; }
 body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-select: none; }
 /* the header: icon + title, a live note, then the same four actions on every panel */
 .panel-head { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; box-sizing: border-box; padding: 0 4px 0 10px; cursor: grab; touch-action: none; user-select: none;
@@ -167,13 +167,13 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .ws-rail-edge::after { top: 30%; bottom: 30%; left: calc(50% - 1px); width: 2px; }
 .ws-splitter:hover::after, .ws-rail-edge:hover::after { opacity: 0.8; }
 /* while a header is dragged: where it would land, the main view's swap target, the hidden rails' edges */
-.ws-drop-preview { position: absolute; z-index: 40; pointer-events: none; box-sizing: border-box; border: 2px solid var(--primary); border-radius: var(--radius-lg);
+.ws-drop-preview { position: absolute; z-index: 52; pointer-events: none; box-sizing: border-box; border: 2px solid var(--primary); border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--primary) 12%, transparent); transition: left 0.08s, top 0.08s, width 0.08s, height 0.08s; }
 .ws-drop-preview.zone-float { border-style: dashed; background: color-mix(in srgb, var(--primary) 6%, transparent); }
-.ws-stage-target { position: absolute; z-index: 39; pointer-events: none; display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--border-strong);
+.ws-stage-target { position: absolute; z-index: 51; pointer-events: none; display: grid; place-items: center; box-sizing: border-box; border: 1px dashed var(--border-strong);
     border-radius: var(--radius-lg); background: color-mix(in srgb, var(--bg) 40%, transparent); font: 600 12px var(--sans); color: var(--muted-fg); }
 .ws-stage-target.on { border: 2px solid var(--primary); color: var(--fg); background: color-mix(in srgb, var(--primary) 18%, transparent); }
-.ws-edge-hint { position: absolute; z-index: 39; width: 6px; pointer-events: none; background: color-mix(in srgb, var(--primary) 25%, transparent); }
+.ws-edge-hint { position: absolute; z-index: 51; width: 6px; pointer-events: none; background: color-mix(in srgb, var(--primary) 25%, transparent); }
 .ws-edge-hint.on { width: 10px; background: var(--primary); }
 .ws-empty-stage { position: absolute; z-index: 1; display: grid; place-items: center; border: 1px dashed var(--border); border-radius: var(--radius-lg); }
 .ws-empty-note { text-align: center; max-width: 360px; padding: 16px; color: var(--muted-fg); }
@@ -520,3 +520,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .ok-text { color: var(--ok); }
 .warn-text { color: var(--warn); font-size: 12px; margin: 6px 0; }
 .arm-panel code, .drive-panel code { font: 11px var(--mono); }
+
+/* a phone's strip: dots and short values only */
+.mobile .status-strip { gap: 4px; }
+.mobile .strip-chip { padding: 0 7px; height: 30px; }
+.mobile .strip-run, .mobile .strip-key { display: none; }
+.mobile .strip-chip .strip-value { max-width: 92px; }

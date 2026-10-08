@@ -30,8 +30,12 @@ function Palette({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cam
     const list = useRef<HTMLDivElement>(null)
     const shown = useMemo(() => filterCommands(commands, query), [commands, query])
     const index = Math.min(selected, Math.max(0, shown.length - 1))
-    useEffect(() => input.current?.focus(), [])
-    useEffect(() => list.current?.querySelector<HTMLElement>(".palette-item.on")?.scrollIntoView({ block: "nearest" }), [index])
+    useEffect(() => {
+        input.current?.focus()
+    }, [])
+    useEffect(() => {
+        list.current?.querySelector<HTMLElement>(".palette-item.on")?.scrollIntoView({ block: "nearest" })
+    }, [index])
     const run = (command: Command | undefined) => {
         if (!command || command.blocked) {
             return

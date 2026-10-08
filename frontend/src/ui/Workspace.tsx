@@ -166,7 +166,7 @@ function useFrame(mobile: boolean): Frame {
         const bars = new ResizeObserver(again)
         const watched = new Set<Element>()
         const watch = () => {
-            for (const element of document.querySelectorAll(".status-strip, .action-dock")) {
+            for (const element of document.querySelectorAll(".status-strip, .action-dock, .drive-hud.mobile")) {
                 if (!watched.has(element)) {
                     watched.add(element)
                     bars.observe(element)
@@ -188,7 +188,8 @@ function useFrame(mobile: boolean): Frame {
         return Number.isFinite(value) ? value : fallback
     }
     const height = innerHeight
-    const dock = mobile ? null : document.querySelector(".action-dock")?.getBoundingClientRect().top
+    // desktop: above the action dock; a phone: above the thumb sticks, so the main view is never under a thumb
+    const dock = document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
     return {
         width: innerWidth,
         height,

@@ -353,10 +353,10 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
     }
 
     if (frame.mobile) {
-        // the stage fills the screen under the strip (the drive sticks sit over its bottom); the rails are drawers
+        // the stage fills the screen between the strip and the thumb sticks; the rails are drawers over everything
         const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
         const drawerWidth = Math.min(width - 2 * gap - 24, 380)
-        const drawer = view.drawer ? { x: view.drawer === "left" ? 0 : width - drawerWidth, y: frame.top, width: drawerWidth, height: area.height } : null
+        const drawer = view.drawer ? { x: view.drawer === "left" ? 0 : width - drawerWidth, y: frame.top, width: drawerWidth, height: frame.height - frame.top } : null
         if (arrangement.stage) {
             place(arrangement.stage, area, "stage")
         }

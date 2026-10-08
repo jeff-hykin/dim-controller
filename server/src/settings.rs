@@ -1,6 +1,6 @@
 //! The page's settings, held here (not in the browser) so the agent can read and change them and every open page
 //! follows: a JSON object per key (`lv.view`, `lv.rendering.v2`, `lv.layers.enabled`, `lv.layer.<type>.<topic key>`,
-//! `lv.drive.<profile>`, `lv.record.topics`, `lv.record.options` (recorder.rs `Options`), `lv.cameras`, `lv.layout`). Saved to `settings.json` in the
+//! `lv.drive.<profile>`, `lv.record.topics`, `lv.record.options` (recorder.rs `Options`), `lv.cameras`). Saved to `settings.json` in the
 //! app's data dir; a change is a `{type: "settings", key, value}` event on the page event stream.
 use std::path::PathBuf;
 use std::sync::Mutex;
