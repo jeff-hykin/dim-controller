@@ -9,19 +9,22 @@ import type { Connection } from "../src/core/transport.ts"
 function fakeBridge() {
     const puts: { key: string; twist: { linear: { x: number; y: number; z: number }; angular: { z: number } } }[] = []
     const deadmen: string[] = []
+    const cleared: string[] = []
+    const opened: string[] = []
     const client = {
         state: "connected",
         publisher(key: string) {
+            opened.push(key)
             return {
                 state: "open",
                 put: (bytes: Uint8Array) => puts.push({ key, twist: decode("geometry_msgs.Twist", bytes) }),
                 setDeadman: () => (deadmen.push(key), Promise.resolve()),
-                clearDeadman: () => Promise.resolve(),
+                clearDeadman: () => (cleared.push(key), Promise.resolve()),
                 close() {},
             }
         },
     }
-    return { connection: { client } as unknown as Connection, puts, deadmen }
+    return { connection: { client } as unknown as Connection, puts, deadmen, cleared, opened }
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -113,5 +116,49 @@ Deno.test("a release sends a zero at once, not at the next tick", async () => {
     drive.setAxes("right-stick", { turn: 1 })
     drive.stop()
     assertEquals(puts.at(-1)!.twist.angular.z, 0, "STOP is heard at once too")
+    drive.dispose()
+})
+
+// Safety (e2e F9): opening the Controller must not drive. Everything that happens without a drive input (what's running
+// changing, a robot type switch, STOP, Space, boost, a stick at rest) publishes nothing and arms no deadman.
+Deno.test("idle: nothing is published and no deadman is armed until a drive input, and none after the stop flush", async () => {
+    localStorage.clear()
+    const { connection, puts, deadmen, cleared, opened } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    drive.settings.update({ topics: [] }) // auto (an earlier test's list stays in the module's settings store)
+    drive.setRunning({ bp: [{ streams: [{ name: "tele_cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
+    drive.stop()
+    drive.setBoost(true)
+    drive.setBoost(false)
+    drive.setAxes("left-stick", { forward: 0, strafe: 0 })
+    drive.setProfile(drone)
+    drive.setProfile(go2)
+    drive.setRunning({ bp: [{ streams: [{ name: "cmd_vel", type: "dimos.msgs.geometry_msgs.Twist.Twist", direction: "in" }] }] })
+    await wait(600)
+    assertEquals([puts.length, deadmen.length, opened.length], [0, 0, 0])
+    drive.setAxes("keys", { forward: 1 })
+    await wait(120)
+    assert(puts.length > 0)
+    assertEquals(deadmen, ["dimos/cmd_vel/geometry_msgs.Twist"])
+    drive.setAxes("keys", {})
+    await wait(1300)
+    assertEquals(cleared, ["dimos/cmd_vel/geometry_msgs.Twist"], "the deadman is cleared once the stop has been heard")
+    const count = puts.length
+    await wait(500)
+    assertEquals(puts.length, count)
+    drive.dispose()
+})
+
+Deno.test("a missing speed setting (NaN) never counts as moving", async () => {
+    localStorage.clear()
+    const { connection, puts } = fakeBridge()
+    const drive = new Drive(connection, go2)
+    const { linear } = drive.settings.get()
+    drive.settings.update({ linear: undefined as unknown as number })
+    drive.setAxes("keys", { turn: 0 })
+    drive.setAxes("stick", { forward: 0 })
+    await wait(200)
+    assertEquals(puts.length, 0)
+    drive.settings.update({ linear })
     drive.dispose()
 })

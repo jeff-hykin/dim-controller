@@ -1,6 +1,7 @@
 // Driving: keys, sticks and buttons push axes; while something is held, a Twist goes out at
-// publishHz straight through the bridge, on every output topic (auto: core/cmdvel.ts; each with its own deadman). Nothing is published while idle: a release sends a second of
-// zeros so the stop is heard, then the topic goes quiet. While moving the bridge holds a zero Twist as a deadman
+// publishHz straight through the bridge, on every output topic (auto: core/cmdvel.ts; each with its own deadman). Nothing is
+// published while idle, not even a deadman (test/drive.test.ts "idle"): no publisher exists before the first drive input, a
+// release sends a second of zeros so the stop is heard, then the deadman is cleared and the topic goes quiet. While moving the bridge holds a zero Twist as a deadman
 // and publishes it if this page goes silent for deadmanMs or disconnects (port of web_ctrl's drive loop).
 // There is no arming (since 2026-10-05): `armed` is always true. The backend's `drive` events carry the agent's commands
 // (and dry runs) for the HUD.
@@ -242,7 +243,9 @@ export class Drive {
             angular: settings.angular * (boosted ? boost.angular : 1),
             vertical: settings.vertical * (boosted ? boost.linear : 1),
         }
-        const twist = (this.profile.drive.twist ?? defaultTwist)(axes, speeds)
+        const raw = (this.profile.drive.twist ?? defaultTwist)(axes, speeds)
+        const finite = (values: number[]) => values.map((value) => (Number.isFinite(value) ? value : 0)) as [number, number, number]
+        const twist = { linear: finite(raw.linear), angular: finite(raw.angular) }
         const wasMoving = isMoving(this.state.get().twist)
         this.state.update({ axes, twist })
         // a release (or stop) is heard now, not at the next tick: the zero goes out at once, then the usual flush
@@ -252,7 +255,11 @@ export class Drive {
     }
 
     #closeAll() {
-        for (const { publisher } of this.#publishers.values()) {
+        for (const [key, { publisher, deadman }] of this.#publishers) {
+            // mid-drive (deadman armed): the stop goes out first, since closing clears the deadman without firing it
+            if (deadman && !["tripped", "closed", "rejected"].includes(publisher.state)) {
+                publisher.put(zeroOf(key.endsWith(TWIST_STAMPED) ? TWIST_STAMPED : TWIST))
+            }
             publisher.close()
         }
         this.#publishers.clear()
@@ -376,7 +383,8 @@ export class Drive {
     }
 }
 
-const isMoving = (twist: Twist) => [...twist.linear, ...twist.angular].some((value) => value !== 0)
+// a NaN (e.g. a speed setting that's missing) is not a drive: it would publish while nobody touches anything
+const isMoving = (twist: Twist) => [...twist.linear, ...twist.angular].some((value) => Number.isFinite(value) && value !== 0)
 
 const xyz = ([x, y, z]: [number, number, number]) => ({ x, y, z })
 
