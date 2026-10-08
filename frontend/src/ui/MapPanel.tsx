@@ -190,7 +190,7 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const label = topic ? name(topic) : "no map on the bus"
     return (
         <div className="map-layer">
-            <div ref={element} className={`dim-panel camera-panel map-panel ${open ? "open" : "collapsed"} ${layout.full && open ? "main" : ""}`} style={style}>
+            <div ref={element} className={`dim-panel camera-panel map-panel ${open ? "open" : "collapsed"} ${layout.full && open ? "main" : ""} ${box.x < 0 ? "default-spot" : ""}`} style={style}>
                 <div className="camera-head" onPointerDown={startDrag} onDoubleClick={(event) => open && !mobile && !(event.target as HTMLElement).closest("button, select") && update({ full: !layout.full })} title={open ? status.info : "Show the 2D map (drag to move it)"}>
                     {/* folded, a click on the title opens it (a drag moves it instead) */}
                     <span className="map-title" onClick={() => !open && !dragged.current && update({ collapsed: false })}><Icon name="map" size={14} />Map</span>

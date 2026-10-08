@@ -447,7 +447,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .camera-tab.gone { cursor: default; opacity: 0.6; }
 
 /* ── the 2D map: a floating top-down panel (ui/MapPanel.tsx), the camera panel's header, handle and fullscreen ── */
-.map-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+/* above a main (fullscreen) camera and level with the 3D inset (later in the page, so over it); under the HUD and side panel */
+.map-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+/* in its default corner with a side panel (TF, Layers, Settings) open: beside it, not under it */
+.desktop .side-panel ~ .map-layer .map-panel.default-spot:not(.main) { left: calc(360px + var(--dim-inset-left)); }
 .map-panel { position: absolute; left: calc(10px + var(--dim-inset-left)); top: 108px; background: var(--scene-bg, var(--bg)); }
 /* folded: just the header, sized to it (inline-size containment, from .camera-panel, would make that 0 px wide: gone) */
 .map-panel.collapsed { height: auto; width: auto; min-width: 0; container-type: normal; border: 1px solid var(--border-strong); }

@@ -292,3 +292,12 @@ Deno.test("a folded map keeps its header on screen (inline-size containment woul
     assert(/container-type:\s*normal/.test(folded), "a folded map panel must not contain its inline size")
     assert(!/display:\s*none|(^|[;\s])width:\s*0|visibility:\s*hidden/.test(folded))
 })
+
+Deno.test("the map panel stacks above a fullscreen camera and the 3D inset, under the HUD and side panel", () => {
+    const css = Deno.readTextFileSync(new URL("../src/styles.css", import.meta.url))
+    const z = (selector: string) => Number(css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")}\\s*\\{[^}]*z-index:\\s*(\\d+)`))?.[1])
+    const map = z(".map-layer")
+    assert(map > z(".camera-layer"), "over the camera layer (a main camera fills the screen)")
+    assert(map >= z(".camera-main .scene-slot"), "level with the 3D inset (later in the page, so on top)")
+    assert(map < z(".side-panel") && map < z(".drive-hud") && map < z(".topbar"))
+})
