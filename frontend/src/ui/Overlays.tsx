@@ -51,7 +51,7 @@ function Palette({ app, api, cameras }: { app: ViewerApp; api: WorkspaceApi; cam
                     <input
                         ref={input}
                         className="palette-input"
-                        placeholder="Type a command: stop, camera, map, float, reset, record…"
+                        placeholder="Try: add a camera · reset the layout · start recording · keyboard shortcuts"
                         aria-label="Search commands"
                         value={query}
                         onChange={(event) => {
