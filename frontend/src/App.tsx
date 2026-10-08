@@ -13,6 +13,7 @@ import { DriveHud } from "./ui/DriveHud.tsx"
 import { useKeyboard } from "./ui/useKeyboard.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
 import { useGamepad } from "./ui/useGamepad.ts"
+import { SteamDeckBanner } from "./ui/SteamDeckBanner.tsx"
 import { ArmHud } from "./ui/ArmHud.tsx"
 import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
@@ -81,6 +82,7 @@ export function App() {
                 {app && <Driving app={app} api={api} />}
                 {app && <Overlays app={app} api={api} cameras={cameraActions} />}
                 {app && <StatsOverlay app={app} />}
+                <SteamDeckBanner />
                 {app && <SceneMenu app={app} />}
             </div>
         </WorkspaceContext.Provider>

@@ -95,7 +95,10 @@ up / down for a drone), RB held boosts, **LT + RT stops** at once and holds the 
 while driving is held, and otherwise presses the focused button. Nothing is sent until both sticks are at rest after
 the pad connects (a drifting or held stick never drives), and a disconnect, blur or hidden tab zeroes it and asks for
 rest again. The arm format isn't driven by a pad (LT + RT still stops the arm). The status strip shows the pad's state;
-Settings → Drive → Gamepad has its dead zone and invert Y; `?` lists the mapping ([core/gamepad.ts](frontend/src/core/gamepad.ts)).
+Settings → Drive → Gamepad has its dead zone and invert Y; `?` lists the mapping ([core/gamepad.ts](frontend/src/core/gamepad.ts)). On a Steam Deck (or SteamOS) opened outside Steam,
+with no gamepad reaching the page, a banner says the controls only work as a gamepad when dimOS is opened from Steam and
+offers **Open dimOS in Steam** (Desktop >= 0.2.119's `GET /api/steam-deck` and `POST /api/steam-deck/open`; an older
+Desktop shows nothing).
 
 ## Cameras
 

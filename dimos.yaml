@@ -18,6 +18,9 @@ uses:
         - POST /api/notifications
         # the 3D view's one-time "Try right-click" tip
         - POST /api/desktop/narration
+        # on a Steam Deck opened outside Steam: the banner offering to open dimOS in Steam (Desktop >= 0.2.119; older 404s)
+        - GET /api/steam-deck
+        - POST /api/steam-deck/open
     "@zenoh-gateway": ">=0.5 <0.6"
 # Desktop's nix builds of this app pull from this cache (CI fills it)
 caches:
