@@ -41,14 +41,15 @@ export function ActionDock({ app, api, canDrive }: { app: ViewerApp; api: Worksp
                         <span>{action.label}</span>
                     </button>
                 ))}
-                {actions.length > 0 && <span className="dock-divider" aria-hidden="true" />}
                 <button type="button" className={`dim-btn sm dock-action ${focused ? "on" : ""}`} aria-pressed={focused} title="Focus the main view: hide both rails (\\)" onClick={api.toggleFocus}><Icon name={focused ? "fullscreen-exit" : "fullscreen"} size={15} /><span>Focus</span></button>
                 <button type="button" className="dim-btn sm dock-action" title="Every action, searchable (/)" onClick={() => openOverlay("palette")}><Icon name="search" size={15} /><span>All actions</span><kbd className="lv-kbd">/</kbd></button>
             </div>
-            <button type="button" className="dim-btn dock-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
-                <span>STOP</span>
-                <kbd className="lv-kbd">Space</kbd>
-            </button>
+            <div className="dock-stop-slot">
+                <button type="button" className="dim-btn dock-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
+                    <span>STOP</span>
+                    <kbd className="lv-kbd">Space</kbd>
+                </button>
+            </div>
         </footer>
     )
 }

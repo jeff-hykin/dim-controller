@@ -15,7 +15,7 @@ export function ViewControls({ app }: { app: ViewerApp }) {
         ? `Following ${frame}${followFound ? "" : " (waiting for it in TF)"}: orbit and zoom keep following, a pan looks around. Click to reframe it`
         : `Follow ${frame} again`
     return (
-        <div className="view-controls" data-testid="view-controls">
+        <div className="view-controls panel-chrome" data-testid="view-controls">
             <button type="button" className="dim-btn icon view-control view-follow" aria-pressed={following} title={title} aria-label={following ? "Following" : "Follow"} onClick={() => app.recenter()}>
                 <Icon name="target" size={17} />
             </button>

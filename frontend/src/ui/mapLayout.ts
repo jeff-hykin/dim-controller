@@ -1,7 +1,9 @@
 // What the 2D map panel remembers per viewer (localStorage: a phone and a desktop each keep their own), checked on load.
-// Where the panel is and whether it's folded is the workspace's (ui/workspace.ts).
+// One store: the map's cog and Settings → Map change the same choices. Where the panel is and whether it's folded is
+// the workspace's (ui/workspace.ts).
 import { DEFAULT_FOLLOW_FRAME, isValidView, type MapView } from "../core/map2d.ts"
-import { readLocal } from "../core/videoQuality.ts"
+import { Store } from "../core/store.ts"
+import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
 export interface MapLayout {
     /** the base map: "" = the best on the bus (the global map) */
@@ -24,4 +26,12 @@ export function loadMapLayout(saved: Partial<MapLayout> = readLocal<Partial<MapL
         followFrame: text(saved?.followFrame) || DEFAULT_FOLLOW_FRAME,
         view: isValidView(saved?.view) ? saved.view : null,
     }
+}
+
+/** the map's choices in use (the map panel and Settings both read and change this one) */
+export const mapLayout = new Store<MapLayout>(loadMapLayout())
+
+export function updateMapLayout(patch: Partial<MapLayout>) {
+    mapLayout.update(patch)
+    writeLocal(LAYOUT_KEY, mapLayout.get())
 }

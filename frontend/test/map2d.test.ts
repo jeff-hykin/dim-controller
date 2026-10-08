@@ -24,7 +24,7 @@ import {
     zoomAt,
 } from "../src/core/map2d.ts"
 import { parseKey, rememberTopics, type Topic } from "../src/core/transport.ts"
-import { loadMapLayout } from "../src/ui/mapLayout.ts"
+import { LAYOUT_KEY, loadMapLayout, mapLayout, updateMapLayout } from "../src/ui/mapLayout.ts"
 
 const topic = (name: string, type: string): Topic => parseKey(`dimos${name}/${type}`)!
 
@@ -236,3 +236,14 @@ Deno.test("layout: the map's own choices are remembered and checked; following i
     assert(!("x" in loadMapLayout({ x: 10, collapsed: true } as never)))
 })
 
+
+Deno.test("layout: one store for the map's choices (its cog and Settings → Map change the same one), saved on every change", () => {
+    const before = localStorage.getItem(LAYOUT_KEY)
+    try {
+        updateMapLayout({ topic: "dimos/global_map/sensor_msgs.PointCloud2", followFrame: "odom" })
+        assertEquals([mapLayout.get().topic, mapLayout.get().followFrame], ["dimos/global_map/sensor_msgs.PointCloud2", "odom"])
+        assertEquals(loadMapLayout().followFrame, "odom")
+    } finally {
+        before === null ? localStorage.removeItem(LAYOUT_KEY) : localStorage.setItem(LAYOUT_KEY, before)
+    }
+})

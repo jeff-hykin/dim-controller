@@ -12,7 +12,6 @@ import { useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { decode, headerFrameId, type LcmValue } from "../core/lcm/lcm.ts"
 import { poseMatrix } from "../core/layers/helpers.ts"
-import { writeLocal } from "../core/videoQuality.ts"
 import { rememberTopics } from "../core/transport.ts"
 import {
     chooseMapTopic,
@@ -41,7 +40,7 @@ import {
     zoomAt,
 } from "../core/map2d.ts"
 import { Icon } from "./icons.tsx"
-import { LAYOUT_KEY, loadMapLayout, type MapLayout } from "./mapLayout.ts"
+import { mapLayout, updateMapLayout } from "./mapLayout.ts"
 import { Panel } from "./Panel.tsx"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { panelTitle } from "./commands.ts"
@@ -75,23 +74,68 @@ function retainedFor(app: ViewerApp, key: string): Retained {
     return entry
 }
 
-export function MapPanel({ app }: { app: ViewerApp }) {
-    const [layout, setLayout] = useState(() => loadMapLayout())
-    const update = (patch: Partial<MapLayout>) =>
-        setLayout((old) => {
-            const next = { ...old, ...patch }
-            writeLocal(LAYOUT_KEY, next)
-            return next
-        })
+/** The map's topics as the panel sees them: the base, the costmap over it, and what each could be. */
+function useMapTopics(app: ViewerApp) {
+    const layout = useStore(mapLayout)
     const { topics: live } = useStore(app.connection.status)
     if (!seenTopics.has(app)) {
         seenTopics.set(app, new Map())
     }
     const topics = rememberTopics(seenTopics.get(app)!, live, Date.now(), Infinity)
     const topic = chooseMapTopic(topics, layout.topic)
-    const overlay = chooseOverlay(topics, layout.overlay, topic)
-    const candidates = mapCandidates(topics)
-    const grids = overlayCandidates(topics).filter((grid) => grid.key !== topic?.key)
+    return {
+        layout,
+        topic,
+        overlay: chooseOverlay(topics, layout.overlay, topic),
+        candidates: mapCandidates(topics),
+        grids: overlayCandidates(topics).filter((grid) => grid.key !== topic?.key),
+    }
+}
+
+const topicName = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
+
+/**
+ * The map's choices: its topic, the costmap over it and the TF frame it follows. The same fields (the same setting) in
+ * the map's cog menu and in Settings → Map; `frames` are the TF frames to offer.
+ */
+export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: string[] }) {
+    const { layout, topic, overlay, candidates, grids } = useMapTopics(app)
+    const label = topic ? topicName(topic) : "no map on the bus"
+    return (
+        <>
+            <label className="map-setting">
+                <span>Map</span>
+                {candidates.length > 1
+                    ? (
+                        <select className="dim-select map-topic" value={layout.topic} onChange={(event) => updateMapLayout({ topic: event.target.value })} aria-label="Map topic">
+                            <option value="">auto ({label})</option>
+                            {candidates.map((other) => <option key={other.key} value={other.key}>{topicName(other)}</option>)}
+                        </select>
+                    )
+                    : <span className="map-source">{label}</span>}
+            </label>
+            {grids.length > 0 && (
+                <label className="map-setting">
+                    <span>Costmap</span>
+                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => updateMapLayout({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
+                        <option value="">none</option>
+                        {grids.map((grid) => <option key={grid.key} value={grid.key}>{grid.name}</option>)}
+                    </select>
+                </label>
+            )}
+            <label className="map-setting">
+                <span>Follow</span>
+                <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => updateMapLayout({ followFrame: event.target.value })} aria-label="Frame the map follows" title="The TF frame the map follows">
+                    {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
+                </select>
+            </label>
+        </>
+    )
+}
+
+export function MapPanel({ app }: { app: ViewerApp }) {
+    const { layout, topic, overlay } = useMapTopics(app)
+    const update = updateMapLayout
     const canvas = useRef<HTMLCanvasElement>(null)
     const renderer = useRef<MapRenderer | null>(null)
     const [status, setStatus] = useState<MapStatus>({ info: "", problem: "", empty: true })
@@ -128,8 +172,6 @@ export function MapPanel({ app }: { app: ViewerApp }) {
         renderer.current?.setTopics(topic, overlay)
     }, [topic?.key, overlay?.key, open])
 
-    const name = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
-    const label = topic ? name(topic) : "no map on the bus"
     const recenter = () => renderer.current?.recenter()
     const fit = () => renderer.current?.fit()
     const followTitle = follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`
@@ -159,7 +201,7 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                     <canvas ref={canvas} className="map-canvas" aria-label="Top-down map" />
                     {status.problem && <div className={status.empty ? "map-empty" : "map-problem"} data-testid={status.empty ? "map-empty" : undefined}>{status.problem}</div>}
                     {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
-                    <div className="map-controls">
+                    <div className="map-controls panel-chrome">
                         <button ref={cog} type="button" className={`dim-btn icon map-control map-settings ${settingsOpen ? "on" : ""}`} aria-haspopup="menu" aria-expanded={settingsOpen} title="Map settings: topic, costmap, frame to follow, fit" aria-label="Map settings" onClick={() => setSettingsOpen(!settingsOpen)}>
                             <Icon name="settings" size={15} />
                         </button>
@@ -174,32 +216,7 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                     )}
                     {settingsOpen && (
                         <MapSettings anchor={cog.current} onClose={() => setSettingsOpen(false)}>
-                            <label className="map-setting">
-                                <span>Map</span>
-                                {candidates.length > 1
-                                    ? (
-                                        <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
-                                            <option value="">auto ({label})</option>
-                                            {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
-                                        </select>
-                                    )
-                                    : <span className="map-source">{label}</span>}
-                            </label>
-                            {grids.length > 0 && (
-                                <label className="map-setting">
-                                    <span>Costmap</span>
-                                    <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
-                                        <option value="">none</option>
-                                        {grids.map((grid) => <option key={grid.key} value={grid.key}>{grid.name}</option>)}
-                                    </select>
-                                </label>
-                            )}
-                            <label className="map-setting">
-                                <span>Follow</span>
-                                <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
-                                    {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
-                                </select>
-                            </label>
+                            <MapChoiceFields app={app} frames={frames} />
                             <button type="button" className="dim-btn sm map-fit" title="Fit the whole map" onClick={fit}>
                                 <Icon name="fit" size={14} />Fit the whole map
                             </button>

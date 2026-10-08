@@ -71,8 +71,11 @@ One arrangement, made of panels:
 Every panel has the same header, its buttons in the same place, shown while the panel is hovered (always on a touch
 screen): collapse / expand, make it the main view (swap: the main view's panel takes its place), pop out / dock. There's
 no close: collapse a panel instead, and the others in its rail take its height. A collapsed panel stops its stream (the
-3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. The map's
-topic, costmap, followed frame and fit sit behind the cog over its corner. Drag a header into a rail (it goes in at the
+3D view unsubscribes every layer, a camera its video, the map its topics); expanded, it subscribes again. A panel's
+own in-panel buttons (a camera's topic tabs and gear, the 3D view's follow and point clouds, the map's cog and follow)
+show while it's hovered (on touch, for a few seconds after a tap on it). The map's topic, costmap, followed frame and
+fit sit behind its cog; the topic, costmap and frame are also in Settings → Map (the same setting), and the 3D view's
+follow frame in Settings → 3D view. Drag a header into a rail (it goes in at the
 pointer's height), onto the main view's middle (swap), or anywhere else to float; a floating panel's edges snap to the
 main view, the rails and the other floating panels, and it resizes from its corner. Splitters share a rail's height, a
 rail's edge sets its width. The arrangement is this device's (`lv.workspace` in localStorage); the palette's "Reset the

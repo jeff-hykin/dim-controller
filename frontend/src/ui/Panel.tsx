@@ -1,10 +1,11 @@
 // Every panel's frame, the same everywhere: a header (its icon and title, a live note, then its buttons in the same
 // place on every panel: collapse / expand, make it the main view, pop out / dock; shown while the panel is hovered, and
-// always on a touch screen), an optional row of the panel's own tools, and its body. The workspace (ui/Workspace.tsx)
+// always on a touch screen), an optional row of the panel's own tools over the top of its body (like its other in-panel
+// buttons, .panel-chrome: shown while the panel is hovered, on touch for a few seconds after a tap), and its body. The workspace (ui/Workspace.tsx)
 // gives it its box; dragging the header moves it (rails, main view, floating; ui/workspace.ts snaps it), a double-click
 // on the header collapses it (on the main view: focus), and a floating panel resizes from its corner. Hidden (a shut
 // drawer, a rail hidden by focus) it stays mounted, so its element is never rebuilt.
-import { type ReactNode, useRef } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Icon } from "./icons.tsx"
 import { panelActions, type PanelAction } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
@@ -16,6 +17,9 @@ const ACTION_ICONS: Record<PanelAction, (state: { collapsed: boolean; floating: 
     main: () => "main",
     popout: ({ floating }) => floating ? "dock" : "float",
 }
+
+/** how long a tap keeps a panel's in-panel buttons shown */
+const TOUCH_SHOW_MS = 4000
 
 export function Panel({ id, title, icon, info, tools, children, className = "", bodyClassName = "", testid, onBodyClick }: {
     id: string
@@ -33,6 +37,17 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
 }) {
     const api = useWorkspaceApi()
     const element = useRef<HTMLDivElement>(null)
+    // touch has no hover: a tap on the panel shows its in-panel buttons (.panel-chrome) for a few seconds
+    const [touched, setTouched] = useState(false)
+    const untouch = useRef<ReturnType<typeof setTimeout>>(undefined)
+    useEffect(() => () => clearTimeout(untouch.current), [])
+    const onTouch = (event: { pointerType: string }) => {
+        if (event.pointerType !== "mouse") {
+            setTouched(true)
+            clearTimeout(untouch.current)
+            untouch.current = setTimeout(() => setTouched(false), TOUCH_SHOW_MS)
+        }
+    }
     const slot = api.layout.slots[id]
     if (!slot) {
         return null
@@ -41,7 +56,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
     const floating = slot.zone === "float"
     const states = panelActions(api.arrangement, id, { mobile: api.mobile })
     const fromControl = (target: EventTarget) => !!(target as HTMLElement).closest("button, select, input, label, textarea, [role=tab]")
-    const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", className]
+    const classes = ["lv-panel", `zone-${slot.zone}`, slot.collapsed ? "collapsed" : "", slot.hidden ? "hidden" : "", touched ? "touched" : "", className]
     return (
         <section
             ref={element}
@@ -51,6 +66,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
             data-testid={testid}
             aria-hidden={slot.hidden || undefined}
             aria-label={title}
+            onPointerDownCapture={onTouch}
         >
             <header
                 className="panel-head"
@@ -76,7 +92,7 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                     ))}
                 </span>
             </header>
-            {tools && !slot.collapsed && <div className="panel-tools">{tools}</div>}
+            {tools && !slot.collapsed && <div className="panel-tools panel-chrome">{tools}</div>}
             <div className={`panel-content ${bodyClassName}`} onClick={onBodyClick}>{children}</div>
             {floating && !slot.collapsed && !api.mobile && (
                 <div

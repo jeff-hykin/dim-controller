@@ -313,7 +313,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             <canvas ref={overlayCanvas} className="camera-overlay" />
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{tabs.length ? "Pick a camera above" : "No camera on the bus yet"}</span></div>}
             {topic && !depth && (
-                <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+                <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
                     <button ref={gear} type="button" className="dim-btn icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
                         <Icon name="settings" size={14} />
                     </button>

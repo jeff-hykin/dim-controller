@@ -1,4 +1,5 @@
-// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
+// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), the map's choices (the same
+// setting as the map's cog), the 3D view's follow frame (the same as its follow button follows), then rendering.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
@@ -13,6 +14,7 @@ import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
 import { useEffect, useState } from "react"
 import { useTfFrames } from "./useTfFrames.ts"
+import { MapChoiceFields } from "./MapPanel.tsx"
 import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -20,6 +22,8 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const render = useStore(rendering)
     const robot = useStore(app.robot)
     const current = profiles.find((profile) => profile.type === robot.type)
+    // the TF frames to offer for following (the map's and the 3D view's), refreshed while shown
+    const frames = useTfFrames(app)
     return (
         <div className="settings-panel">
             <div className="field-block robot-type" data-testid="robot-type">
@@ -57,6 +61,17 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                         </Field>
                     </section>
                 )}
+            <section className="settings-section" data-section="map">
+                <h3 className="dim-label">Map</h3>
+                <div className="map-settings-fields">
+                    <MapChoiceFields app={app} frames={frames} />
+                </div>
+            </section>
+            <section className="settings-section" data-section="scene">
+                <h3 className="dim-label">3D view</h3>
+                <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
+                <FollowFramePicker app={app} frames={frames} />
+            </section>
             <h3 className="dim-label">Rendering</h3>
             <div className="field-block">
                 <span className="field-label">Point style</span>
@@ -70,11 +85,9 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     ))}
                 </span>
             </Field>
-            <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button (top right) resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
-            <FollowFramePicker app={app} />
             <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
+            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
         </div>
     )
 }
@@ -109,13 +122,12 @@ function MaxLatencyInput({ app }: { app: ViewerApp }) {
 }
 
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
-function FollowFramePicker({ app }: { app: ViewerApp }) {
+function FollowFramePicker({ app, frames }: { app: ViewerApp; frames: string[] }) {
     const view = useStore(app.settings)
-    const frames = useTfFrames(app)
     const base = app.profile.baseFrame
     const others = followFrameOptions(frames, view.followFrame || base).filter(({ frame }) => frame !== base)
     return (
-        <Field label="Follow frame">
+        <Field label="Follow frame" hint="the 3D view's follow button follows this frame">
             <select className="dim-select" aria-label="Frame to follow" value={view.followFrame === app.profile.baseFrame ? "" : view.followFrame} onChange={(event) => app.settings.update({ followFrame: event.target.value })}>
                 <option value="">robot ({base}){frames.includes(base) ? "" : " (waiting)"}</option>
                 {others.map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
