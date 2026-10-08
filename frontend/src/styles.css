@@ -434,7 +434,7 @@ h3.dim-label.first { margin-top: 4px; }
 .hud-center { position: relative; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: flex-end; padding: 0 0 16px; min-width: 0; }
 /* the live velocity: above the sticks on a portrait phone (the center column is narrow), under FAST in landscape */
 .hud-note { font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.drive-hud.mobile .hud-note { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); max-width: 92vw; background: color-mix(in srgb, var(--card) 88%, transparent); color: var(--fg); }
+.drive-hud.mobile .hud-note { position: static; max-width: 100%; white-space: normal; text-align: center; background: none; border: 0; color: var(--muted-fg); }
 .app .drive-hud.mobile .stop-button { width: 100%; height: 72px; padding: 0; font: 800 20px var(--sans); letter-spacing: 0.08em;
     color: var(--primary-fg); background: var(--lv-stop); border: 2px solid color-mix(in srgb, var(--fg) 85%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--lv-stop) 55%, transparent); touch-action: manipulation; }
 .app .drive-hud.mobile .stop-button:active, .app .drive-hud.mobile .stop-button:hover { background: var(--lv-stop-hover); box-shadow: 0 0 20px var(--lv-over-video); }

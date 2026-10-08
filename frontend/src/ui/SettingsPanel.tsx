@@ -40,9 +40,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <p className="hint" data-testid="robot-type-reason">
                     {robot.auto ? `Auto: ${robot.reason}.` : "Picked here; Auto follows what's running."} Sets the keys, speeds, the drive or arm controls and the model in the view.
                 </p>
-                <p className="hint" data-testid="robot-icon-credits">
-                    Icons after Izwar Muis's "Humanoid robot" and "robot dog" and rukanicon's "Robotics" (Noun Project, CC BY 3.0, modified) and Tabler's drone (MIT); see the README's Credits.
-                </p>
             </div>
             {robot.type === "arm"
                 ? (

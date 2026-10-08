@@ -11,9 +11,6 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     useStore(app.connection.status)
     const candidates = drive.candidates()
     const usesVertical = Object.values(app.profile.drive.keys).some((action) => "axis" in action && action.axis === "vertical")
-    const keyNames = Object.entries(app.profile.drive.keys)
-        .filter(([code]) => !code.startsWith("Arrow"))
-        .map(([code, action]) => `${code.replace(/^Key/, "")} ${"axis" in action ? `${action.axis} ${action.value > 0 ? "+" : "−"}` : `${action.control} ${(action.step ?? 0) > 0 ? "+" : "−"}`}`)
     return (
         <div className="drive-panel">
             <Field
@@ -49,7 +46,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             <Field label="Angular"><Slider min={0.05} max={3} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => drive.settings.update({ angular })} /></Field>
             {usesVertical && <Field label="Vertical"><Slider min={0.05} max={2} step={0.05} value={settings.vertical} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}
             <p className="hint">
-                Shift: ×{app.profile.drive.boost.linear} linear, ×{app.profile.drive.boost.angular} turning · Space: stop · {keyNames.join(" · ")}
+                Shift: ×{app.profile.drive.boost.linear} linear, ×{app.profile.drive.boost.angular} turning · Space: stop · <kbd>?</kbd> lists every key
             </p>
             {app.profile.controls.length > 0 && (
                 <section className="controls">
