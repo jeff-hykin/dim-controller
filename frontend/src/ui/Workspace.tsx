@@ -156,7 +156,7 @@ function useFrame(mobile: boolean): Frame {
         const bars = new ResizeObserver(again)
         const watched = new Set<Element>()
         const watch = () => {
-            for (const element of document.querySelectorAll(".action-dock, .drive-hud.mobile")) {
+            for (const element of document.querySelectorAll(".action-dock, .drive-hud.mobile, .phone-corners")) {
                 if (!watched.has(element)) {
                     watched.add(element)
                     bars.observe(element)
@@ -183,8 +183,8 @@ function useFrame(mobile: boolean): Frame {
     return {
         width: innerWidth,
         height,
-        // nothing across the top: the panels start at the window's top edge
-        top: 0,
+        // nothing across the top: the panels start at the window's top edge (a phone: below its corner buttons)
+        top: mobile ? document.querySelector(".phone-corners")?.getBoundingClientRect().bottom ?? 0 : 0,
         bottom: dock ?? height - px("--dim-inset-bottom", 0),
         mobile,
     }
