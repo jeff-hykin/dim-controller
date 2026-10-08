@@ -9,7 +9,7 @@ const dog: RobotProfile = {
     fixedFrame: "",
     drive: {
         cmdVelTopics: ["/tele_cmd_vel", "/cmd_vel"],
-        speeds: { linear: 0.5, angular: 0.8, vertical: 0 },
+        speeds: { linear: 0.5, angular: 2.3, vertical: 0 },
         boost: { linear: 2, angular: 0.5 },
         publishHz: 20,
         deadmanMs: 400,
