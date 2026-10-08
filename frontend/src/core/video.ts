@@ -89,11 +89,8 @@ export class VideoSources {
             return
         }
         source.quality.set({ quality })
-        // open before closing: the old subscription still holds its transceiver, so the new one gets another (the
-        // gateway frees a track only once its send loop ends; one handed straight back was "in use" and never showed)
-        const stopOld = source.stop
+        source.stop()
         this.#open(topic, source)
-        stopOld()
     }
 
     /** A muted, playing <video> of the stream (not in the document), for VideoTexture. */

@@ -7,8 +7,8 @@ import { useStore } from "../core/store.ts"
 import { emptyState, type EmptyStateOptions } from "../dim-app/source/desktop.js"
 import { takesVelocity } from "../core/cmdvel.ts"
 
-const LAUNCH_DRIVABLE = { kind: "blueprint" as const, stream: "cmd_vel" }
-const LAUNCH_ARM = { kind: "blueprint" as const, stream: "joint_command" }
+const LAUNCH_DRIVABLE = { stream: "cmd_vel" }
+const LAUNCH_ARM = { stream: "joint_command" }
 const REPLAY_HINT = "No robot? Turn on replay in the Launcher to drive a recorded one."
 /** A lost connection is usually Desktop restarting or a network blip that heals by itself: warn only past this. */
 const LOST_WARN_AFTER_MS = 8000

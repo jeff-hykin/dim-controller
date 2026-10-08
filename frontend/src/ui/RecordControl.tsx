@@ -197,7 +197,7 @@ function RecordOptions({ app, error, onClose }: { app: ViewerApp; error: string 
                         <div className="dim-alert-title">Nothing to record yet</div>
                         Launch a blueprint (or a replay) and its topics show up here to record.
                         <div>
-                            <button type="button" className="dim-btn sm" onClick={() => openApp("launcher", { kind: "blueprint" })}>Open the Launcher</button>
+                            <button type="button" className="dim-btn sm" onClick={() => openApp("launcher")}>Open the Launcher</button>
                         </div>
                     </div>
                 </div>

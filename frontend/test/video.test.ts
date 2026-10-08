@@ -5,10 +5,10 @@ import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/cor
 import type { Connection, SubscribeOptions } from "../src/core/transport.ts"
 
 function fakeConnection() {
-    const subscriptions: { key: string; options: SubscribeOptions; open: boolean; openBefore: number }[] = []
+    const subscriptions: { key: string; options: SubscribeOptions; open: boolean }[] = []
     const connection = {
         subscribe(key: string, options: SubscribeOptions) {
-            const entry = { key, options, open: true, openBefore: subscriptions.filter((other) => other.open).length }
+            const entry = { key, options, open: true }
             subscriptions.push(entry)
             return () => (entry.open = false)
         },
@@ -27,7 +27,6 @@ Deno.test("a color camera subscribes with the viewer's preset; changing it reope
     assertEquals(subscriptions[0].options, { delivery: "latest", encoding: "dimos_lcm_image" }, "balanced: the gateway's defaults at the camera's rate")
     sources.setQuality(camera, "latency")
     assertEquals(subscriptions[0].open, false)
-    assertEquals(subscriptions[1].openBefore, 1, "the new subscription opens before the old one closes (else the gateway may refuse the reused track)")
     const latency = QUALITY_PRESETS.find((preset) => preset.id === "latency")!.options
     assertEquals(subscriptions[1].options, { delivery: "latest", ...latency, encoding: "dimos_lcm_image" })
     assertEquals(source.quality.get().quality, "latency")

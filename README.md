@@ -321,4 +321,4 @@ nix build .#dimosApp                           # what Desktop builds: bin/dimos-
 
 `server/` is the app's `dimos-app-server` (Desktop's app contract): it serves the built page and every endpoint
 under `/apps/<name>/`, and talks zenoh itself only to record, find topics and drive. The page reaches Desktop's zenoh-gateway at
-`../../zenoh-gateway`; its client is vendored at the commit Desktop embeds (`frontend/src/vendor/zenoh_gateway`, 0.5.0 @ 28c17f0).
+`../../zenoh-gateway`; its client is vendored from zenoh-gateway at 097bc12 (`frontend/src/vendor/zenoh_gateway`; gateway 0.5.1, what Desktop runs; a fresh transceiver per video subscription).
