@@ -1,18 +1,24 @@
 // The 2D map: a floating, collapsible, top-down panel (north-up: +x right, +y up) with the bus's global map (an
 // accumulated point cloud, as a height heatmap) or any other cloud or occupancy grid, optionally a costmap laid over
 // it, the robot's pose, heading and trail, the world axes and a scale bar. View-only: wheel / pinch zoom and drag pan
-// move the picture, never the robot. Redrawn only when something changed (new data, the robot moved, a zoom or pan, a
-// resize, the theme).
+// move the picture, never the robot. It follows a TF frame (base_link unless picked) until the viewer pans; a zoom keeps
+// following, re-center (or a double-click) resumes it. Like the 3D view's layers, it keeps each topic's last message for
+// the page's life (a collapse, a reopen or a topic missing from discovery never blanks it). Redrawn only when something
+// changed (new data, the robot moved, a zoom or pan, a resize, the theme).
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { decode, headerFrameId, type LcmValue } from "../core/lcm/lcm.ts"
 import { poseMatrix } from "../core/layers/helpers.ts"
-import { readLocal, writeLocal } from "../core/videoQuality.ts"
+import { writeLocal } from "../core/videoQuality.ts"
+import { rememberTopics } from "../core/transport.ts"
 import {
     chooseMapTopic,
     chooseOverlay,
+    DEFAULT_FOLLOW_FRAME,
+    followFrameOptions,
+    MapFollow,
     fitView,
     floorPose,
     formatMeters,
@@ -30,60 +36,53 @@ import {
     type ProjectedCloud,
     type Rgba,
     Trail,
+    wheelGesture,
     worldToScreen,
     zoomAt,
 } from "../core/map2d.ts"
 import { Icon } from "./icons.tsx"
 import { clampPanelBox, startPanelDrag } from "./panelDrag.ts"
+import { LAYOUT_KEY, loadMapLayout, type MapLayout, MIN_HEIGHT, MIN_WIDTH, viewport } from "./mapLayout.ts"
 
-/** what this viewer remembers about the panel (localStorage: a phone and a desktop each keep their own) */
-interface MapLayout {
-    collapsed: boolean
-    /** fills the area under the top bar */
-    full: boolean
-    /** -1: the default corner */
-    x: number
-    y: number
-    width: number
-    height: number
-    /** the base map: "" = the best on the bus (the global map) */
-    topic: string
-    /** a costmap drawn over the base: "" = none (the default) */
-    overlay: string
-    follow: boolean
-    view: MapView | null
+/** every map topic this page has seen (the 3D view's layers outlive discovery the same way): a 0.5 Hz map that misses a
+ * discovery round, or drops off for a while, stays the map instead of the panel falling back to /lidar */
+const seenTopics = new WeakMap<ViewerApp, Map<string, { topic: Topic; at: number }>>()
+
+/** each topic's last message (decoded), kept for the page's life so a reopened panel or a re-picked topic shows it at once */
+interface Retained {
+    grid?: GridData
+    gridInfo?: string
+    cloudFrame?: string
+    cloudPositions?: Float32Array
+    cloudMatrix?: number[]
+    cloudInfo?: string
 }
-
-const LAYOUT_KEY = "lv.map2d"
-const HEAD_PX = 33
-const MIN_WIDTH = 200, MIN_HEIGHT = 150
-const viewport = () => ({ width: globalThis.innerWidth || 0, height: globalThis.innerHeight || 0 })
-
-/** The remembered layout, every field checked: a broken or stale entry never hides the panel. */
-function loadLayout(mobile: boolean, saved: Partial<MapLayout> = readLocal<Partial<MapLayout>>(LAYOUT_KEY, {})): MapLayout {
-    const defaults: MapLayout = { collapsed: mobile, full: false, x: -1, y: -1, width: 320, height: 320 + HEAD_PX, topic: "", overlay: "", follow: true, view: null }
-    const flag = (value: unknown, fallback: boolean) => typeof value === "boolean" ? value : fallback
-    const text = (value: unknown) => typeof value === "string" ? value : ""
-    return {
-        ...clampPanelBox(saved ?? {}, defaults, viewport(), { width: MIN_WIDTH, height: MIN_HEIGHT }),
-        collapsed: flag(saved?.collapsed, defaults.collapsed),
-        full: flag(saved?.full, false),
-        topic: text(saved?.topic),
-        overlay: text(saved?.overlay),
-        follow: flag(saved?.follow, true),
-        view: isValidView(saved?.view) ? saved.view : null,
+const retained = new WeakMap<ViewerApp, Map<string, Retained>>()
+function retainedFor(app: ViewerApp, key: string): Retained {
+    let topics = retained.get(app)
+    if (!topics) {
+        retained.set(app, topics = new Map())
     }
+    let entry = topics.get(key)
+    if (!entry) {
+        topics.set(key, entry = {})
+    }
+    return entry
 }
 
 export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
-    const [layout, setLayout] = useState(() => loadLayout(mobile))
+    const [layout, setLayout] = useState(() => loadMapLayout())
     const update = (patch: Partial<MapLayout>) =>
         setLayout((old) => {
             const next = { ...old, ...patch }
             writeLocal(LAYOUT_KEY, next)
             return next
         })
-    const { topics } = useStore(app.connection.status)
+    const { topics: live } = useStore(app.connection.status)
+    if (!seenTopics.has(app)) {
+        seenTopics.set(app, new Map())
+    }
+    const topics = rememberTopics(seenTopics.get(app)!, live, Date.now(), Infinity)
     const topic = chooseMapTopic(topics, layout.topic)
     const overlay = chooseOverlay(topics, layout.overlay, topic)
     const candidates = mapCandidates(topics)
@@ -92,6 +91,10 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const canvas = useRef<HTMLCanvasElement>(null)
     const renderer = useRef<MapRenderer | null>(null)
     const [status, setStatus] = useState({ info: "", problem: "" })
+    const [follow, setFollow] = useState({ following: true, waiting: false })
+    const [frames, setFrames] = useState<string[]>([])
+    /** the last header press moved the panel (so its click isn't an "open") */
+    const dragged = useRef(false)
 
     // a smaller window: the panel moves and shrinks back onto it
     const [, setViewport] = useState(viewport)
@@ -107,9 +110,9 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         if (!open || !canvas.current) {
             return
         }
-        const created = new MapRenderer(app, canvas.current, layout.view, layout.follow, {
+        const created = new MapRenderer(app, canvas.current, layout.view, layout.followFrame, {
             onView: (view) => update({ view }),
-            onFollow: (follow) => update({ follow }),
+            onFollow: (next) => setFollow((old) => old.following === next.following && old.waiting === next.waiting ? old : next),
             onStatus: (next) => setStatus((old) => old.info === next.info && old.problem === next.problem ? old : next),
         })
         renderer.current = created
@@ -121,8 +124,22 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     }, [app, open])
 
     useEffect(() => {
-        renderer.current?.setFollow(layout.follow)
-    }, [layout.follow, open])
+        renderer.current?.setFollowFrame(layout.followFrame)
+    }, [layout.followFrame, open])
+
+    // the TF frames to offer for following, refreshed while open
+    useEffect(() => {
+        if (!open) {
+            return
+        }
+        const read = () => {
+            const next = app.tf.snapshot(app.viewer.fixedFrame).frames
+            setFrames((old) => old.length === next.length && old.every((frame, index) => frame === next[index]) ? old : next)
+        }
+        read()
+        const timer = setInterval(read, 1000)
+        return () => clearInterval(timer)
+    }, [app, open])
 
     useEffect(() => {
         renderer.current?.setTopics(topic, overlay)
@@ -132,7 +149,11 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         if (layout.full || mobile || (event.target as HTMLElement).closest("button, select")) {
             return
         }
-        startPanelDrag(event, element.current!, (x, y) => update({ x, y }))
+        dragged.current = false
+        startPanelDrag(event, element.current!, (x, y) => {
+            dragged.current = true
+            update({ x, y })
+        })
     }
 
     const startResize = (event: ReactPointerEvent) => {
@@ -170,8 +191,10 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     return (
         <div className="map-layer">
             <div ref={element} className={`dim-panel camera-panel map-panel ${open ? "open" : "collapsed"} ${layout.full && open ? "main" : ""}`} style={style}>
-                <div className="camera-head" onPointerDown={startDrag} onDoubleClick={(event) => open && !mobile && !(event.target as HTMLElement).closest("button, select") && update({ full: !layout.full })} title={status.info}>
-                    <span className="map-title"><Icon name="map" size={14} />Map</span>
+                <div className="camera-head" onPointerDown={startDrag} onDoubleClick={(event) => open && !mobile && !(event.target as HTMLElement).closest("button, select") && update({ full: !layout.full })} title={open ? status.info : "Show the 2D map (drag to move it)"}>
+                    {/* folded, a click on the title opens it (a drag moves it instead) */}
+                    <span className="map-title" onClick={() => !open && !dragged.current && update({ collapsed: false })}><Icon name="map" size={14} />Map</span>
+                    {!open && <span className="map-show" onClick={() => !dragged.current && update({ collapsed: false })}>show</span>}
                     {open && candidates.length > 1 && (
                         <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
                             <option value="">auto ({label})</option>
@@ -187,8 +210,13 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     )}
                     {open && <span className="camera-info">{status.info}</span>}
                     {open && (
+                        <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
+                            {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>follow {frame}{waiting ? " (waiting)" : ""}</option>)}
+                        </select>
+                    )}
+                    {open && (
                         <>
-                            <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={layout.follow} title={layout.follow ? "Following the robot (drag the map to stop)" : "Follow the robot"} onClick={() => update({ follow: !layout.follow })}>
+                            <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={follow.following} title={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()}>
                                 <Icon name="target" size={15} />
                             </button>
                             <button type="button" className="dim-btn icon icon-button" title="Fit the whole map" onClick={() => renderer.current?.fit()}>
@@ -209,6 +237,12 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     <div className="camera-body map-body">
                         <canvas ref={canvas} className="map-canvas" aria-label="Top-down map" />
                         {status.problem && <div className="map-problem">{status.problem}</div>}
+                        {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
+                        {!follow.following && (
+                            <button type="button" className="dim-btn map-recenter" title="Follow it again (or double-click the map)" onClick={() => renderer.current?.recenter()}>
+                                <Icon name="target" size={13} />Re-center on {layout.followFrame}
+                            </button>
+                        )}
                     </div>
                 )}
                 {open && !layout.full && !mobile && <div className="camera-resize right" title="Drag to resize" aria-label="Resize the map" onPointerDown={startResize} />}
@@ -304,7 +338,24 @@ class MapSource {
 
     constructor(readonly app: ViewerApp, readonly topic: Topic, readonly lut: () => Uint8ClampedArray, readonly changed: () => void) {
         const connection = app.connection
+        const kept = retainedFor(app, topic.key)
         this.problem = `waiting for ${topic.name}`
+        // the last message from before (a collapse, another pick, a discovery gap): drawn now, replaced by the next one
+        if (kept.grid) {
+            this.grid = kept.grid
+            this.info = kept.gridInfo ?? ""
+            this.problem = ""
+        }
+        if (kept.cloudFrame !== undefined) {
+            this.#cloudFrame = kept.cloudFrame
+        }
+        if (kept.cloudPositions && kept.cloudMatrix) {
+            this.#cloudPositions = kept.cloudPositions
+            this.#cloudMatrix = kept.cloudMatrix
+            this.info = kept.cloudInfo ?? ""
+            this.problem = ""
+        }
+        this.rebuild()
         if (isGridTopic(topic)) {
             this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 2 }, (message) => {
                 let grid: LcmValue
@@ -319,16 +370,17 @@ class MapSource {
                     this.#status(this.info, `${topic.name}: empty or truncated grid`)
                     return
                 }
-                this.grid = { width, height, resolution, origin, data: grid.data, frame: grid.header?.frame_id ?? "" }
+                this.grid = kept.grid = { width, height, resolution, origin, data: grid.data, frame: grid.header?.frame_id ?? "" }
                 this.gridPose = null
                 this.rebuild()
-                this.#status(`${width}×${height} @ ${resolution.toFixed(2)} m`, "")
+                kept.gridInfo = `${width}×${height} @ ${resolution.toFixed(2)} m`
+                this.#status(kept.gridInfo, "")
             }))
             return
         }
         // a cloud: its frame from one raw message (the compact encoding drops the header), then 1 Hz compact clouds
         let frameStop: (() => void) | null = connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
-            this.#cloudFrame = headerFrameId(topic.type, message.bytes) ?? ""
+            this.#cloudFrame = kept.cloudFrame = headerFrameId(topic.type, message.bytes) ?? ""
             frameStop?.()
             frameStop = null
         })
@@ -343,10 +395,11 @@ class MapSource {
                 this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
                 return
             }
-            this.#cloudPositions = positions
-            this.#cloudMatrix = placed.elements.slice()
+            this.#cloudPositions = kept.cloudPositions = positions
+            this.#cloudMatrix = kept.cloudMatrix = placed.elements.slice()
             this.rebuild()
-            this.#status(`${Math.round(positions.length / 3).toLocaleString()} pts`, "")
+            kept.cloudInfo = `${Math.round(positions.length / 3).toLocaleString()} pts`
+            this.#status(kept.cloudInfo, "")
         }))
     }
 
@@ -433,7 +486,9 @@ class MapSource {
 class MapRenderer {
     #view: MapView
     #fitted: boolean
-    #follow: boolean
+    #follow: MapFollow
+    /** where the followed frame is on the floor, or null while it isn't in the TF tree */
+    #target: { x: number; y: number } | null = null
     #palette = themePalette()
     #base: MapSource | null = null
     #overlay: MapSource | null = null
@@ -445,14 +500,14 @@ class MapRenderer {
     #dragged = false
     #dispose: (() => void)[] = []
 
-    constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, follow: boolean, readonly events: {
+    constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, followFrame: string, readonly events: {
         onView(view: MapView): void
-        onFollow(follow: boolean): void
+        onFollow(follow: { following: boolean; waiting: boolean }): void
         onStatus(status: { info: string; problem: string }): void
     }) {
         this.#view = isValidView(view) ? view : { centerX: 0, centerY: 0, metersPerPixel: DEFAULT_METERS_PER_PIXEL }
         this.#fitted = isValidView(view)
-        this.#follow = follow
+        this.#follow = new MapFollow(followFrame)
         this.#dispose.push(app.viewer.onFrame(() => this.#eachFrame()))
         const theme = () => {
             this.#palette = themePalette()
@@ -471,6 +526,8 @@ class MapRenderer {
         this.#dispose.push(() => removeEventListener("resize", redraw))
         this.#listen()
         this.#report()
+        this.#target = this.#lookupTarget()
+        this.#reportFollow()
         this.requestDraw()
     }
 
@@ -481,11 +538,29 @@ class MapRenderer {
         this.#dispose.forEach((stop) => stop())
     }
 
-    setFollow(follow: boolean) {
-        this.#follow = follow
-        if (follow && this.#robot) {
-            this.#setView({ ...this.#view, centerX: this.#robot.x, centerY: this.#robot.y })
+    /** follows another TF frame (and resumes following: picking one means "show me that") */
+    setFollowFrame(frame: string) {
+        if (frame !== this.#follow.frame) {
+            this.#follow.frame = frame
+            this.#target = this.#lookupTarget()
+            this.recenter()
         }
+    }
+
+    /** resumes following and centers on the frame now (the zoom stays) */
+    recenter() {
+        this.#follow.recenter()
+        this.#setView(this.#follow.view(this.#view, this.#target))
+        this.#reportFollow()
+    }
+
+    #reportFollow() {
+        this.events.onFollow({ following: this.#follow.following, waiting: !this.#target })
+    }
+
+    #lookupTarget(): { x: number; y: number } | null {
+        const placed = this.app.tf.lookup(this.#follow.frame, this.app.viewer.fixedFrame)
+        return placed && this.app.tf.has(this.#follow.frame) ? floorPose(placed.elements) : null
     }
 
     /** the base map and the costmap over it (null: none); a source that didn't change keeps its data */
@@ -527,11 +602,23 @@ class MapRenderer {
             this.#robot = robot
             if (robot) {
                 this.#trail.push(robot.x, robot.y)
-                if (this.#follow || (!this.#fitted && !this.#bounds())) {
+                if (!this.#fitted && !this.#bounds()) {
                     this.#view = { ...this.#view, centerX: robot.x, centerY: robot.y }
                 }
             }
             this.requestDraw()
+        }
+        const target = this.#lookupTarget()
+        const before = this.#target
+        if (!target !== !before || (target && before && Math.hypot(target.x - before.x, target.y - before.y) > POSE_EPSILON)) {
+            this.#target = target
+            if (!target !== !before) {
+                this.#reportFollow()
+            }
+            if (this.#follow.following && target) {
+                this.#view = this.#follow.view(this.#view, target)
+                this.requestDraw()
+            }
         }
         // both run every frame (no short circuit): each keeps its own placement current
         const movedBase = this.#base?.place(fixedFrame) ?? false
@@ -556,7 +643,7 @@ class MapRenderer {
         const bounds = this.#bounds()
         const fitted = bounds && box.width >= 2 && box.height >= 2 ? fitView(bounds, box.width, box.height) : null
         if (fitted) {
-            this.#stopFollowing()
+            this.#pan()
             this.#setView(fitted)
         } else if (this.#robot) {
             this.#setView({ centerX: this.#robot.x, centerY: this.#robot.y, metersPerPixel: DEFAULT_METERS_PER_PIXEL })
@@ -595,12 +682,22 @@ class MapRenderer {
             event.preventDefault()
             const box = canvas.getBoundingClientRect()
             const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.height : 1
+            if (wheelGesture(event) === "pan") {
+                // shift turns a vertical wheel sideways in most browsers, but not all
+                const [dx, dy] = event.shiftKey && !event.deltaX ? [event.deltaY, 0] : [event.deltaX, event.deltaY]
+                this.#pan()
+                this.#setView(pan(this.#view, -dx * lines, -dy * lines))
+                return
+            }
             this.#zoom(Math.exp(-event.deltaY * lines * 0.0015), event.clientX - box.left, event.clientY - box.top)
         }
         const down = (event: PointerEvent) => {
             canvas.setPointerCapture(event.pointerId)
             this.#pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
             this.#dragged = false
+            if (this.#pointers.size === 2) {
+                this.#follow.pinchStart()
+            }
         }
         const move = (event: PointerEvent) => {
             const before = this.#pointers.get(event.pointerId)
@@ -613,11 +710,17 @@ class MapRenderer {
                 // pinch: zoom by the change in spread around the other finger, pan by the midpoint's move
                 const other = others[0]
                 const spreadBefore = Math.hypot(before.x - other.x, before.y - other.y), spreadAfter = Math.hypot(event.clientX - other.x, event.clientY - other.y)
-                const middleX = (event.clientX + other.x) / 2 - box.left, middleY = (event.clientY + other.y) / 2 - box.top
-                this.#stopFollowing()
-                let view = pan(this.#view, (event.clientX - before.x) / 2, (event.clientY - before.y) / 2)
+                const middleDx = (event.clientX - before.x) / 2, middleDy = (event.clientY - before.y) / 2
+                const wasFollowing = this.#follow.following
+                // a pinch zooms about the followed frame (still following) until its middle drifts: then it pans too
+                const pans = this.#follow.pinchPans(middleDx, middleDy)
+                if (wasFollowing && !this.#follow.following) {
+                    this.#reportFollow()
+                }
+                let view = pans ? pan(this.#view, middleDx, middleDy) : this.#view
                 if (spreadBefore > 10) {
-                    view = zoomAt(view, box.width, box.height, middleX, middleY, spreadAfter / spreadBefore)
+                    const [anchorX, anchorY] = this.#follow.zoomAnchor(view, box.width, box.height, (event.clientX + other.x) / 2 - box.left, (event.clientY + other.y) / 2 - box.top, this.#target)
+                    view = zoomAt(view, box.width, box.height, anchorX, anchorY, spreadAfter / spreadBefore)
                 }
                 this.#setView(view)
             } else {
@@ -626,7 +729,7 @@ class MapRenderer {
                     return
                 }
                 this.#dragged = true
-                this.#stopFollowing()
+                this.#pan()
                 this.#setView(pan(this.#view, dx, dy))
             }
             this.#pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
@@ -634,7 +737,7 @@ class MapRenderer {
         const up = (event: PointerEvent) => {
             this.#pointers.delete(event.pointerId)
         }
-        const doubleClick = () => this.fit()
+        const doubleClick = () => this.recenter()
         canvas.addEventListener("wheel", wheel, { passive: false })
         canvas.addEventListener("pointerdown", down)
         canvas.addEventListener("pointermove", move)
@@ -651,20 +754,18 @@ class MapRenderer {
         })
     }
 
-    #stopFollowing() {
-        if (this.#follow) {
-            this.#follow = false
-            this.events.onFollow(false)
+    /** the viewer moved the map: stop following */
+    #pan() {
+        if (this.#follow.pan()) {
+            this.#reportFollow()
         }
     }
 
-    /** zooms about a point; following, about the robot (so it stays centered) */
+    /** zooms about a point; following, about the followed frame (so it stays centered) */
     #zoom(factor: number, sx: number, sy: number) {
         const box = this.canvas.getBoundingClientRect()
-        if (this.#follow && this.#robot) {
-            ;[sx, sy] = worldToScreen(this.#view, box.width, box.height, this.#robot.x, this.#robot.y)
-        }
-        this.#setView(zoomAt(this.#view, box.width, box.height, sx, sy, factor))
+        const [anchorX, anchorY] = this.#follow.zoomAnchor(this.#view, box.width, box.height, sx, sy, this.#target)
+        this.#setView(zoomAt(this.#view, box.width, box.height, anchorX, anchorY, factor))
     }
 
     #draw() {
@@ -684,7 +785,7 @@ class MapRenderer {
         const bounds = this.#fitted ? null : this.#bounds()
         const fitted = bounds && fitView(bounds, width, height)
         if (fitted) {
-            this.#view = this.#follow && this.#robot ? { centerX: this.#robot.x, centerY: this.#robot.y, metersPerPixel: fitted.metersPerPixel } : fitted
+            this.#view = this.#follow.following && this.#target ? this.#follow.view(fitted, this.#target) : fitted
             this.#fitted = true
         }
         const context = canvas.getContext("2d")!

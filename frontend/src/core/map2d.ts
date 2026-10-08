@@ -34,6 +34,78 @@ export function pan(view: MapView, dx: number, dy: number): MapView {
     return { ...view, centerX: view.centerX - dx * view.metersPerPixel, centerY: view.centerY + dy * view.metersPerPixel }
 }
 
+/** the TF frame the map follows unless the viewer picks another */
+export const DEFAULT_FOLLOW_FRAME = "base_link"
+/** how far (CSS px) a pinch's middle drifts before the pinch counts as a pan, not just a zoom */
+export const PINCH_PAN_SLOP_PX = 12
+
+/** A wheel event as a zoom (a mouse wheel, a trackpad pinch, a vertical scroll) or a pan (sideways, or with shift). */
+export function wheelGesture(event: { deltaX: number; deltaY: number; ctrlKey: boolean; shiftKey: boolean }): "zoom" | "pan" {
+    if (event.ctrlKey) {
+        return "zoom"
+    }
+    return event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY) ? "pan" : "zoom"
+}
+
+/**
+ * Whether the view follows a TF frame. Following is the default (and is never remembered: a reload follows again);
+ * any pan (drag, sideways wheel, a pinch whose middle moves) suspends it, a zoom alone keeps it (about the frame), and
+ * re-centering resumes it. A frame not in the TF tree yet ("waiting") leaves the view where it is.
+ */
+export class MapFollow {
+    following = true
+    #pinchDrift = 0
+
+    constructor(public frame = DEFAULT_FOLLOW_FRAME) {}
+
+    /** a drag, a wheel pan or a fit: true when that stopped following */
+    pan(): boolean {
+        const was = this.following
+        this.following = false
+        return was
+    }
+
+    /** true when that resumed following */
+    recenter(): boolean {
+        const was = this.following
+        this.following = true
+        return !was
+    }
+
+    pinchStart() {
+        this.#pinchDrift = 0
+    }
+
+    /** a pinch step whose middle moved (dx, dy): false while it's still only a zoom (following and within the slop) */
+    pinchPans(dx: number, dy: number): boolean {
+        if (!this.following) {
+            return true
+        }
+        this.#pinchDrift += Math.hypot(dx, dy)
+        if (this.#pinchDrift > PINCH_PAN_SLOP_PX) {
+            this.following = false
+            return true
+        }
+        return false
+    }
+
+    /** the view, centered on the target while following; unchanged without a target (waiting for its frame) */
+    view(view: MapView, target: { x: number; y: number } | null): MapView {
+        return this.following && target ? { ...view, centerX: target.x, centerY: target.y } : view
+    }
+
+    /** where a zoom at (sx, sy) is anchored: the target while following one (so it stays centered) */
+    zoomAnchor(view: MapView, width: number, height: number, sx: number, sy: number, target: { x: number; y: number } | null): [number, number] {
+        return this.following && target ? worldToScreen(view, width, height, target.x, target.y) : [sx, sy]
+    }
+}
+
+/** The frames to offer for following: the TF tree's, with the chosen one first marked waiting when it's not there yet. */
+export function followFrameOptions(frames: string[], chosen: string): { frame: string; waiting: boolean }[] {
+    const known = frames.map((frame) => ({ frame, waiting: false }))
+    return frames.includes(chosen) ? known : [{ frame: chosen, waiting: true }, ...known]
+}
+
 /** a fit never zooms in closer than this many meters across (a lone point or an empty map is not a reason to) */
 export const MIN_FIT_SPAN = 4
 

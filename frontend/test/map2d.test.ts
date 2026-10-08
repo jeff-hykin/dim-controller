@@ -3,6 +3,10 @@ import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import {
     chooseMapTopic,
     chooseOverlay,
+    DEFAULT_FOLLOW_FRAME,
+    followFrameOptions,
+    MapFollow,
+    wheelGesture,
     fitView,
     heatLut,
     isValidView,
@@ -21,6 +25,7 @@ import {
 } from "../src/core/map2d.ts"
 import { parseKey, rememberTopics, type Topic } from "../src/core/transport.ts"
 import { clampPanelBox, startPanelDrag } from "../src/ui/panelDrag.ts"
+import { loadMapLayout } from "../src/ui/mapLayout.ts"
 
 const topic = (name: string, type: string): Topic => parseKey(`dimos${name}/${type}`)!
 
@@ -205,4 +210,85 @@ Deno.test("a header drag leaves no inline right/bottom behind (they'd squash the
         globals.innerWidth = before[0]
         globals.innerHeight = before[1]
     }
+})
+
+Deno.test("follow: on by default (base_link); a pan suspends it, a zoom keeps it, a re-center resumes it", () => {
+    const follow = new MapFollow()
+    assertEquals([follow.following, follow.frame], [true, DEFAULT_FOLLOW_FRAME])
+    const view: MapView = { centerX: 0, centerY: 0, metersPerPixel: 0.05 }
+    const target = { x: 3, y: -2 }
+    assertEquals(follow.view(view, target), { centerX: 3, centerY: -2, metersPerPixel: 0.05 })
+    // a zoom while following is anchored on the target, wherever the cursor is
+    assertEquals(follow.zoomAnchor({ centerX: 3, centerY: -2, metersPerPixel: 0.05 }, 200, 100, 7, 9, target), [100, 50])
+    assert(follow.following)
+    assertEquals(follow.pan(), true)
+    assertEquals(follow.pan(), false)
+    assert(!follow.following)
+    assertEquals(follow.view(view, target), view)
+    assertEquals(follow.zoomAnchor(view, 200, 100, 7, 9, target), [7, 9])
+    assertEquals(follow.recenter(), true)
+    assertEquals(follow.recenter(), false)
+    assertEquals(follow.view(view, target).centerX, 3)
+})
+
+Deno.test("follow: a frame not in the tree yet (no target) leaves the view where it is", () => {
+    const follow = new MapFollow("odom")
+    const view: MapView = { centerX: 1, centerY: 1, metersPerPixel: 0.1 }
+    assertEquals(follow.view(view, null), view)
+    assertEquals(follow.zoomAnchor(view, 200, 100, 7, 9, null), [7, 9])
+    assert(follow.following)
+})
+
+Deno.test("follow: a pinch is a zoom until its middle drifts past the slop, then a pan", () => {
+    const follow = new MapFollow()
+    follow.pinchStart()
+    assertEquals(follow.pinchPans(3, 4), false)
+    assertEquals(follow.pinchPans(-3, -4), false)
+    assert(follow.following)
+    assertEquals(follow.pinchPans(0, 3), true)
+    assert(!follow.following)
+    // not following, every pinch step pans
+    follow.pinchStart()
+    assertEquals(follow.pinchPans(0, 0.5), true)
+    // a new pinch after a re-center starts from no drift
+    follow.recenter()
+    follow.pinchStart()
+    assertEquals(follow.pinchPans(0, 10), false)
+})
+
+Deno.test("wheel: vertical scrolls and trackpad pinches zoom, sideways or shift scrolls pan", () => {
+    const wheel = (deltaX: number, deltaY: number, ctrlKey = false, shiftKey = false) => wheelGesture({ deltaX, deltaY, ctrlKey, shiftKey })
+    assertEquals(wheel(0, 120), "zoom")
+    assertEquals(wheel(2, -30), "zoom")
+    assertEquals(wheel(40, 3), "pan")
+    assertEquals(wheel(0, 120, false, true), "pan")
+    assertEquals(wheel(40, 3, true), "zoom")
+})
+
+Deno.test("follow frame options: the tree's frames, the chosen one first and waiting when it isn't there", () => {
+    assertEquals(followFrameOptions(["base_link", "odom", "world"], "base_link").map((o) => o.frame), ["base_link", "odom", "world"])
+    assertEquals(followFrameOptions(["odom", "world"], "base_link"), [{ frame: "base_link", waiting: true }, { frame: "odom", waiting: false }, { frame: "world", waiting: false }])
+    assertEquals(followFrameOptions([], "base_link"), [{ frame: "base_link", waiting: true }])
+})
+
+Deno.test("layout: a first-time viewer gets the map folded; an open or a fold is remembered; following is not", () => {
+    const screen = { width: 1400, height: 900 }
+    const fresh = loadMapLayout({}, screen)
+    assertEquals([fresh.collapsed, fresh.followFrame], [true, DEFAULT_FOLLOW_FRAME])
+    assertEquals(loadMapLayout({ collapsed: false }, screen).collapsed, false)
+    assertEquals(loadMapLayout({ collapsed: true }, screen).collapsed, true)
+    assertEquals(loadMapLayout({ followFrame: "odom" }, screen).followFrame, "odom")
+    assertEquals(loadMapLayout({ followFrame: 7 } as never, screen).followFrame, DEFAULT_FOLLOW_FRAME)
+    // an old entry's follow: false doesn't survive a reload
+    assert(!("follow" in loadMapLayout({ follow: false } as never, screen)))
+})
+
+Deno.test("a folded map keeps its header on screen (inline-size containment would size it to 0 px wide)", () => {
+    const css = Deno.readTextFileSync(new URL("../src/styles.css", import.meta.url))
+    // .camera-panel (which the map panel also is) contains its inline size; a shrink-to-fit folded panel must opt out
+    assert(/\.camera-panel\s*\{[^}]*container-type:\s*inline-size/.test(css))
+    const folded = css.match(/\.map-panel\.collapsed\s*\{([^}]*)\}/)?.[1] ?? ""
+    assert(/width:\s*auto/.test(folded))
+    assert(/container-type:\s*normal/.test(folded), "a folded map panel must not contain its inline size")
+    assert(!/display:\s*none|(^|[;\s])width:\s*0|visibility:\s*hidden/.test(folded))
 })

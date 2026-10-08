@@ -449,13 +449,19 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* ── the 2D map: a floating top-down panel (ui/MapPanel.tsx), the camera panel's header, handle and fullscreen ── */
 .map-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
 .map-panel { position: absolute; left: calc(10px + var(--dim-inset-left)); top: 108px; background: var(--scene-bg, var(--bg)); }
-.map-panel.collapsed { height: auto; width: auto; min-width: 0; }
+/* folded: just the header, sized to it (inline-size containment, from .camera-panel, would make that 0 px wide: gone) */
+.map-panel.collapsed { height: auto; width: auto; min-width: 0; container-type: normal; border: 1px solid var(--border-strong); }
+.map-panel.collapsed .map-title { cursor: pointer; }
+.map-panel.collapsed .map-show { font: 11px var(--sans); color: var(--muted-fg); }
 .map-panel.collapsed .camera-head { cursor: move; }
 .desktop .map-panel.main .camera-head { padding-left: 160px; }
 .map-title { display: inline-flex; align-items: center; gap: 5px; flex: none; font: 600 11px var(--sans); color: var(--fg); padding-right: 2px; }
 .map-panel .camera-head .camera-info { flex: 1 1 auto; }
 .map-panel .camera-head .camera-info.map-source { text-align: left; }
 .map-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.map-recenter.dim-btn { position: absolute; right: 8px; bottom: 26px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    font: 11px var(--sans); background: color-mix(in srgb, var(--card) 88%, transparent); border-color: var(--primary); color: var(--fg); }
+.map-panel .camera-head .dim-select.map-frame { max-width: 28%; }
 .map-body { overflow: hidden; }
 .map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .map-canvas:active { cursor: grabbing; }
