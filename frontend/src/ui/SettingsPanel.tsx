@@ -1,4 +1,4 @@
-// Settings: the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
+// Settings: the layout, the robot type, then driving (or the arm panel, for an arm; it was its own tab), then the view.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
@@ -12,6 +12,8 @@ import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
 import { useEffect, useState } from "react"
+import { useTfFrames } from "./useTfFrames.ts"
+import { LAYOUTS, setLayoutMode, useLayout } from "./layout.ts"
 import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -21,6 +23,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const current = profiles.find((profile) => profile.type === robot.type)
     return (
         <div className="settings-panel">
+            <LayoutPicker />
             <div className="field-block robot-type" data-testid="robot-type">
                 <span className="field-label">Robot</span>
                 <div className="robot-type-row">
@@ -113,16 +116,7 @@ function MaxLatencyInput({ app }: { app: ViewerApp }) {
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
 function FollowFramePicker({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
-    const [frames, setFrames] = useState<string[]>([])
-    useEffect(() => {
-        const read = () => {
-            const next = app.tf.snapshot(app.viewer.fixedFrame).frames
-            setFrames((old) => old.length === next.length && old.every((frame, index) => frame === next[index]) ? old : next)
-        }
-        read()
-        const timer = setInterval(read, 1000)
-        return () => clearInterval(timer)
-    }, [app])
+    const frames = useTfFrames(app)
     const base = app.profile.baseFrame
     const others = followFrameOptions(frames, view.followFrame || base).filter(({ frame }) => frame !== base)
     return (
@@ -132,5 +126,24 @@ function FollowFramePicker({ app }: { app: ViewerApp }) {
                 {others.map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
             </select>
         </Field>
+    )
+}
+
+/** Settings → Layout: Classic or one of the docked arrangements (ui/layout.ts); every open page follows */
+function LayoutPicker() {
+    const { mode } = useLayout()
+    const current = LAYOUTS.find((layout) => layout.id === mode)!
+    return (
+        <div className="field-block layout-picker" data-testid="layout-picker">
+            <span className="field-label">Layout</span>
+            <span className="dim-tabs segmented layout-choices" role="radiogroup" aria-label="Layout">
+                {LAYOUTS.map((layout) => (
+                    <button type="button" key={layout.id} role="radio" data-layout={layout.id} className={`dim-tab ${mode === layout.id ? "on" : ""}`} aria-checked={mode === layout.id} title={layout.about} onClick={() => setLayoutMode(layout.id)}>
+                        {layout.label}
+                    </button>
+                ))}
+            </span>
+            <p className="hint" data-testid="layout-about">{current.about}</p>
+        </div>
     )
 }

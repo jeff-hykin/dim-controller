@@ -1,6 +1,6 @@
 // Edits how points look: style, size, color mode, gradient and range. Used by every layer that draws points.
 import { GRADIENTS, gradientCss } from "../core/render/gradients.ts"
-import { POINT_STYLES, type PointLook, type PointStyle } from "../core/render/pointMaterial.ts"
+import { POINT_STYLES, type PointLook } from "../core/render/pointMaterial.ts"
 import { rendering } from "../core/render/rendering.ts"
 import { useStore } from "../core/store.ts"
 import { StylePicker } from "./StylePicker.tsx"

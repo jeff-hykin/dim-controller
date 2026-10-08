@@ -49,11 +49,3 @@ export function NumberInput({ value, onChange, step = 0.1, placeholder }: { valu
         />
     )
 }
-
-export function IconButton({ title, onClick, active, children, className = "" }: { title: string; onClick: () => void; active?: boolean; children: ReactNode; className?: string }) {
-    return (
-        <button type="button" className={`dim-btn icon icon-button ${active ? "on" : ""} ${className}`} title={title} aria-label={title} onClick={onClick}>
-            {children}
-        </button>
-    )
-}

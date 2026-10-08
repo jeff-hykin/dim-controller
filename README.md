@@ -56,6 +56,21 @@ the viewer switches glow to cubes and says so in the top bar. Coloring is a grad
 accumulating, aged out in the shader), so a new scan costs one partial buffer upload. The view only redraws when
 something changed. Settings → Stats shows fps, CPU per frame and gateway-to-screen latency.
 
+## Layouts
+
+Settings → Layout picks how the page is arranged (saved as the `lv.layout` setting, so every open page follows):
+
+- **Classic** (the default): the 3D view fills the window; the camera and the 2D map float over it (drag, resize, fold).
+- **Cockpit**: the camera fills the window; the map and the 3D view are small insets over it, the drive keys sit
+  bottom-center and Settings slides over from the right.
+- **Split**: camera and 3D view as two equal halves (stacked when the space is taller than wide), the map and drive
+  keys in a rail on the left, Settings in a column on the right.
+- **Tiles**: equal tiles (camera, 3D, map, drive, status, settings); drag a tile's header onto another to swap them.
+
+In the docked layouts every panel has a maximize button (Escape gives it back), Record moves into the top bar, and the
+first camera panel is the one shown. Driving is the same in all of them: keys or sticks only, the latency hold and
+Reconnect, and the drive keys never hide (a maximized panel leaves them in their corner).
+
 ## Cameras
 
 One camera panel opens on the profile's preferred camera; `+` adds more, each with its own topic and an optional 2D

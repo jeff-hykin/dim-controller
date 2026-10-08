@@ -1,11 +1,11 @@
-// The 2D map: a floating, collapsible, top-down panel (north-up: +x right, +y up) with the bus's global map (an
+// The 2D map: a floating, collapsible (or a layout's docked), top-down panel (north-up: +x right, +y up) with the bus's global map (an
 // accumulated point cloud, as a height heatmap) or any other cloud or occupancy grid, optionally a costmap laid over
 // it, the robot's pose, heading and trail, the world axes and a scale bar. View-only: wheel / pinch zoom and drag pan
 // move the picture, never the robot. It follows a TF frame (base_link unless picked) until the viewer pans; a zoom keeps
 // following, re-center (or a double-click) resumes it. Like the 3D view's layers, it keeps each topic's last message for
 // the page's life (a collapse, a reopen or a topic missing from discovery never blanks it). Redrawn only when something
 // changed (new data, the robot moved, a zoom or pan, a resize, the theme).
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
@@ -16,7 +16,6 @@ import { rememberTopics } from "../core/transport.ts"
 import {
     chooseMapTopic,
     chooseOverlay,
-    DEFAULT_FOLLOW_FRAME,
     followFrameOptions,
     MapFollow,
     fitView,
@@ -41,8 +40,10 @@ import {
     zoomAt,
 } from "../core/map2d.ts"
 import { Icon } from "./icons.tsx"
-import { clampPanelBox, startPanelDrag } from "./panelDrag.ts"
+import { clampPanelBox } from "./panelDrag.ts"
 import { LAYOUT_KEY, loadMapLayout, type MapLayout, MIN_HEIGHT, MIN_WIDTH, viewport } from "./mapLayout.ts"
+import { type Dock, Panel } from "./Panel.tsx"
+import { useTfFrames } from "./useTfFrames.ts"
 
 /** every map topic this page has seen (the 3D view's layers outlive discovery the same way): a 0.5 Hz map that misses a
  * discovery round, or drops off for a while, stays the map instead of the panel falling back to /lidar */
@@ -70,7 +71,7 @@ function retainedFor(app: ViewerApp, key: string): Retained {
     return entry
 }
 
-export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
+export function MapPanel({ app, mobile, dock }: { app: ViewerApp; mobile: boolean; dock: Dock | null }) {
     const [layout, setLayout] = useState(() => loadMapLayout())
     const update = (patch: Partial<MapLayout>) =>
         setLayout((old) => {
@@ -87,12 +88,10 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     const overlay = chooseOverlay(topics, layout.overlay, topic)
     const candidates = mapCandidates(topics)
     const grids = overlayCandidates(topics).filter((grid) => grid.key !== topic?.key)
-    const element = useRef<HTMLDivElement>(null)
     const canvas = useRef<HTMLCanvasElement>(null)
     const renderer = useRef<MapRenderer | null>(null)
     const [status, setStatus] = useState({ info: "", problem: "" })
     const [follow, setFollow] = useState({ following: true, waiting: false })
-    const [frames, setFrames] = useState<string[]>([])
     /** the last header press moved the panel (so its click isn't an "open") */
     const dragged = useRef(false)
 
@@ -104,8 +103,9 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         return () => removeEventListener("resize", resized)
     }, [])
 
-    // the renderer lives while the panel is open; collapsed, nothing is subscribed or drawn
-    const open = !layout.collapsed
+    // the renderer lives while the panel is open; collapsed, nothing is subscribed or drawn (docked, it's always open)
+    const open = !!dock || !layout.collapsed
+    const full = !dock && layout.full
     useEffect(() => {
         if (!open || !canvas.current) {
             return
@@ -128,113 +128,87 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     }, [layout.followFrame, open])
 
     // the TF frames to offer for following, refreshed while open
-    useEffect(() => {
-        if (!open) {
-            return
-        }
-        const read = () => {
-            const next = app.tf.snapshot(app.viewer.fixedFrame).frames
-            setFrames((old) => old.length === next.length && old.every((frame, index) => frame === next[index]) ? old : next)
-        }
-        read()
-        const timer = setInterval(read, 1000)
-        return () => clearInterval(timer)
-    }, [app, open])
+    const frames = useTfFrames(app, open)
 
     useEffect(() => {
         renderer.current?.setTopics(topic, overlay)
     }, [topic?.key, overlay?.key, open])
 
-    const startDrag = (event: ReactPointerEvent) => {
-        if (layout.full || mobile || (event.target as HTMLElement).closest("button, select")) {
-            return
-        }
-        dragged.current = false
-        startPanelDrag(event, element.current!, (x, y) => {
-            dragged.current = true
-            update({ x, y })
-        })
-    }
-
-    const startResize = (event: ReactPointerEvent) => {
-        event.preventDefault()
-        event.stopPropagation()
-        const panel = element.current!
-        const box = panel.getBoundingClientRect()
-        const startX = event.clientX, startY = event.clientY
-        const handle = event.currentTarget as HTMLElement
-        handle.setPointerCapture(event.pointerId)
-        let width = box.width, height = box.height
-        const move = (moved: PointerEvent) => {
-            width = Math.round(Math.max(MIN_WIDTH, Math.min(innerWidth - box.left - 8, box.width + moved.clientX - startX)))
-            height = Math.round(Math.max(MIN_HEIGHT, Math.min(innerHeight - box.top - 8, box.height + moved.clientY - startY)))
-            panel.style.width = `${width}px`
-            panel.style.height = `${height}px`
-        }
-        const up = () => {
-            handle.removeEventListener("pointermove", move)
-            handle.removeEventListener("pointerup", up)
-            handle.removeEventListener("pointercancel", up)
-            update({ width, height, x: box.left, y: box.top })
-        }
-        handle.addEventListener("pointermove", move)
-        handle.addEventListener("pointerup", up)
-        handle.addEventListener("pointercancel", up)
-    }
-
     // where it is, kept on this window as it is now (the remembered box can be from a bigger one)
     const box = clampPanelBox(layout, layout, viewport(), { width: MIN_WIDTH, height: MIN_HEIGHT })
     const placed = box.x >= 0 ? { left: box.x, top: box.y } : {}
-    const style: React.CSSProperties = mobile || layout.full ? {} : open ? { ...placed, width: box.width, height: box.height } : placed
+    const floating = !dock && !full
+    const style: React.CSSProperties = mobile || !floating ? {} : open ? { ...placed, width: box.width, height: box.height } : placed
     const name = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
     const label = topic ? name(topic) : "no map on the bus"
+    // a header press that moved the panel isn't an "open"
+    const openFromHead = () => !open && !dragged.current && update({ collapsed: false })
     return (
         <div className="map-layer">
-            <div ref={element} className={`dim-panel camera-panel map-panel ${open ? "open" : "collapsed"} ${layout.full && open ? "main" : ""} ${box.x < 0 ? "default-spot" : ""}`} style={style}>
-                <div className="camera-head" onPointerDown={startDrag} onDoubleClick={(event) => open && !mobile && !(event.target as HTMLElement).closest("button, select") && update({ full: !layout.full })} title={open ? status.info : "Show the 2D map (drag to move it)"}>
-                    {/* folded, a click on the title opens it (a drag moves it instead) */}
-                    <span className="map-title" onClick={() => !open && !dragged.current && update({ collapsed: false })}><Icon name="map" size={14} />Map</span>
-                    {!open && <span className="map-show" onClick={() => !dragged.current && update({ collapsed: false })}>show</span>}
-                    {open && candidates.length > 1 && (
-                        <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
-                            <option value="">auto ({label})</option>
-                            {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
-                        </select>
-                    )}
-                    {open && candidates.length <= 1 && <span className="camera-info map-source">{label}</span>}
-                    {open && grids.length > 0 && (
-                        <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
-                            <option value="">no costmap</option>
-                            {grids.map((grid) => <option key={grid.key} value={grid.key}>+ {grid.name}</option>)}
-                        </select>
-                    )}
-                    {open && <span className="camera-info">{status.info}</span>}
-                    {open && (
-                        <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
-                            {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>follow {frame}{waiting ? " (waiting)" : ""}</option>)}
-                        </select>
-                    )}
-                    {open && (
-                        <>
-                            <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={follow.following} title={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()}>
-                                <Icon name="target" size={15} />
-                            </button>
-                            <button type="button" className="dim-btn icon icon-button" title="Fit the whole map" onClick={() => renderer.current?.fit()}>
-                                <Icon name="fit" size={15} />
-                            </button>
-                            {!mobile && (
-                                <button type="button" className="dim-btn icon icon-button" title={layout.full ? "Back to a floating panel" : "Fullscreen map"} onClick={() => update({ full: !layout.full })}>
-                                    <Icon name={layout.full ? "fullscreen-exit" : "fullscreen"} size={15} />
+            <Panel
+                placement={dock ? "dock" : full && open ? "main" : "float"}
+                dock={dock}
+                className={`map-panel ${open ? "open" : "collapsed"} ${box.x < 0 ? "default-spot" : ""}`}
+                style={style}
+                title={open ? status.info : "Show the 2D map (drag to move it)"}
+                onHeadDoubleClick={() => open && !mobile && update({ full: !layout.full })}
+                onDrag={floating && !mobile
+                    ? (x, y) => {
+                        dragged.current = true
+                        update({ x, y })
+                    }
+                    : undefined}
+                resize={floating && open && !mobile ? { corner: "right", minimum: { width: MIN_WIDTH, height: MIN_HEIGHT }, onDone: (next) => update(next) } : null}
+                bodyClassName="map-body"
+                head={
+                    <>
+                        {/* folded, a click on the title opens it (a drag moves it instead) */}
+                        <span className="map-title" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}><Icon name="map" size={14} />Map</span>
+                        {!open && <span className="map-show" onPointerDown={() => (dragged.current = false)} onClick={openFromHead}>show</span>}
+                        {open && candidates.length > 1 && (
+                            <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
+                                <option value="">auto ({label})</option>
+                                {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
+                            </select>
+                        )}
+                        {open && candidates.length <= 1 && <span className="camera-info map-source">{label}</span>}
+                        {open && grids.length > 0 && (
+                            <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
+                                <option value="">no costmap</option>
+                                {grids.map((grid) => <option key={grid.key} value={grid.key}>+ {grid.name}</option>)}
+                            </select>
+                        )}
+                        {open && <span className="camera-info">{status.info}</span>}
+                        {open && (
+                            <select className="dim-select map-frame" value={layout.followFrame} onChange={(event) => update({ followFrame: event.target.value })} aria-label="Frame to follow" title="The TF frame the map follows">
+                                {followFrameOptions(frames, layout.followFrame).map(({ frame, waiting }) => <option key={frame} value={frame}>follow {frame}{waiting ? " (waiting)" : ""}</option>)}
+                            </select>
+                        )}
+                        {open && (
+                            <>
+                                <button type="button" className="dim-btn icon icon-button map-follow" aria-pressed={follow.following} title={follow.following ? `Following ${layout.followFrame} (pan the map to look around)` : `Re-center on ${layout.followFrame} and follow it (or double-click the map)`} onClick={() => renderer.current?.recenter()}>
+                                    <Icon name="target" size={15} />
                                 </button>
-                            )}
-                        </>
-                    )}
-                    <button type="button" className="dim-btn icon icon-button" aria-expanded={open} title={open ? "Collapse the map" : "Show the 2D map"} onClick={() => update({ collapsed: open, full: open ? false : layout.full })}>
-                        <Icon name={open ? "chevron-up" : "chevron-down"} size={15} />
-                    </button>
-                </div>
+                                <button type="button" className="dim-btn icon icon-button" title="Fit the whole map" onClick={() => renderer.current?.fit()}>
+                                    <Icon name="fit" size={15} />
+                                </button>
+                                {!mobile && !dock && (
+                                    <button type="button" className="dim-btn icon icon-button" title={layout.full ? "Back to a floating panel" : "Fullscreen map"} onClick={() => update({ full: !layout.full })}>
+                                        <Icon name={layout.full ? "fullscreen-exit" : "fullscreen"} size={15} />
+                                    </button>
+                                )}
+                            </>
+                        )}
+                        {!dock && (
+                            <button type="button" className="dim-btn icon icon-button" aria-expanded={open} title={open ? "Collapse the map" : "Show the 2D map"} onClick={() => update({ collapsed: open, full: open ? false : layout.full })}>
+                                <Icon name={open ? "chevron-up" : "chevron-down"} size={15} />
+                            </button>
+                        )}
+                    </>
+                }
+            >
                 {open && (
-                    <div className="camera-body map-body">
+                    <>
                         <canvas ref={canvas} className="map-canvas" aria-label="Top-down map" />
                         {status.problem && <div className="map-problem">{status.problem}</div>}
                         {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
@@ -243,10 +217,9 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                                 <Icon name="target" size={13} />Re-center on {layout.followFrame}
                             </button>
                         )}
-                    </div>
+                    </>
                 )}
-                {open && !layout.full && !mobile && <div className="camera-resize right" title="Drag to resize" aria-label="Resize the map" onPointerDown={startResize} />}
-            </div>
+            </Panel>
         </div>
     )
 }
@@ -257,6 +230,9 @@ interface Palette {
     muted: Rgba
     primary: Rgba
     robot: Rgba
+    /** the world's +x and +y arrows (the skin's axis colors) */
+    axisX: string
+    axisY: string
     /** a grid as the base map: free floor, costs, walls */
     gridLut: Uint8ClampedArray
     /** a grid over the base: free floor clear, so the map under it shows */
@@ -296,6 +272,8 @@ function themePalette(): Palette {
         muted,
         primary,
         robot: token("--warn", "#e8bf6a"),
+        axisX: css(token("--axis-x", "#e5484d")),
+        axisY: css(token("--axis-y", "#46a758")),
         // free floor a shade off the background, costs toward the accent, walls in the text color, unknown clear
         gridLut: gridLut({ free: blend(base, opaque(fg), 0.1), low: blend(base, opaque(primary), 0.3), high: blend(base, opaque(primary), 0.8), lethal: opaque(fg), unknown: clear }),
         overlayLut: gridLut({ free: clear, low: [...primary.slice(0, 3), 70] as Rgba, high: [...primary.slice(0, 3), 190] as Rgba, lethal: [...primary.slice(0, 3), 235] as Rgba, unknown: clear }),
@@ -832,7 +810,7 @@ class MapRenderer {
         const axis = Math.max(24, Math.min(60, step * scale))
         const [ox, oy] = toScreen(0, 0)
         if (ox > -axis && ox < width + axis && oy > -axis && oy < height + axis) {
-            drawAxes(context, ox, oy, axis, true)
+            drawAxes(context, palette, ox, oy, axis, true)
         }
 
         // the trail, then the robot on top
@@ -880,7 +858,7 @@ class MapRenderer {
         }
 
         // corner key (which way +x and +y point) and the scale bar
-        drawAxes(context, width - 40, height - 14, 22, false)
+        drawAxes(context, palette, width - 40, height - 14, 22, false)
         const barMeters = niceLength(110 * view.metersPerPixel)
         const barPixels = barMeters * scale
         context.strokeStyle = css(palette.fg, 0.9)
@@ -898,8 +876,8 @@ class MapRenderer {
     }
 }
 
-/** x (red, right) and y (green, up) arrows from (x, y); labeled ones mark the world origin */
-function drawAxes(context: CanvasRenderingContext2D, x: number, y: number, length: number, origin: boolean) {
+/** x (right) and y (up) arrows from (x, y); labeled ones mark the world origin */
+function drawAxes(context: CanvasRenderingContext2D, palette: Palette, x: number, y: number, length: number, origin: boolean) {
     const arrow = (dx: number, dy: number, color: string, name: string) => {
         context.strokeStyle = color
         context.fillStyle = color
@@ -918,8 +896,8 @@ function drawAxes(context: CanvasRenderingContext2D, x: number, y: number, lengt
         context.textBaseline = "middle"
         context.fillText(name, x + dx * (length + 12) - (dx ? 0 : 3), y + dy * (length + 12))
     }
-    arrow(1, 0, "#e5484d", origin ? "x" : "+x")
-    arrow(0, -1, "#46a758", origin ? "y" : "+y")
+    arrow(1, 0, palette.axisX, origin ? "x" : "+x")
+    arrow(0, -1, palette.axisY, origin ? "y" : "+y")
 }
 
 /** RGBA pixels on a canvas the map draws scaled (reused when the size matches). */

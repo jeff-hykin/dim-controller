@@ -285,8 +285,8 @@ Deno.test("layout: a first-time viewer gets the map folded; an open or a fold is
 
 Deno.test("a folded map keeps its header on screen (inline-size containment would size it to 0 px wide)", () => {
     const css = Deno.readTextFileSync(new URL("../src/styles.css", import.meta.url))
-    // .camera-panel (which the map panel also is) contains its inline size; a shrink-to-fit folded panel must opt out
-    assert(/\.camera-panel\s*\{[^}]*container-type:\s*inline-size/.test(css))
+    // .lv-panel (every panel, the map too) contains its inline size; a shrink-to-fit folded panel must opt out
+    assert(/\.lv-panel\s*\{[^}]*container-type:\s*inline-size/.test(css))
     const folded = css.match(/\.map-panel\.collapsed\s*\{([^}]*)\}/)?.[1] ?? ""
     assert(/width:\s*auto/.test(folded))
     assert(/container-type:\s*normal/.test(folded), "a folded map panel must not contain its inline size")
@@ -298,6 +298,6 @@ Deno.test("the map panel stacks above a fullscreen camera and the 3D inset, unde
     const z = (selector: string) => Number(css.match(new RegExp(`${selector.replace(/[.]/g, "\\.")}\\s*\\{[^}]*z-index:\\s*(\\d+)`))?.[1])
     const map = z(".map-layer")
     assert(map > z(".camera-layer"), "over the camera layer (a main camera fills the screen)")
-    assert(map >= z(".camera-main .scene-slot"), "level with the 3D inset (later in the page, so on top)")
+    assert(map >= z(".camera-main .scene-slot.floating"), "level with the 3D inset (later in the page, so on top)")
     assert(map < z(".side-panel") && map < z(".drive-hud") && map < z(".topbar"))
 })

@@ -1,6 +1,6 @@
-// Camera panels: one by default (the profile's preferred camera), more on demand. Any panel can take over the
-// screen, which shrinks the 3D view into a picture-in-picture. Depth is drawn as a colormap; 2D detections can be
-// overlaid on any panel.
+// Camera panels: one by default (the profile's preferred camera), more on demand. In Classic any panel can take over
+// the screen, which shrinks the 3D view into a picture-in-picture; a docked layout (ui/layout.ts) shows the first one in
+// its camera region. Depth is drawn as a colormap; 2D detections can be overlaid on any panel.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
@@ -12,7 +12,8 @@ import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
 import { Icon } from "./icons.tsx"
-import { startPanelDrag } from "./panelDrag.ts"
+import { PANEL_HEAD_PX, popoverPosition } from "./panelDrag.ts"
+import { type Dock, Panel } from "./Panel.tsx"
 import { presetFor, QUALITY_PRESETS, readLocal, type VideoQuality, writeLocal } from "../core/videoQuality.ts"
 
 export interface PanelState {
@@ -63,15 +64,19 @@ function pickDefault(app: ViewerApp, topics: Topic[]): Topic | null {
     return pickPreferred(app.profile.cameras.preferred, topics)
 }
 
-/** The camera header's height: a panel is this plus the image. */
-const HEAD_PX = 33
 /** The size before the image's is known (and for panels saved at the old 360×240 default): ~38% of the window, 16:9. */
 function defaultSize() {
     const width = Math.round(Math.max(320, Math.min(760, (globalThis.innerWidth || 1280) * 0.38)))
-    return { width, height: Math.round(width * 9 / 16) + HEAD_PX }
+    return { width, height: Math.round(width * 9 / 16) + PANEL_HEAD_PX }
 }
 
-export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: Store<CameraLayout>; mobile: boolean }) {
+export function CameraPanels({ app, layout, mobile, dock }: {
+    app: ViewerApp
+    layout: Store<CameraLayout>
+    mobile: boolean
+    /** a docked layout's camera region (null: Classic, the panels float) */
+    dock: Dock | null
+}) {
     const { panels, main, seeded } = useStore(layout)
     const { topics } = useStore(app.connection.status)
 
@@ -153,6 +158,20 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
         layout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "", x: -1, y: -1, ...defaultSize(), fitted: true }] })
     }
 
+    if (dock) {
+        const first = panels[0]
+        return (
+            <div className="camera-layer">
+                {first
+                    ? <CameraPanel key={first.id} app={app} panel={first} index={0} topics={topics} isMain={false} dock={dock} mobile={mobile} onChange={(patch) => update(first.id, patch)} onClose={() => close(first.id)} onMain={() => {}} />
+                    : (
+                        <Panel placement="dock" dock={dock} className="camera-empty" head={<span className="map-title"><Icon name="camera" size={14} />Camera</span>}>
+                            <button type="button" className="dim-btn sm camera-empty-add" onClick={add}><Icon name="plus" size={14} />{topics.some(isImage) ? "Show a camera" : "No camera on the bus yet"}</button>
+                        </Panel>
+                    )}
+            </div>
+        )
+    }
     return (
         <div className="camera-layer">
             {panels.map((panel, index) => (
@@ -163,6 +182,7 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
                     index={index}
                     topics={topics}
                     isMain={main === panel.id}
+                    dock={null}
                     mobile={mobile}
                     onChange={(patch) => update(panel.id, patch)}
                     onClose={() => close(panel.id)}
@@ -180,12 +200,13 @@ export function CameraPanels({ app, layout, mobile }: { app: ViewerApp; layout: 
     )
 }
 
-function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onClose, onMain }: {
+function CameraPanel({ app, panel, index, topics, isMain, dock, mobile, onChange, onClose, onMain }: {
     app: ViewerApp
     panel: PanelState
     index: number
     topics: Topic[]
     isMain: boolean
+    dock: Dock | null
     mobile: boolean
     onChange: (patch: Partial<PanelState>) => void
     onClose: () => void
@@ -275,54 +296,14 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         })
     }, [app, panel.overlay, topics.length, size.width, size.height])
 
-    // drag by the header (desktop, floating only)
-    const startDrag = (event: React.PointerEvent) => {
-        if (isMain || mobile || (event.target as HTMLElement).closest("button, select")) {
-            return
-        }
-        startPanelDrag(event, element.current!, (x, y) => onChange({ x, y }))
-    }
-
     // size: this viewer's width (dragged with the corner handle, kept in localStorage), the height from the image's
     // aspect, so there are never bars; until the image's size is known, the default 16:9
     const [viewerWidth, setViewerWidth] = useState<number | null>(() => loadPanelWidth(panel.id))
     const aspect = size.width && size.height ? size.height / size.width : 9 / 16
     const width = clampWidth(viewerWidth ?? (panel.fitted ? panel.width : defaultSize().width), aspect)
-    const height = Math.round(width * aspect) + HEAD_PX
+    const height = Math.round(width * aspect) + PANEL_HEAD_PX
     // the handle sits on the corner facing into the screen: bottom-left for a panel on the right half (the default)
     const handleLeft = panel.x < 0 || panel.x + width / 2 > (globalThis.innerWidth || 1280) / 2
-    const startResize = (event: React.PointerEvent) => {
-        event.preventDefault()
-        event.stopPropagation()
-        const box = element.current!.getBoundingClientRect()
-        const startX = event.clientX, startWidth = box.width
-        const handle = event.currentTarget as HTMLElement
-        handle.setPointerCapture(event.pointerId)
-        let latest = startWidth
-        const move = (moved: PointerEvent) => {
-            const grown = handleLeft ? startX - moved.clientX : moved.clientX - startX
-            latest = clampWidth(startWidth + grown, aspect)
-            // the far edge stays put: growing to the left moves the left edge
-            element.current!.style.width = `${latest}px`
-            element.current!.style.height = `${Math.round(latest * aspect) + HEAD_PX}px`
-            if (handleLeft && panel.x >= 0) {
-                element.current!.style.left = `${box.right - latest}px`
-            }
-        }
-        const up = () => {
-            handle.removeEventListener("pointermove", move)
-            handle.removeEventListener("pointerup", up)
-            handle.removeEventListener("pointercancel", up)
-            setViewerWidth(latest)
-            savePanelWidth(panel.id, latest)
-            if (handleLeft && panel.x >= 0) {
-                onChange({ x: box.right - latest })
-            }
-        }
-        handle.addEventListener("pointermove", move)
-        handle.addEventListener("pointerup", up)
-        handle.addEventListener("pointercancel", up)
-    }
 
     // the shown camera's tab in view (it can be off the end of a long row)
     useEffect(() => {
@@ -342,6 +323,7 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
 
     // the latency/quality menu (gear over the picture)
     const [qualityOpen, setQualityOpen] = useState(false)
+    const gear = useRef<HTMLButtonElement>(null)
     const quality = useQuality(app, topic, depth)
     useEffect(() => {
         if (!qualityOpen) {
@@ -356,7 +338,9 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
         return () => removeEventListener("pointerdown", close, true)
     }, [qualityOpen])
 
-    const floating = !isMain
+    const floating = !isMain && !dock
+    // fit or fill: the picture has the region to itself (fullscreen, or docked)
+    const fills = isMain || !!dock
     const style: React.CSSProperties = floating && !mobile
         ? { width, height, ...(panel.x >= 0 ? { left: panel.x, top: panel.y } : { right: 12, top: 60 + index * (height + 12) }) }
         : mobile && floating && size.width && size.height
@@ -366,95 +350,115 @@ function CameraPanel({ app, panel, index, topics, isMain, mobile, onChange, onCl
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     const tabs = cameraTabs(topics)
     return (
-        <div ref={element} className={`dim-panel camera-panel ${isMain ? "main" : "floating"}`} style={style} data-panel={panel.id}>
-            <div className="camera-head" onPointerDown={startDrag} onDoubleClick={onMain} title={info}>
-                <div className="camera-tabs" role="tablist" aria-label="Cameras" onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY)}>
-                    {!topic && panel.key && (
-                        <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
-                    )}
-                    {tabs.map((tab) => (
-                        <button
-                            key={tab.topic.key}
-                            type="button"
-                            role="tab"
-                            aria-selected={tab.topic.key === panel.key}
-                            className={`camera-tab ${tab.topic.key === panel.key ? "on" : ""} ${tab.depth ? "depth" : ""}`}
-                            title={`${tab.topic.name} (${tab.topic.type})`}
-                            onClick={() => onChange({ key: tab.topic.key, picked: tab.topic.key })}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                    {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus</span>}
-                </div>
-                {overlays.length > 0 && (
-                    <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
-                        <option value="">no overlay</option>
-                        {overlays.map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
-                    </select>
-                )}
-                {depth && (
-                    <>
-                        <select className="dim-select" value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
-                            {DEPTH_COLORMAPS.map((name) => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                        <input className="dim-input number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
-                        <input className="dim-input number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
-                    </>
-                )}
-                <span className="camera-info">{info || "…"}</span>
-                {isMain && (
-                    <button type="button" className="dim-btn icon icon-button camera-fit" aria-pressed={fill} title={fill ? "Fill: the picture fills the screen, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the screen)"} onClick={toggleFill}>
-                        <Icon name={fill ? "fill" : "fit"} size={15} />
-                    </button>
-                )}
-                <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>
-                <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>
-            </div>
-            <div className={`camera-body ${isMain && fill ? "fill" : ""}`} onClick={mobile && !isMain ? onMain : undefined}>
-                {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
-                <canvas ref={overlayCanvas} className="camera-overlay" />
-                {topic && !depth && (!mobile || isMain) && (
-                    <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
-                        <button type="button" className="dim-btn icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
-                            <Icon name="settings" size={14} />
-                        </button>
-                        {qualityOpen && createPortal(
-                            <div className="dim-panel quality-menu" role="menu" aria-label="Latency or quality" style={menuPosition(element.current)} onClick={(event) => event.stopPropagation()}>
-                                <div className="quality-title">Latency ↔ quality</div>
-                                {QUALITY_PRESETS.map((preset) => (
-                                    <button
-                                        key={preset.id}
-                                        type="button"
-                                        role="menuitemradio"
-                                        aria-checked={quality === preset.id}
-                                        className={`quality-option ${quality === preset.id ? "on" : ""}`}
-                                        onClick={() => {
-                                            app.video.setQuality(topic, preset.id)
-                                            setQualityOpen(false)
-                                        }}
-                                    >
-                                        <span className="quality-name">{preset.label}</span>
-                                        <span className="quality-about">{preset.about}</span>
-                                    </button>
-                                ))}
-                            </div>,
-                            document.body,
+        <Panel
+            placement={dock ? "dock" : isMain ? "main" : "float"}
+            dock={dock}
+            className="camera-video"
+            style={style}
+            title={info}
+            panelRef={element}
+            onHeadDoubleClick={onMain}
+            onDrag={floating && !mobile ? (x, y) => onChange({ x, y }) : undefined}
+            resize={floating && !mobile
+                ? {
+                    corner: handleLeft ? "left" : "right",
+                    minimum: { width: 200, height: 0 },
+                    aspect,
+                    onDone: (box) => {
+                        setViewerWidth(box.width)
+                        savePanelWidth(panel.id, box.width)
+                        onChange({ x: box.x, y: box.y })
+                    },
+                }
+                : null}
+            bodyClassName={fills && fill ? "fill" : ""}
+            bodyOnClick={mobile && floating ? onMain : undefined}
+            head={
+                <>
+                    <div className="camera-tabs" role="tablist" aria-label="Cameras" onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY)}>
+                        {!topic && panel.key && (
+                            <span className="camera-tab gone" title={parseKey(panel.key)?.name ?? panel.key}>{(everSeen.current ? "(gone) " : "") + (parseKey(panel.key)?.name ?? panel.key)}</span>
                         )}
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.topic.key}
+                                type="button"
+                                role="tab"
+                                aria-selected={tab.topic.key === panel.key}
+                                className={`camera-tab ${tab.topic.key === panel.key ? "on" : ""} ${tab.depth ? "depth" : ""}`}
+                                title={`${tab.topic.name} (${tab.topic.type})`}
+                                onClick={() => onChange({ key: tab.topic.key, picked: tab.topic.key })}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                        {!tabs.length && !panel.key && <span className="camera-tab gone">no camera on the bus</span>}
                     </div>
-                )}
-            </div>
-            {floating && !mobile && (
-                <div className={`camera-resize ${handleLeft ? "left" : "right"}`} title="Drag to resize" aria-label="Resize the camera" onPointerDown={startResize} />
+                    {overlays.length > 0 && (
+                        <select className="dim-select" value={panel.overlay} onChange={(event) => onChange({ overlay: event.target.value })} aria-label="Overlay">
+                            <option value="">no overlay</option>
+                            {overlays.map((other) => <option key={other.key} value={other.key}>{other.name}</option>)}
+                        </select>
+                    )}
+                    {depth && (
+                        <>
+                            <select className="dim-select" value={depthLook.colormap} onChange={(event) => onChange({ depth: { ...depthLook, colormap: event.target.value } })} aria-label="Depth colormap">
+                                {DEPTH_COLORMAPS.map((name) => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                            <input className="dim-input number depth-range" type="number" step="0.1" placeholder="near" title="near (m); empty = auto" value={depthLook.near ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, near: event.target.value === "" ? null : Number(event.target.value) } })} />
+                            <input className="dim-input number depth-range" type="number" step="0.1" placeholder="far" title="far (m); empty = auto" value={depthLook.far ?? ""} onChange={(event) => onChange({ depth: { ...depthLook, far: event.target.value === "" ? null : Number(event.target.value) } })} />
+                        </>
+                    )}
+                    <span className="camera-info">{info || "…"}</span>
+                    {fills && (
+                        <button type="button" className="dim-btn icon icon-button camera-fit" aria-pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
+                            <Icon name={fill ? "fill" : "fit"} size={15} />
+                        </button>
+                    )}
+                    {!dock && <button type="button" className="dim-btn icon icon-button" title={isMain ? "Back to the 3D view" : "Fullscreen camera (3D becomes a popup)"} onClick={onMain}><Icon name="expand" size={15} /></button>}
+                    {!dock && <button type="button" className="dim-btn icon icon-button" title="Close" onClick={onClose}><Icon name="close" size={15} /></button>}
+                </>
+            }
+        >
+            {depth ? <div ref={depthHost} className="camera-media depth-host" /> : <video ref={video} className="camera-media" muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
+            <canvas ref={overlayCanvas} className="camera-overlay" />
+            {topic && !depth && (!mobile || !floating) && (
+                <div className={`camera-quality ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+                    <button ref={gear} type="button" className="dim-btn icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
+                        <Icon name="settings" size={14} />
+                    </button>
+                    {qualityOpen && createPortal(
+                        <div className="dim-panel quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
+                            <div className="quality-title">Latency ↔ quality</div>
+                            {QUALITY_PRESETS.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={quality === preset.id}
+                                    className={`quality-option ${quality === preset.id ? "on" : ""}`}
+                                    onClick={() => {
+                                        app.video.setQuality(topic, preset.id)
+                                        setQualityOpen(false)
+                                    }}
+                                >
+                                    <span className="quality-name">{preset.label}</span>
+                                    <span className="quality-about">{preset.about}</span>
+                                </button>
+                            ))}
+                        </div>,
+                        document.body,
+                    )}
+                </div>
             )}
-        </div>
+        </Panel>
     )
 }
 
 /** The smallest and largest a floating camera gets: at least 200 px wide, at most the window between the top bar and
  * the drive guide (so the handle in the corner stays reachable). */
 function clampWidth(width: number, aspect: number) {
-    const maxWidth = Math.min((globalThis.innerWidth || 1280) - 24, ((globalThis.innerHeight || 800) - 60 - 110 - HEAD_PX) / aspect)
+    const maxWidth = Math.min((globalThis.innerWidth || 1280) - 24, ((globalThis.innerHeight || 800) - 60 - 110 - PANEL_HEAD_PX) / aspect)
     return Math.round(Math.max(Math.min(200, maxWidth), Math.min(maxWidth, width)))
 }
 
@@ -485,16 +489,4 @@ function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQ
         }
     }, [app, topic?.key, depth])
     return quality
-}
-
-/** The quality menu hangs from the panel's top-right corner, kept inside the window (a portal: the panel clips). */
-function menuPosition(panel: HTMLElement | null): React.CSSProperties {
-    const box = panel?.getBoundingClientRect()
-    if (!box) {
-        return {}
-    }
-    const menuWidth = 236
-    const left = Math.max(8, Math.min(box.right - menuWidth - 6, innerWidth - menuWidth - 8))
-    const top = Math.min(box.top + 33 + 38, innerHeight - 220)
-    return { position: "fixed", left, top, zIndex: 40 }
 }
