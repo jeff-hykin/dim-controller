@@ -86,8 +86,10 @@ live points and bytes a second, and a bandwidth preset: **Low bandwidth** (up to
 the gateway's `maxHz` / `encodeOptions.quality` / `minQuality` ([core/cloudQuality.ts](frontend/src/core/cloudQuality.ts)).
 The presets, the off switch and where the panel sits are this viewer's (localStorage).
 
-The 3D view's corner buttons recenter (frame the robot, or without one the drawn data) and look straight down on the
-area around the robot (`POST api/camera` does the same in every open page). Hovering a frame in the TF panel picks it
+The 3D camera follows the robot (`base_link`, or another frame: Settings → Follow frame): orbit and zoom keep
+following, a pan stops it. The 3D view's corner buttons follow (lit while following; click to resume, or while
+following to reframe the robot) and look straight down on the area around the robot (`POST api/camera` does the same
+in every open page; its lookAt stops following). Hovering a frame in the TF panel picks it
 out in the view: big axes drawn through everything, with its name.
 
 ## Robot type

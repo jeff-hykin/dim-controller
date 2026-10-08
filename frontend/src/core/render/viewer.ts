@@ -7,7 +7,7 @@ import { Store } from "../store.ts"
 import { focusDistance, splatBackground } from "./pointMaterial.ts"
 import { themeColors } from "../../dim-app/source/theme.js"
 import { FRAME_BUDGET_MS, splatFallback } from "./rendering.ts"
-import { SmoothFollow } from "./follow.ts"
+import { CATCH_UP_SECONDS, PanGate, SmoothFollow } from "./follow.ts"
 
 export interface RenderStats {
     fps: number
@@ -48,6 +48,8 @@ export class Viewer {
     fixedFrame = "world"
     /** where the camera follows (a TF frame); set by the app each frame */
     followTarget: THREE.Vector3 | null = null
+    /** this page stopped following because the user panned away (or the agent looked elsewhere); `resumeFollow()` ends it */
+    readonly followPaused = new Store<{ paused: boolean }>({ paused: false })
 
     #host: HTMLElement
     #dirty = true
@@ -66,6 +68,12 @@ export class Viewer {
     #lastFollow = new THREE.Vector3()
     #following = false
     #followDelta = new THREE.Vector3()
+    /** after a resume: the target glides onto the followed point, keeping the angle and zoom */
+    #catchingUp = false
+    #panGate = new PanGate()
+    #beforeControls = new THREE.Vector3()
+    #pan = new THREE.Vector3()
+    #reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null
     #lastFrame = 0
 
     constructor(host: HTMLElement, bridgeNow: () => number) {
@@ -89,6 +97,7 @@ export class Viewer {
         this.controls.screenSpacePanning = false
         this.controls.maxPolarAngle = Math.PI * 0.495
         this.controls.addEventListener("change", () => this.requestRender())
+        this.controls.addEventListener("start", () => this.#panGate.start())
 
         this.scene.add(new THREE.HemisphereLight(0xdde8ff, 0x202830, 1.6))
         const sun = new THREE.DirectionalLight(0xffffff, 1.2)
@@ -261,6 +270,24 @@ export class Viewer {
         this.requestRender()
     }
 
+    /** Stops following until `resumeFollow()`: the camera stays where it is. */
+    pauseFollow() {
+        if (!this.followPaused.get().paused) {
+            this.followPaused.set({ paused: true })
+        }
+    }
+
+    /** Follows again: the followed point glides back to the middle (snaps, with reduced motion), angle and zoom kept. */
+    resumeFollow() {
+        this.#catchingUp = true
+        this.#following = false
+        this.#follow.reset()
+        if (this.followPaused.get().paused) {
+            this.followPaused.set({ paused: false })
+        }
+        this.requestRender()
+    }
+
     /**
      * Where the drawn data is (point clouds and meshes, not the grid or helpers): the 2nd-98th percentile box of a
      * sample of their points, so a few far-off returns don't stretch it. Null when nothing is drawn.
@@ -335,9 +362,25 @@ export class Viewer {
         // between poses (follow.ts) rather than jumping with each one
         const dt = this.#lastFrame ? (now - this.#lastFrame) / 1000 : 0
         this.#lastFrame = now
-        if (this.followTarget) {
-            const [x, y, z] = this.#follow.step([this.followTarget.x, this.followTarget.y, this.followTarget.z], dt)
-            if (this.#following) {
+        const reduced = !!this.#reducedMotion?.matches
+        const following = !!this.followTarget && !this.followPaused.get().paused
+        if (following) {
+            const target = this.followTarget!
+            if (reduced) {
+                this.#follow.reset()
+            }
+            const [x, y, z] = this.#follow.step([target.x, target.y, target.z], dt)
+            if (this.#catchingUp) {
+                const gap = this.#followDelta.set(x, y, z).sub(this.controls.target)
+                if (!reduced && gap.length() > 1e-3) {
+                    gap.multiplyScalar(1 - Math.exp(-dt / CATCH_UP_SECONDS))
+                } else {
+                    this.#catchingUp = false
+                }
+                this.camera.position.add(gap)
+                this.controls.target.add(gap)
+                this.#dirty = true
+            } else if (this.#following) {
                 const delta = this.#followDelta.set(x, y, z).sub(this.#lastFollow)
                 if (delta.lengthSq() > 1e-10) {
                     this.camera.position.add(delta)
@@ -352,8 +395,24 @@ export class Viewer {
             this.#follow.reset()
         }
         focusDistance.value = this.camera.position.distanceTo(this.controls.target)
+        this.#beforeControls.copy(this.controls.target)
         if (this.controls.update()) {
             this.#dirty = true
+        }
+        // orbit and zoom keep following (about the robot); a pan (right-drag, shift-drag, two fingers) stops it
+        const pan = this.#pan.copy(this.controls.target).sub(this.#beforeControls)
+        if (following && pan.lengthSq() > 0) {
+            const verdict = this.#panGate.step([pan.x, pan.y, pan.z], focusDistance.value)
+            if (verdict.action === "pause") {
+                const [x, y, z] = verdict.restore
+                this.controls.target.add(this.#followDelta.set(x, y, z))
+                this.camera.position.add(this.#followDelta)
+                this.#catchingUp = false
+                this.pauseFollow()
+            } else {
+                this.controls.target.sub(pan)
+                this.camera.position.sub(pan)
+            }
         }
         const started = performance.now()
         const info: FrameInfo = { now, fixedFrame: this.fixedFrame, camera: this.camera }

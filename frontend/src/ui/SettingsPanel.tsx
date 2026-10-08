@@ -9,6 +9,8 @@ import { Field, Toggle } from "./controls.tsx"
 import { DrivePanel } from "./DrivePanel.tsx"
 import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
+import { followFrameOptions } from "../core/map2d.ts"
+import { useEffect, useState } from "react"
 import { CUBE_SHADES, type CubeShade, type PointStyle } from "../core/render/pointMaterial.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -66,10 +68,36 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     ))}
                 </span>
             </Field>
-            <Field label="Follow robot"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
+            <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button (top right) resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
+            <FollowFramePicker app={app} />
             <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Recenter and top-down are on the view (top right).</p>
+            <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</p>
         </div>
+    )
+}
+
+/** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
+function FollowFramePicker({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    const [frames, setFrames] = useState<string[]>([])
+    useEffect(() => {
+        const read = () => {
+            const next = app.tf.snapshot(app.viewer.fixedFrame).frames
+            setFrames((old) => old.length === next.length && old.every((frame, index) => frame === next[index]) ? old : next)
+        }
+        read()
+        const timer = setInterval(read, 1000)
+        return () => clearInterval(timer)
+    }, [app])
+    const base = app.profile.baseFrame
+    const others = followFrameOptions(frames, view.followFrame || base).filter(({ frame }) => frame !== base)
+    return (
+        <Field label="Follow frame">
+            <select className="dim-select" aria-label="Frame to follow" value={view.followFrame === app.profile.baseFrame ? "" : view.followFrame} onChange={(event) => app.settings.update({ followFrame: event.target.value })}>
+                <option value="">robot ({base}){frames.includes(base) ? "" : " (waiting)"}</option>
+                {others.map(({ frame, waiting }) => <option key={frame} value={frame}>{frame}{waiting ? " (waiting)" : ""}</option>)}
+            </select>
+        </Field>
     )
 }

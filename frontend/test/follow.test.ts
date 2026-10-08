@@ -1,6 +1,6 @@
 // The followed point: smooth between poses that arrive far slower than frames, and a snap on a teleport.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { SmoothFollow, type Vec3 } from "../src/core/render/follow.ts"
+import { PanGate, SmoothFollow, type Vec3 } from "../src/core/render/follow.ts"
 
 /** a robot at 0.5 m/s whose pose arrives at ~18 Hz (with arrival jitter), drawn at 105 fps: the per-frame camera path */
 function run(smooth: boolean) {
@@ -38,4 +38,16 @@ Deno.test("a teleport snaps", () => {
     follow.step([0, 0, 0], 0.01)
     assertEquals(follow.step([10, 0, 0], 0.01), [10, 0, 0])
     assertEquals(follow.step([10, 0, 0], 5)[0], 10, "a long gap snaps too")
+})
+
+Deno.test("a pinch's slip is undone while following; a real pan stops following and keeps all of the pan", () => {
+    const gate = new PanGate()
+    gate.start()
+    assertEquals(gate.step([0.05, 0, 0], 7), { action: "undo" })
+    assertEquals(gate.step([0.05, 0, 0], 7), { action: "undo" })
+    const verdict = gate.step([0.3, 0, 0], 7)
+    assertEquals(verdict.action, "pause")
+    assertEquals(verdict.action === "pause" && verdict.restore.map((v) => Math.round(v * 100) / 100), [0.1, 0, 0])
+    gate.start()
+    assertEquals(gate.step([0.2, 0, 0], 20), { action: "undo" }) // far away, the same slip is a smaller share of the view
 })

@@ -30,6 +30,8 @@ export interface ViewSettings {
     /** "" = the profile's, else picked from the tree */
     fixedFrame: string
     follow: boolean
+    /** the TF frame the 3D camera follows: "" = the robot's (the profile's base frame, base_link for most) */
+    followFrame: string
     showStats: boolean
     /** the robot type's stand-in model at the robot's pose */
     robotModel: boolean
@@ -43,7 +45,7 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, showStats: false, robotModel: true })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", showStats: false, robotModel: true })
     #profile: RobotProfile
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
@@ -57,7 +59,7 @@ export class ViewerApp {
     /** what's running (Desktop's /dimos/runs, live on its zenoh events): the first-run messages and the drive topic */
     readonly runs = new RunWatch()
     /** the fixed frame in use and where the robot is (for the UI) */
-    readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean }>({ fixedFrame: "", robotFound: false })
+    readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean; followFound: boolean }>({ fixedFrame: "", robotFound: false, followFound: false })
     /** what's wrong with the TF tree (core/tfCheck.ts), checked every 2 s; a problem shows once two checks in a row see it */
     readonly tfIssues = new Store<{ issues: TfIssue[] }>({ issues: [] })
     #tfSeen: TfIssue[] = []
@@ -66,6 +68,8 @@ export class ViewerApp {
     #framed = false
     /** where the robot is now (followed or not), for recentering */
     #robotPosition: THREE.Vector3 | null = null
+    /** where the followed frame is now (followed or not) */
+    #followPosition: THREE.Vector3 | null = null
     /** Desktop's robots (robots.json types, its default robot); null until it answers, or without Desktop */
     #robots: RobotsAnswer | null = null
     /** the stand-in model drawn at the robot's pose, and the type it's for */
@@ -167,12 +171,25 @@ export class ViewerApp {
             this.viewer.followTarget = position
             this.viewer.frame(position, this.#profile.viewDistance ?? 7)
         }
-        this.viewer.followTarget = this.settings.get().follow ? position : null
+        const followFrame = this.followFrame
+        const followed = followFrame === this.profile.baseFrame ? position : this.#framePosition(followFrame, fixedFrame)
+        this.#followPosition = followed
+        this.viewer.followTarget = this.settings.get().follow ? followed : null
         this.#placeModel(robot)
         const info = this.frameInfo.get()
-        if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position) {
-            this.frameInfo.set({ fixedFrame, robotFound: !!position })
+        if (info.fixedFrame !== fixedFrame || info.robotFound !== !!position || info.followFound !== !!followed) {
+            this.frameInfo.set({ fixedFrame, robotFound: !!position, followFound: !!followed })
         }
+    }
+
+    /** the TF frame the 3D camera follows (Settings → Follow frame; the robot's by default) */
+    get followFrame(): string {
+        return this.settings.get().followFrame || this.profile.baseFrame
+    }
+
+    #framePosition(frame: string, fixedFrame: string): THREE.Vector3 | null {
+        const matrix = this.tf.lookup(frame, fixedFrame)
+        return matrix ? new THREE.Vector3().setFromMatrixPosition(matrix) : null
     }
 
     #checkTf() {
@@ -225,15 +242,32 @@ export class ViewerApp {
         } else if (event.action === "topDown") {
             this.topDown()
         } else if (event.action === "lookAt" && event.target?.length === 3) {
-            this.settings.update({ follow: false })
+            this.viewer.pauseFollow()
             this.viewer.frame(new THREE.Vector3(event.target[0], event.target[1], event.target[2]), event.distance ?? 7)
         }
     }
 
-    /** Frames the robot (7 m away), or without one the data that's drawn, or else the origin. */
+    /** whether the 3D camera is following its frame now (on in Settings, not paused by a pan) */
+    get following(): boolean {
+        return this.settings.get().follow && !this.viewer.followPaused.get().paused
+    }
+
+    /**
+     * Not following (paused by a pan, or off in Settings): follows again, gliding the followed frame back to the middle
+     * with the angle and zoom kept. Already following: frames it afresh (7 m away). Without it in TF, frames the data
+     * that's drawn, or else the origin (and follows once it shows up).
+     */
     recenter() {
-        if (this.#robotPosition) {
-            this.viewer.frame(this.#robotPosition.clone(), this.#profile.viewDistance ?? 7)
+        const wasFollowing = this.following
+        if (!this.settings.get().follow) {
+            this.settings.update({ follow: true })
+        }
+        this.viewer.resumeFollow()
+        if (wasFollowing && this.#followPosition) {
+            this.viewer.frame(this.#followPosition.clone(), this.#profile.viewDistance ?? 7)
+            return
+        }
+        if (this.#followPosition) {
             return
         }
         const bounds = this.viewer.dataBounds()

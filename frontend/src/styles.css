@@ -461,7 +461,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .map-title { display: inline-flex; align-items: center; gap: 5px; flex: none; font: 600 11px var(--sans); color: var(--fg); padding-right: 2px; }
 .map-panel .camera-head .camera-info { flex: 1 1 auto; }
 .map-panel .camera-head .camera-info.map-source { text-align: left; }
-.map-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.map-follow[aria-pressed="true"], .view-follow[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .map-recenter.dim-btn { position: absolute; right: 8px; bottom: 26px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
     font: 11px var(--sans); background: color-mix(in srgb, var(--card) 88%, transparent); border-color: var(--primary); color: var(--fg); }
 .map-panel .camera-head .dim-select.map-frame { max-width: 28%; }

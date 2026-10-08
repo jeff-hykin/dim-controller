@@ -38,3 +38,35 @@ export class SmoothFollow {
         this.#at = null
     }
 }
+
+/** a pan this far (meters, or this share of the camera's distance if more) is the user looking around: following stops */
+const PAN_PAUSE_METERS = 0.15
+const PAN_PAUSE_SHARE = 0.04
+
+/**
+ * Tells a deliberate pan from the slip of a pinch or an orbit: while following, a gesture's pan is undone ("undo")
+ * until it adds up past a threshold; then following stops and the whole pan is kept ("pause", with the earlier,
+ * undone part to put back so the view lands where the drag put it).
+ */
+export class PanGate {
+    #total: Vec3 = [0, 0, 0]
+
+    /** a new drag or pinch began */
+    start() {
+        this.#total = [0, 0, 0]
+    }
+
+    /** `pan`: how far this frame's controls moved the target; `distance`: camera to target */
+    step(pan: Vec3, distance: number): { action: "undo" } | { action: "pause"; restore: Vec3 } {
+        const before = this.#total
+        this.#total = [before[0] + pan[0], before[1] + pan[1], before[2] + pan[2]]
+        if (Math.hypot(...this.#total) > Math.max(PAN_PAUSE_METERS, PAN_PAUSE_SHARE * distance)) {
+            this.#total = [0, 0, 0]
+            return { action: "pause", restore: before }
+        }
+        return { action: "undo" }
+    }
+}
+
+/** how quickly a resumed follow brings the robot back to the middle (seconds, its time constant) */
+export const CATCH_UP_SECONDS = 0.15
