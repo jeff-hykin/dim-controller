@@ -10,6 +10,7 @@ import { RecordControl } from "./ui/RecordControl.tsx"
 import { type SidePlacement, SidePanel, type Tab } from "./ui/SidePanel.tsx"
 import { CameraPanels, chooseLayout, type CameraLayout } from "./ui/CameraPanels.tsx"
 import { MapPanel } from "./ui/MapPanel.tsx"
+import { SimPanel } from "./ui/SimPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useDriveKeys } from "./ui/useDriveKeys.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
@@ -111,6 +112,7 @@ export function App() {
                     {sideTab && <SidePanel app={app} tab={sideTab} onClose={() => setTab(null)} placement={sidePlacement} rect={rects.settings} />}
                     <CameraPanels app={app} layout={cameraLayout} mobile={mobile} dock={dock("camera")} />
                     <MapPanel app={app} mobile={mobile} dock={dock("map")} />
+                    <SimPanel app={app} mobile={mobile} />
                     {settingsTile && (
                         <Panel placement="dock" dock={dock("settings")} className="settings-tile" head={<span className="map-title"><Icon name="settings" size={14} />Settings</span>} bodyClassName="panel-body">
                             <SettingsPanel app={app} />

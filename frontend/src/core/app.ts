@@ -16,6 +16,7 @@ import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
 import { robotPose } from "./robot.ts"
 import { disposeModel, robotModel } from "./render/robotModel.ts"
+import { simModel } from "./render/simModel.ts"
 import { RunWatch } from "./runs.ts"
 import { persistentStore, Store } from "./store.ts"
 import { profileFor } from "../profile/index.ts"
@@ -75,8 +76,8 @@ export class ViewerApp {
     #followPosition: THREE.Vector3 | null = null
     /** Desktop's robots (robots.json types, its default robot); null until it answers, or without Desktop */
     #robots: RobotsAnswer | null = null
-    /** the stand-in model drawn at the robot's pose, and the type it's for */
-    #model: { type: RobotType; group: THREE.Group | null } | null = null
+    /** the model drawn at the robot's pose: the sim robot's own (`sim-go2`; its geometry is cached, shared), else the type's stand-in (`dog`) */
+    #model: { kind: string; group: THREE.Group | null; shared: boolean } | null = null
 
     constructor(host: HTMLElement) {
         const first = this.#resolve()
@@ -244,12 +245,16 @@ export class ViewerApp {
     }
 
     #placeModel(robot: THREE.Matrix4 | null) {
-        if (this.#model?.type !== this.#profile.type) {
+        const simRobot = this.runs.state.get().sim?.robot ?? null
+        const kind = simRobot ? `sim-${simRobot}` : this.#profile.type
+        if (this.#model?.kind !== kind) {
             if (this.#model?.group) {
                 this.viewer.scene.remove(this.#model.group)
-                disposeModel(this.#model.group)
+                disposeModel(this.#model.group, { geometry: !this.#model.shared })
             }
-            this.#model = { type: this.#profile.type, group: robotModel(this.#profile.type) }
+            this.#model = simRobot
+                ? { kind, group: simModel(simRobot, () => this.viewer.requestRender()), shared: true }
+                : { kind, group: robotModel(this.#profile.type), shared: false }
             if (this.#model.group) {
                 this.viewer.scene.add(this.#model.group)
             }

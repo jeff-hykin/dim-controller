@@ -106,10 +106,13 @@ export function robotModel(type: RobotType): THREE.Group | null {
     return group
 }
 
-export function disposeModel(group: THREE.Group) {
+/** Frees its materials and (unless it's shared with a cache) its geometry. */
+export function disposeModel(group: THREE.Group, { geometry = true } = {}) {
     group.traverse((object) => {
         if (object instanceof THREE.Mesh) {
-            object.geometry.dispose()
+            if (geometry) {
+                object.geometry.dispose()
+            }
             ;(object.material as THREE.Material).dispose()
         }
     })

@@ -77,7 +77,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             </Field>
             <Field label="Follow robot" hint="the 3D camera tracks a TF frame; a pan stops it, the follow button (top right) resumes it"><Toggle value={view.follow} onChange={(follow) => app.settings.update({ follow })} /></Field>
             <FollowFramePicker app={app} />
-            <Field label="Robot model" hint="a stand-in for the robot type at the robot's pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
+            <Field label="Robot model" hint="at the robot's pose: a simulated Go2 or G1's own model, else a stand-in for the robot type (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel) => app.settings.update({ robotModel })} /></Field>
             <Field label="Stats"><Toggle value={view.showStats} onChange={(showStats) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom. Follow and top-down are on the view (top right).</p>
         </div>

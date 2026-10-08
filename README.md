@@ -138,6 +138,21 @@ The hint under the picker says which rule decided. The page writes the type in u
 `lv.view.profile`, `""` = auto), and drive settings are per type (`lv.drive.dog`, …; an install from before types
 starts from its old profile's, e.g. `lv.drive.Unitree Go2`).
 
+## Simulators
+
+When the running blueprint is one of dimos's simulators (Desktop's `/dimos/runs`: its `simulation` override, or the
+G1 sim blueprints' `G1SimConnection`), the 3D view draws the simulated robot's own model at its pose instead of the
+stand-in: the Go2 (MuJoCo's Go1 model, which dimos simulates the Go2 with) or the G1. dimos's sims publish only the
+body's pose (odom / `base_link`), no joint angles, so the model moves and turns with the robot with its legs in the
+standing pose. The models are baked from dimos's MuJoCo model by `scripts/bake_sim_models.py`
+(`frontend/public/robots/sim_*.glb`, Unitree's BSD-3 license beside each).
+
+A DimSim run (`simulation: dimsim`, Go2 only: dimos has no DimSim G1) adds a **Sim** panel with DimSim's own live 3D
+page. Launch it with `dimsim_headless: false`: dimos then waits for that page to be open somewhere (it renders the
+camera and lidar), and the panel is that page, so it folds to a small preview rather than closing. One Controller tab
+per browser shows it (a phone only when asked: "Show it here"), since every open copy would re-seed DimSim's physics and
+publish the sensors again. Headless (dimos's default), dimos's own browser has the page and the panel only says so.
+
 ## Driving
 
 There is no arming: whenever the Controller has the keyboard (click or tap the view to give it), W/S drive, A/D turn, Q/E strafe (per the robot profile), Shift doubles linear speed
@@ -325,6 +340,9 @@ weight normalized, restyled; the wheeled robot puts the humanoid's upper body on
 - dog: "robot dog" by Izwar Muis, Noun Project, https://thenounproject.com/icon/robot-dog-8041305/ — CC BY 3.0
 - arm: "Robotics" by rukanicon, Noun Project, https://thenounproject.com/icon/robotics-5920654/ — CC BY 3.0
 - drone: Tabler Icons "drone", https://tabler.io/icons — MIT
+
+The sim robot models (`frontend/public/robots/sim_go2.glb`, `sim_g1.glb`) are decimated from the MuJoCo Menagerie's
+unitree_go1 and unitree_g1 meshes, © Unitree Robotics, BSD-3-Clause (`sim_go2.LICENSE`, `sim_g1.LICENSE`).
 
 ## Develop
 

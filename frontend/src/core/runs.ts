@@ -4,6 +4,7 @@
 import { getZenoh } from "../dim-app/source/zenoh.js"
 import { Store } from "./store.ts"
 import type { Module } from "./cmdvel.ts"
+import { sameSim, type SimInfo, simOf, type SimModule } from "./sim.ts"
 
 export interface RunState {
     /** false until the first answer (or when there's no Desktop dimos API here: dev server, remote robot) */
@@ -18,18 +19,21 @@ export interface RunState {
     starting: string | null
     /** each running blueprint's modules and their streams (Desktop's /dimos/blueprints/<name>); null = unknown */
     blueprints: Record<string, Module[] | null>
+    /** the running simulator (MuJoCo or DimSim) and its robot, or null (core/sim.ts) */
+    sim: SimInfo | null
 }
 
-type Runs = { launch?: { blueprint?: string; phase?: string } | null; runs?: { blueprint: string }[] }
-type Blueprint = { modules?: Module[] }
+type Overrides = Record<string, unknown>
+type Runs = { launch?: { blueprint?: string; phase?: string; overrides?: Overrides } | null; runs?: { blueprint: string; config_overrides?: Overrides }[] }
+type Blueprint = { modules?: (Module & SimModule)[] }
 
 const desktopUrl = (path: string) => new URL(`../../${path}`, location.href)
 
 export class RunWatch {
-    readonly state = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
+    readonly state = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {}, sim: null })
     #pending: Promise<void> | null = null
     #again = false
-    #blueprints = new Map<string, Module[]>()
+    #blueprints = new Map<string, (Module & SimModule)[]>()
 
     start() {
         const zenoh = getZenoh()
@@ -57,7 +61,7 @@ export class RunWatch {
         return this.#pending
     }
 
-    async #modulesOf(name: string): Promise<Module[]> {
+    async #modulesOf(name: string): Promise<(Module & SimModule)[]> {
         const cached = this.#blueprints.get(name)
         if (cached) {
             return cached
@@ -92,7 +96,7 @@ export class RunWatch {
                 running.add(runs.launch.blueprint)
             }
             const starting = phase === "starting" ? runs.launch?.blueprint ?? null : null
-            const blueprints: Record<string, Module[] | null> = {}
+            const blueprints: Record<string, (Module & SimModule)[] | null> = {}
             for (const name of running) {
                 try {
                     blueprints[name] = await this.#modulesOf(name)
@@ -100,10 +104,16 @@ export class RunWatch {
                     blueprints[name] = null // its metadata isn't available: auto falls back to the standard topics
                 }
             }
-            this.state.set({ known: true, desktop: true, dimosInstalled, running: [...running], starting, blueprints })
+            const overridesOf = (name: string): Overrides => ({
+                ...(runs.runs ?? []).find((run) => run.blueprint === name)?.config_overrides,
+                ...(runs.launch?.blueprint === name && phase === "running" ? runs.launch.overrides : undefined),
+            })
+            const found = simOf([...running].map((name) => ({ blueprint: name, overrides: overridesOf(name), modules: blueprints[name] })))
+            const sim = sameSim(found, this.state.get().sim) ? this.state.get().sim : found
+            this.state.set({ known: true, desktop: true, dimosInstalled, running: [...running], starting, blueprints, sim })
         } catch {
             // no Desktop dimos API here (dev server, remote robot): the profile's list and the bridge are enough
-            this.state.update({ known: true, desktop: false, dimosInstalled })
+            this.state.update({ known: true, desktop: false, dimosInstalled, sim: null })
         }
     }
 }
