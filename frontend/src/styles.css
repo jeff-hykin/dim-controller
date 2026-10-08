@@ -526,3 +526,5 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .strip-chip { padding: 0 7px; height: 30px; }
 .mobile .strip-run, .mobile .strip-key { display: none; }
 .mobile .strip-chip .strip-value { max-width: 92px; }
+/* a phone's main camera: the picture at the top, the space below it for the thumbs */
+.mobile .zone-stage .camera-media, .mobile .zone-stage .camera-overlay { object-position: top; }
