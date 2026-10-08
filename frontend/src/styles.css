@@ -426,3 +426,5 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .map-panel { left: calc(8px + var(--dim-inset-left)); top: calc(98px + env(safe-area-inset-top)); }
 .mobile .map-panel.open { width: 46vw; height: calc(46vw + 33px); }
 .mobile .map-panel .camera-head .camera-info, .mobile .map-panel .camera-head select { display: none; }
+.map-panel .camera-head .dim-select { max-width: 40%; }
+.map-panel .camera-head .dim-select.map-overlay { max-width: 30%; }

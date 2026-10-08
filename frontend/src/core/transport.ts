@@ -44,6 +44,21 @@ export interface ConnectionState {
 /** Ten beats a second; the gateway fires a publisher's deadman after `heartbeatMisses` silent beats. */
 export const HEARTBEAT_HZ = 10
 const DISCOVERY_MS = 2000
+/** A topic stays listed this long after discovery last saw it: a slow publisher (a 0.5 Hz map) can miss a round's probe. */
+export const TOPIC_FORGET_MS = 20000
+
+/** Folds one discovery round into `lastSeen` (key → topic and when it was last found) and returns the topics still listed. */
+export function rememberTopics(lastSeen: Map<string, { topic: Topic; at: number }>, found: Topic[], now: number, forgetMs = TOPIC_FORGET_MS): Topic[] {
+    for (const topic of found) {
+        lastSeen.set(topic.key, { topic, at: now })
+    }
+    for (const [key, seen] of lastSeen) {
+        if (now - seen.at > forgetMs) {
+            lastSeen.delete(key)
+        }
+    }
+    return [...lastSeen.values()].map((seen) => seen.topic).sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
+}
 
 export class Connection {
     client: ZenohGateway | null = null
@@ -71,11 +86,11 @@ export class Connection {
             this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null })
             this.#lastDropped = dropped
         }, 1000)
+        const lastSeen = new Map<string, { topic: Topic; at: number }>()
         for (;;) {
             try {
                 const found = await client.listTopics("dimos/**", { probeMs: 800 })
-                const topics = found.map((topic) => parseKey(topic.key)).filter((topic): topic is Topic => topic !== null)
-                topics.sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
+                const topics = rememberTopics(lastSeen, found.map((topic) => parseKey(topic.key)).filter((topic): topic is Topic => topic !== null), Date.now())
                 const before = this.status.get().topics
                 if (topics.length !== before.length || topics.some((topic, index) => topic.key !== before[index].key)) {
                     this.status.update({ topics })

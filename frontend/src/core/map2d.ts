@@ -1,5 +1,5 @@
-// The 2D map panel's model (no DOM): the north-up view transform, an OccupancyGrid or a top-down point cloud as an
-// RGBA image, the robot's pose and trail on the floor plane, and which topic to draw.
+// The 2D map panel's model (no DOM): the north-up view transform, a top-down point cloud heatmap or an OccupancyGrid as
+// an RGBA image, the robot's pose and trail on the floor plane, and which topics to draw.
 import type { Topic } from "./transport.ts"
 
 export type Rgba = [number, number, number, number]
@@ -34,10 +34,23 @@ export function pan(view: MapView, dx: number, dy: number): MapView {
     return { ...view, centerX: view.centerX - dx * view.metersPerPixel, centerY: view.centerY + dy * view.metersPerPixel }
 }
 
-/** The view that shows a world box (minX, minY, maxX, maxY) with a margin. */
-export function fitView(box: [number, number, number, number], width: number, height: number): MapView {
+/** a fit never zooms in closer than this many meters across (a lone point or an empty map is not a reason to) */
+export const MIN_FIT_SPAN = 4
+
+/** A view that's usable: finite and within the zoom limits. */
+export const isValidView = (view: unknown): view is MapView => {
+    const { centerX, centerY, metersPerPixel } = (view ?? {}) as Partial<MapView>
+    return [centerX, centerY, metersPerPixel].every(Number.isFinite) && metersPerPixel! >= MIN_METERS_PER_PIXEL && metersPerPixel! <= MAX_METERS_PER_PIXEL
+}
+
+/** The view that shows a world box (minX, minY, maxX, maxY) with a margin; null when the box isn't finite. */
+export function fitView(box: [number, number, number, number], width: number, height: number): MapView | null {
     const [minX, minY, maxX, maxY] = box
-    const metersPerPixel = Math.min(MAX_METERS_PER_PIXEL, Math.max(MIN_METERS_PER_PIXEL, Math.max((maxX - minX) / Math.max(1, width), (maxY - minY) / Math.max(1, height)) * 1.1))
+    if (!box.every(Number.isFinite) || maxX < minX || maxY < minY) {
+        return null
+    }
+    const spanX = Math.max(MIN_FIT_SPAN, maxX - minX), spanY = Math.max(MIN_FIT_SPAN, maxY - minY)
+    const metersPerPixel = Math.min(MAX_METERS_PER_PIXEL, Math.max(MIN_METERS_PER_PIXEL, Math.max(spanX / Math.max(1, width), spanY / Math.max(1, height)) * 1.1))
     return { centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2, metersPerPixel }
 }
 
@@ -116,12 +129,25 @@ export interface ProjectedCloud {
 /** the projected image's longest side, at most */
 const MAX_CLOUD_PIXELS = 1600
 
+/** a heat ramp (inferno's upper part: no near-black, so the floor still shows on a dark background) */
+const HEAT_STOPS: Rgba[] = [[60, 18, 110, 255], [120, 28, 109, 255], [187, 55, 84, 255], [237, 105, 37, 255], [251, 180, 26, 255], [252, 255, 164, 255]]
+
+/** 256 heat colors, cold (0) to hot (255), as RGBA bytes. */
+export function heatLut(stops: Rgba[] = HEAT_STOPS): Uint8ClampedArray {
+    const lut = new Uint8ClampedArray(256 * 4)
+    for (let index = 0; index < 256; index++) {
+        const at = (index / 255) * (stops.length - 1), below = Math.min(stops.length - 2, Math.floor(at))
+        lut.set(mix(stops[below], stops[below + 1], at - below), index * 4)
+    }
+    return lut
+}
+
 /**
- * A point cloud seen from above: each point placed by `elements` (cloud frame → fixed frame, column-major 4×4) and
- * binned into `cell`-meter pixels (coarser when the cloud is too big for MAX_CLOUD_PIXELS); a pixel takes the color of
- * its highest point between `low` (floor) and `high` (tallest), so walls stand out from the floor.
+ * A point cloud seen from above, as a heatmap: each point placed by `elements` (cloud frame → fixed frame, column-major
+ * 4×4) and binned into `cell`-meter pixels (coarser when the cloud is too big for MAX_CLOUD_PIXELS); a pixel takes
+ * the heat of its highest point between the floor (cold) and the tallest (hot), so walls stand out from the floor.
  */
-export function projectCloud(positions: Float32Array, elements: ArrayLike<number>, low: Rgba, high: Rgba, cell = 0.05): ProjectedCloud | null {
+export function projectCloud(positions: Float32Array, elements: ArrayLike<number>, lut: Uint8ClampedArray, cell = 0.05): ProjectedCloud | null {
     const count = Math.floor(positions.length / 3)
     if (!count) {
         return null
@@ -169,7 +195,11 @@ export function projectCloud(positions: Float32Array, elements: ArrayLike<number
         if (top[at] === -Infinity) {
             continue
         }
-        pixels.set(mix(low, high, Math.min(1, Math.max(0, (top[at] - zLow) / span))), at * 4)
+        const heat = Math.round(255 * Math.min(1, Math.max(0, (top[at] - zLow) / span))) * 4
+        pixels[at * 4] = lut[heat]
+        pixels[at * 4 + 1] = lut[heat + 1]
+        pixels[at * 4 + 2] = lut[heat + 2]
+        pixels[at * 4 + 3] = lut[heat + 3]
     }
     return { pixels, width, height, originX: minX, originY: minY, cell }
 }
@@ -208,13 +238,13 @@ export class Trail {
 export const isGridTopic = (topic: Topic) => topic.type === "nav_msgs.OccupancyGrid"
 export const isCloudTopic = (topic: Topic) => topic.type === "sensor_msgs.PointCloud2"
 
-/** a map before a costmap before anything else; for clouds, an accumulated map before a single scan */
+/** an accumulated cloud map (the 3D view's global map) first, other map clouds, single scans, then occupancy grids */
 const rank = (topic: Topic) =>
-    isGridTopic(topic)
-        ? (/^\/map$/.test(topic.name) ? 0 : /global/.test(topic.name) ? 1 : /map/.test(topic.name) ? 2 : 3)
-        : 10 + (/global_map|^\/map$/.test(topic.name) ? 0 : /map|global|voxel/i.test(topic.name) ? 1 : 2)
+    isCloudTopic(topic)
+        ? (/^\/global_map$/.test(topic.name) ? 0 : /map|global|voxel/i.test(topic.name) ? 1 : 2)
+        : 10 + (/^\/map$/.test(topic.name) ? 0 : /global/.test(topic.name) ? 1 : /map/.test(topic.name) ? 2 : 3)
 
-/** The topics the panel can draw, best first: occupancy grids, then point clouds. */
+/** The topics the panel can draw as its base, best first: point clouds (as a top-down heatmap), then occupancy grids. */
 export function mapCandidates(topics: Topic[]): Topic[] {
     return topics.filter((topic) => isGridTopic(topic) || isCloudTopic(topic)).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
 }
@@ -223,4 +253,12 @@ export function mapCandidates(topics: Topic[]): Topic[] {
 export function chooseMapTopic(topics: Topic[], picked: string): Topic | null {
     const candidates = mapCandidates(topics)
     return candidates.find((topic) => topic.key === picked) ?? candidates[0] ?? null
+}
+
+/** The occupancy grids (costmaps) the panel can lay over its base, best first. */
+export const overlayCandidates = (topics: Topic[]): Topic[] => mapCandidates(topics).filter(isGridTopic)
+
+/** The overlay grid: the picked one when it's on the bus and isn't the base; "" (the default) is none. */
+export function chooseOverlay(topics: Topic[], picked: string, base: Topic | null): Topic | null {
+    return picked && picked !== base?.key ? overlayCandidates(topics).find((topic) => topic.key === picked) ?? null : null
 }

@@ -1,7 +1,8 @@
-// The 2D map: a floating, collapsible, top-down panel (north-up: +x right, +y up) with the occupancy grid on the bus
-// (or, without one, a point cloud seen from above), the robot's pose, heading and trail, the world axes and a scale
-// bar. View-only: wheel / pinch zoom and drag pan move the picture, never the robot. Redrawn only when something
-// changed (new data, the robot moved, a zoom or pan, a resize, the theme).
+// The 2D map: a floating, collapsible, top-down panel (north-up: +x right, +y up) with the bus's global map (an
+// accumulated point cloud, as a height heatmap) or any other cloud or occupancy grid, optionally a costmap laid over
+// it, the robot's pose, heading and trail, the world axes and a scale bar. View-only: wheel / pinch zoom and drag pan
+// move the picture, never the robot. Redrawn only when something changed (new data, the robot moved, a zoom or pan, a
+// resize, the theme).
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -11,15 +12,19 @@ import { poseMatrix } from "../core/layers/helpers.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 import {
     chooseMapTopic,
+    chooseOverlay,
     fitView,
     floorPose,
     formatMeters,
     gridLut,
     gridPixels,
+    heatLut,
     isGridTopic,
+    isValidView,
     mapCandidates,
     type MapView,
     niceLength,
+    overlayCandidates,
     pan,
     projectCloud,
     type ProjectedCloud,
@@ -29,7 +34,7 @@ import {
     zoomAt,
 } from "../core/map2d.ts"
 import { Icon } from "./icons.tsx"
-import { startPanelDrag } from "./panelDrag.ts"
+import { clampPanelBox, startPanelDrag } from "./panelDrag.ts"
 
 /** what this viewer remembers about the panel (localStorage: a phone and a desktop each keep their own) */
 interface MapLayout {
@@ -41,8 +46,10 @@ interface MapLayout {
     y: number
     width: number
     height: number
-    /** "" = the best map on the bus */
+    /** the base map: "" = the best on the bus (the global map) */
     topic: string
+    /** a costmap drawn over the base: "" = none (the default) */
+    overlay: string
     follow: boolean
     view: MapView | null
 }
@@ -50,10 +57,22 @@ interface MapLayout {
 const LAYOUT_KEY = "lv.map2d"
 const HEAD_PX = 33
 const MIN_WIDTH = 200, MIN_HEIGHT = 150
+const viewport = () => ({ width: globalThis.innerWidth || 0, height: globalThis.innerHeight || 0 })
 
-function loadLayout(mobile: boolean): MapLayout {
-    const defaults: MapLayout = { collapsed: mobile, full: false, x: -1, y: -1, width: 320, height: 320 + HEAD_PX, topic: "", follow: true, view: null }
-    return { ...defaults, ...readLocal<Partial<MapLayout>>(LAYOUT_KEY, {}) }
+/** The remembered layout, every field checked: a broken or stale entry never hides the panel. */
+function loadLayout(mobile: boolean, saved: Partial<MapLayout> = readLocal<Partial<MapLayout>>(LAYOUT_KEY, {})): MapLayout {
+    const defaults: MapLayout = { collapsed: mobile, full: false, x: -1, y: -1, width: 320, height: 320 + HEAD_PX, topic: "", overlay: "", follow: true, view: null }
+    const flag = (value: unknown, fallback: boolean) => typeof value === "boolean" ? value : fallback
+    const text = (value: unknown) => typeof value === "string" ? value : ""
+    return {
+        ...clampPanelBox(saved ?? {}, defaults, viewport(), { width: MIN_WIDTH, height: MIN_HEIGHT }),
+        collapsed: flag(saved?.collapsed, defaults.collapsed),
+        full: flag(saved?.full, false),
+        topic: text(saved?.topic),
+        overlay: text(saved?.overlay),
+        follow: flag(saved?.follow, true),
+        view: isValidView(saved?.view) ? saved.view : null,
+    }
 }
 
 export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
@@ -66,11 +85,21 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         })
     const { topics } = useStore(app.connection.status)
     const topic = chooseMapTopic(topics, layout.topic)
+    const overlay = chooseOverlay(topics, layout.overlay, topic)
     const candidates = mapCandidates(topics)
+    const grids = overlayCandidates(topics).filter((grid) => grid.key !== topic?.key)
     const element = useRef<HTMLDivElement>(null)
     const canvas = useRef<HTMLCanvasElement>(null)
     const renderer = useRef<MapRenderer | null>(null)
     const [status, setStatus] = useState({ info: "", problem: "" })
+
+    // a smaller window: the panel moves and shrinks back onto it
+    const [, setViewport] = useState(viewport)
+    useEffect(() => {
+        const resized = () => setViewport(viewport())
+        addEventListener("resize", resized)
+        return () => removeEventListener("resize", resized)
+    }, [])
 
     // the renderer lives while the panel is open; collapsed, nothing is subscribed or drawn
     const open = !layout.collapsed
@@ -96,8 +125,8 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
     }, [layout.follow, open])
 
     useEffect(() => {
-        renderer.current?.setTopic(topic)
-    }, [topic?.key, open])
+        renderer.current?.setTopics(topic, overlay)
+    }, [topic?.key, overlay?.key, open])
 
     const startDrag = (event: ReactPointerEvent) => {
         if (layout.full || mobile || (event.target as HTMLElement).closest("button, select")) {
@@ -132,21 +161,30 @@ export function MapPanel({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
         handle.addEventListener("pointercancel", up)
     }
 
-    const placed = layout.x >= 0 ? { left: Math.min(layout.x, Math.max(0, (globalThis.innerWidth || 1280) - 80)), top: Math.min(layout.y, Math.max(48, (globalThis.innerHeight || 800) - 40)) } : {}
-    const style: React.CSSProperties = mobile || layout.full ? {} : open ? { ...placed, width: layout.width, height: layout.height } : placed
-    const label = topic ? `${topic.name}${isGridTopic(topic) ? "" : " (top-down)"}` : "no map on the bus"
+    // where it is, kept on this window as it is now (the remembered box can be from a bigger one)
+    const box = clampPanelBox(layout, layout, viewport(), { width: MIN_WIDTH, height: MIN_HEIGHT })
+    const placed = box.x >= 0 ? { left: box.x, top: box.y } : {}
+    const style: React.CSSProperties = mobile || layout.full ? {} : open ? { ...placed, width: box.width, height: box.height } : placed
+    const name = (other: Topic) => `${other.name}${isGridTopic(other) ? "" : " (heatmap)"}`
+    const label = topic ? name(topic) : "no map on the bus"
     return (
         <div className="map-layer">
             <div ref={element} className={`dim-panel camera-panel map-panel ${open ? "open" : "collapsed"} ${layout.full && open ? "main" : ""}`} style={style}>
-                <div className="camera-head" onPointerDown={startDrag} onDoubleClick={() => open && !mobile && update({ full: !layout.full })} title={status.info}>
+                <div className="camera-head" onPointerDown={startDrag} onDoubleClick={(event) => open && !mobile && !(event.target as HTMLElement).closest("button, select") && update({ full: !layout.full })} title={status.info}>
                     <span className="map-title"><Icon name="map" size={14} />Map</span>
                     {open && candidates.length > 1 && (
                         <select className="dim-select" value={layout.topic} onChange={(event) => update({ topic: event.target.value })} aria-label="Map topic">
                             <option value="">auto ({label})</option>
-                            {candidates.map((other) => <option key={other.key} value={other.key}>{other.name}{isGridTopic(other) ? "" : " (top-down)"}</option>)}
+                            {candidates.map((other) => <option key={other.key} value={other.key}>{name(other)}</option>)}
                         </select>
                     )}
                     {open && candidates.length <= 1 && <span className="camera-info map-source">{label}</span>}
+                    {open && grids.length > 0 && (
+                        <select className="dim-select map-overlay" value={overlay?.key ?? ""} onChange={(event) => update({ overlay: event.target.value })} aria-label="Costmap overlay" title="A costmap drawn over the map">
+                            <option value="">no costmap</option>
+                            {grids.map((grid) => <option key={grid.key} value={grid.key}>+ {grid.name}</option>)}
+                        </select>
+                    )}
                     {open && <span className="camera-info">{status.info}</span>}
                     {open && (
                         <>
@@ -185,9 +223,11 @@ interface Palette {
     muted: Rgba
     primary: Rgba
     robot: Rgba
+    /** a grid as the base map: free floor, costs, walls */
     gridLut: Uint8ClampedArray
-    cloudLow: Rgba
-    cloudHigh: Rgba
+    /** a grid over the base: free floor clear, so the map under it shows */
+    overlayLut: Uint8ClampedArray
+    heatLut: Uint8ClampedArray
 }
 
 const css = ([r, g, b, a]: Rgba, alpha = 1) => `rgba(${r}, ${g}, ${b}, ${(a / 255) * alpha})`
@@ -215,6 +255,7 @@ function themePalette(): Palette {
     const fg = token("--fg", "#ece8f0"), muted = token("--muted-fg", "#8e8898"), primary = token("--primary", "#7cc8ec")
     const opaque = (color: Rgba): Rgba => [color[0], color[1], color[2], 255]
     const base = opaque(background)
+    const clear: Rgba = [0, 0, 0, 0]
     return {
         background: base,
         fg,
@@ -222,9 +263,9 @@ function themePalette(): Palette {
         primary,
         robot: token("--warn", "#e8bf6a"),
         // free floor a shade off the background, costs toward the accent, walls in the text color, unknown clear
-        gridLut: gridLut({ free: blend(base, opaque(fg), 0.1), low: blend(base, opaque(primary), 0.3), high: blend(base, opaque(primary), 0.8), lethal: opaque(fg), unknown: [0, 0, 0, 0] }),
-        cloudLow: blend(base, opaque(muted), 0.45),
-        cloudHigh: opaque(primary),
+        gridLut: gridLut({ free: blend(base, opaque(fg), 0.1), low: blend(base, opaque(primary), 0.3), high: blend(base, opaque(primary), 0.8), lethal: opaque(fg), unknown: clear }),
+        overlayLut: gridLut({ free: clear, low: [...primary.slice(0, 3), 70] as Rgba, high: [...primary.slice(0, 3), 190] as Rgba, lethal: [...primary.slice(0, 3), 235] as Rgba, unknown: clear }),
+        heatLut: heatLut(),
     }
 }
 
@@ -244,108 +285,44 @@ const YAW_EPSILON = 0.005
 /** the default zoom before there's anything to fit */
 const DEFAULT_METERS_PER_PIXEL = 0.05
 
-/** Draws the map onto its canvas (no React): subscriptions, view, interaction. */
-class MapRenderer {
-    #view: MapView
-    #fitted: boolean
-    #follow: boolean
-    #palette = themePalette()
-    #topic: Topic | null = null
-    #stop: (() => void)[] = []
-    #grid: GridData | null = null
-    #gridImage: HTMLCanvasElement | null = null
+/** One topic the map draws (the base, or the costmap over it): its subscription, its latest data as an image. */
+class MapSource {
+    grid: GridData | null = null
+    gridImage: HTMLCanvasElement | null = null
     #gridPixels: Uint8ClampedArray | undefined
-    #cloud: ProjectedCloud | null = null
-    #cloudImage: HTMLCanvasElement | null = null
-    #cloudFrame: string | null = null
     /** the grid's (0,0) corner in the fixed frame, as last drawn */
-    #gridPose: { x: number; y: number; yaw: number } | null = null
-    #robot: { x: number; y: number; yaw: number } | null = null
-    #trail = new Trail()
-    #fixedFrame = ""
-    #frameRequest = 0
-    #pointers = new Map<number, { x: number; y: number }>()
-    #dragged = false
-    #problem = ""
-    #info = ""
-    #dispose: (() => void)[] = []
+    gridPose: { x: number; y: number; yaw: number } | null = null
+    cloud: ProjectedCloud | null = null
+    cloudImage: HTMLCanvasElement | null = null
+    #cloudFrame: string | null = null
+    /** the last cloud, kept to recolor it on a theme change */
+    #cloudPositions: Float32Array | null = null
+    #cloudMatrix: number[] | null = null
+    info = ""
+    problem = ""
+    #stop: (() => void)[] = []
 
-    constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, follow: boolean, readonly events: {
-        onView(view: MapView): void
-        onFollow(follow: boolean): void
-        onStatus(status: { info: string; problem: string }): void
-    }) {
-        this.#view = view ?? { centerX: 0, centerY: 0, metersPerPixel: DEFAULT_METERS_PER_PIXEL }
-        this.#fitted = !!view
-        this.#follow = follow
-        this.#dispose.push(app.viewer.onFrame(() => this.#eachFrame()))
-        const theme = () => {
-            this.#palette = themePalette()
-            this.#rebuildGrid()
-            this.#rebuildCloud()
-            this.requestDraw()
-        }
-        addEventListener("dim-theme", theme)
-        this.#dispose.push(() => removeEventListener("dim-theme", theme))
-        const resize = new ResizeObserver(() => this.requestDraw())
-        resize.observe(canvas)
-        this.#dispose.push(() => resize.disconnect())
-        // a browser zoom or a move to another screen changes the pixel ratio
-        const redraw = () => this.requestDraw()
-        addEventListener("resize", redraw)
-        this.#dispose.push(() => removeEventListener("resize", redraw))
-        this.#listen()
-        this.requestDraw()
-    }
-
-    dispose() {
-        cancelAnimationFrame(this.#frameRequest)
-        this.#unsubscribe()
-        this.#dispose.forEach((stop) => stop())
-    }
-
-    setFollow(follow: boolean) {
-        this.#follow = follow
-        if (follow && this.#robot) {
-            this.#setView({ ...this.#view, centerX: this.#robot.x, centerY: this.#robot.y })
-        }
-    }
-
-    setTopic(topic: Topic | null) {
-        if (topic?.key === this.#topic?.key) {
-            return
-        }
-        this.#unsubscribe()
-        this.#topic = topic
-        this.#grid = this.#gridImage = this.#cloud = this.#cloudImage = null
-        this.#cloudFrame = null
-        this.#cloudPositions = this.#cloudMatrix = null
-        this.#gridPose = null
-        this.#setStatus("", topic ? `waiting for ${topic.name}` : "no occupancy grid or point cloud on the bus")
-        this.requestDraw()
-        if (!topic) {
-            return
-        }
-        const connection = this.app.connection
+    constructor(readonly app: ViewerApp, readonly topic: Topic, readonly lut: () => Uint8ClampedArray, readonly changed: () => void) {
+        const connection = app.connection
+        this.problem = `waiting for ${topic.name}`
         if (isGridTopic(topic)) {
             this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 2 }, (message) => {
                 let grid: LcmValue
                 try {
                     grid = decode(topic.type, message.bytes)
                 } catch (error) {
-                    this.#setStatus(this.#info, `cannot decode ${topic.name}: ${error}`)
+                    this.#status(this.info, `cannot decode ${topic.name}: ${error}`)
                     return
                 }
                 const { width, height, resolution, origin } = grid.info ?? {}
                 if (!width || !height || !(resolution > 0) || !grid.data || grid.data.length < width * height) {
-                    this.#setStatus(this.#info, `${topic.name}: empty or truncated grid`)
+                    this.#status(this.info, `${topic.name}: empty or truncated grid`)
                     return
                 }
-                this.#grid = { width, height, resolution, origin, data: grid.data, frame: grid.header?.frame_id ?? "" }
-                this.#rebuildGrid()
-                this.#gridPose = null
-                this.#setStatus(`${width}×${height} @ ${resolution.toFixed(2)} m`, "")
-                this.requestDraw()
+                this.grid = { width, height, resolution, origin, data: grid.data, frame: grid.header?.frame_id ?? "" }
+                this.gridPose = null
+                this.rebuild()
+                this.#status(`${width}×${height} @ ${resolution.toFixed(2)} m`, "")
             }))
             return
         }
@@ -361,60 +338,186 @@ class MapRenderer {
             if (!positions || this.#cloudFrame === null) {
                 return
             }
-            const placed = this.app.tf.lookup(this.#cloudFrame, this.app.viewer.fixedFrame)
+            const placed = app.tf.lookup(this.#cloudFrame, app.viewer.fixedFrame)
             if (!placed) {
-                this.#setStatus(this.#info, `no TF from "${this.#cloudFrame}" to "${this.app.viewer.fixedFrame}"`)
+                this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
                 return
             }
-            this.#cloud = projectCloud(positions, placed.elements, this.#palette.cloudLow, this.#palette.cloudHigh)
             this.#cloudPositions = positions
             this.#cloudMatrix = placed.elements.slice()
-            this.#rebuildCloud()
-            this.#setStatus(`${Math.round(positions.length / 3).toLocaleString()} pts · top-down`, "")
-            this.requestDraw()
+            this.rebuild()
+            this.#status(`${Math.round(positions.length / 3).toLocaleString()} pts`, "")
         }))
     }
 
-    /** the last cloud, kept to recolor it on a theme change */
-    #cloudPositions: Float32Array | null = null
-    #cloudMatrix: number[] | null = null
-
-    #unsubscribe() {
+    dispose() {
         this.#stop.forEach((stop) => stop())
         this.#stop = []
     }
 
-    #setStatus(info: string, problem: string) {
-        this.#info = info
-        this.#problem = problem
+    #status(info: string, problem: string) {
+        this.info = info
+        this.problem = problem
+        this.changed()
+    }
+
+    /** the image from the latest data in the current colors */
+    rebuild() {
+        if (this.grid) {
+            this.#gridPixels = gridPixels(this.grid.data, this.grid.width, this.grid.height, this.lut(), this.#gridPixels)
+            this.gridImage = toCanvas(this.#gridPixels, this.grid.width, this.grid.height, this.gridImage)
+        }
+        if (this.#cloudPositions && this.#cloudMatrix) {
+            this.cloud = projectCloud(this.#cloudPositions, this.#cloudMatrix, this.lut())
+            this.cloudImage = this.cloud ? toCanvas(this.cloud.pixels, this.cloud.width, this.cloud.height, this.cloudImage) : null
+        }
+    }
+
+    /** every 3D frame: the grid's TF placement; true when it moved */
+    place(fixedFrame: string): boolean {
+        if (!this.grid) {
+            return false
+        }
+        const placed = this.app.tf.lookup(this.grid.frame, fixedFrame)
+        if (!placed) {
+            const had = !!this.gridPose
+            this.gridPose = null
+            if (!this.problem) {
+                this.#status(this.info, `no TF from "${this.grid.frame}" to "${fixedFrame}"`)
+            }
+            return had
+        }
+        const pose = floorPose(placed.clone().multiply(poseMatrix(this.grid.origin)).elements)
+        const before = this.gridPose
+        if (!before || Math.abs(before.x - pose.x) > 1e-4 || Math.abs(before.y - pose.y) > 1e-4 || Math.abs(before.yaw - pose.yaw) > 1e-5) {
+            this.gridPose = pose
+            if (this.problem.startsWith("no TF")) {
+                this.#status(this.info, "")
+            }
+            return true
+        }
+        return false
+    }
+
+    /** the drawn data's box in the fixed frame, or null */
+    bounds(): [number, number, number, number] | null {
+        if (this.grid && this.gridPose) {
+            const { width, height, resolution } = this.grid, { x, y, yaw } = this.gridPose
+            const cos = Math.cos(yaw), sin = Math.sin(yaw)
+            const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([u, v]) => [x + (u * cos - v * sin) * resolution, y + (u * sin + v * cos) * resolution])
+            return [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))]
+        }
+        if (this.cloud) {
+            const { originX, originY, width, height, cell } = this.cloud
+            return [originX, originY, originX + width * cell, originY + height * cell]
+        }
+        return null
+    }
+
+    /** draws itself in world coordinates (the context already maps meters to the screen) */
+    draw(context: CanvasRenderingContext2D) {
+        if (this.grid && this.gridImage && this.gridPose) {
+            context.translate(this.gridPose.x, this.gridPose.y)
+            context.rotate(this.gridPose.yaw)
+            context.scale(this.grid.resolution, this.grid.resolution)
+            context.drawImage(this.gridImage, 0, 0)
+        } else if (this.cloud && this.cloudImage) {
+            context.translate(this.cloud.originX, this.cloud.originY)
+            context.scale(this.cloud.cell, this.cloud.cell)
+            context.drawImage(this.cloudImage, 0, 0)
+        }
+    }
+}
+
+/** Draws the map onto its canvas (no React): subscriptions, view, interaction. */
+class MapRenderer {
+    #view: MapView
+    #fitted: boolean
+    #follow: boolean
+    #palette = themePalette()
+    #base: MapSource | null = null
+    #overlay: MapSource | null = null
+    #robot: { x: number; y: number; yaw: number } | null = null
+    #trail = new Trail()
+    #fixedFrame = ""
+    #frameRequest = 0
+    #pointers = new Map<number, { x: number; y: number }>()
+    #dragged = false
+    #dispose: (() => void)[] = []
+
+    constructor(readonly app: ViewerApp, readonly canvas: HTMLCanvasElement, view: MapView | null, follow: boolean, readonly events: {
+        onView(view: MapView): void
+        onFollow(follow: boolean): void
+        onStatus(status: { info: string; problem: string }): void
+    }) {
+        this.#view = isValidView(view) ? view : { centerX: 0, centerY: 0, metersPerPixel: DEFAULT_METERS_PER_PIXEL }
+        this.#fitted = isValidView(view)
+        this.#follow = follow
+        this.#dispose.push(app.viewer.onFrame(() => this.#eachFrame()))
+        const theme = () => {
+            this.#palette = themePalette()
+            this.#base?.rebuild()
+            this.#overlay?.rebuild()
+            this.requestDraw()
+        }
+        addEventListener("dim-theme", theme)
+        this.#dispose.push(() => removeEventListener("dim-theme", theme))
+        const resize = new ResizeObserver(() => this.requestDraw())
+        resize.observe(canvas)
+        this.#dispose.push(() => resize.disconnect())
+        // a browser zoom or a move to another screen changes the pixel ratio
+        const redraw = () => this.requestDraw()
+        addEventListener("resize", redraw)
+        this.#dispose.push(() => removeEventListener("resize", redraw))
+        this.#listen()
+        this.#report()
+        this.requestDraw()
+    }
+
+    dispose() {
+        cancelAnimationFrame(this.#frameRequest)
+        this.#base?.dispose()
+        this.#overlay?.dispose()
+        this.#dispose.forEach((stop) => stop())
+    }
+
+    setFollow(follow: boolean) {
+        this.#follow = follow
+        if (follow && this.#robot) {
+            this.#setView({ ...this.#view, centerX: this.#robot.x, centerY: this.#robot.y })
+        }
+    }
+
+    /** the base map and the costmap over it (null: none); a source that didn't change keeps its data */
+    setTopics(base: Topic | null, overlay: Topic | null) {
+        const changed = () => {
+            this.#report()
+            this.requestDraw()
+        }
+        if (base?.key !== this.#base?.topic.key) {
+            this.#base?.dispose()
+            this.#base = base ? new MapSource(this.app, base, () => isGridTopic(base) ? this.#palette.gridLut : this.#palette.heatLut, changed) : null
+        }
+        if (overlay?.key !== this.#overlay?.topic.key) {
+            this.#overlay?.dispose()
+            this.#overlay = overlay ? new MapSource(this.app, overlay, () => this.#palette.overlayLut, changed) : null
+        }
+        changed()
+    }
+
+    #report() {
+        const base = this.#base, overlay = this.#overlay
+        const info = [base?.info, overlay?.info && `+ ${overlay.topic.name} ${overlay.info}`].filter(Boolean).join(" · ")
+        const problem = !base ? "no point cloud or occupancy grid on the bus" : base.problem || overlay?.problem || ""
         this.events.onStatus({ info, problem })
     }
 
-    #rebuildGrid() {
-        const grid = this.#grid
-        if (!grid) {
-            return
-        }
-        this.#gridPixels = gridPixels(grid.data, grid.width, grid.height, this.#palette.gridLut, this.#gridPixels)
-        this.#gridImage = toCanvas(this.#gridPixels, grid.width, grid.height, this.#gridImage)
-    }
-
-    #rebuildCloud() {
-        if (this.#cloudPositions && this.#cloudMatrix && this.#cloud) {
-            this.#cloud = projectCloud(this.#cloudPositions, this.#cloudMatrix, this.#palette.cloudLow, this.#palette.cloudHigh)
-        }
-        if (this.#cloud) {
-            this.#cloudImage = toCanvas(this.#cloud.pixels, this.#cloud.width, this.#cloud.height, this.#cloudImage)
-        }
-    }
-
-    /** every 3D frame: the robot's pose, the grid's TF placement, the fixed frame; a redraw only when one changed */
+    /** every 3D frame: the robot's pose, the grids' TF placement, the fixed frame; a redraw only when one changed */
     #eachFrame() {
         const fixedFrame = this.app.viewer.fixedFrame
         if (fixedFrame !== this.#fixedFrame) {
             this.#fixedFrame = fixedFrame
             this.#trail.clear()
-            this.#gridPose = null
             this.requestDraw()
         }
         const matrix = this.app.robotMatrix
@@ -424,70 +527,47 @@ class MapRenderer {
             this.#robot = robot
             if (robot) {
                 this.#trail.push(robot.x, robot.y)
-                if (this.#follow) {
-                    this.#view = { ...this.#view, centerX: robot.x, centerY: robot.y }
-                }
-                if (!this.#fitted && !this.#grid && !this.#cloud) {
+                if (this.#follow || (!this.#fitted && !this.#bounds())) {
                     this.#view = { ...this.#view, centerX: robot.x, centerY: robot.y }
                 }
             }
             this.requestDraw()
         }
-        if (this.#grid) {
-            const placed = this.app.tf.lookup(this.#grid.frame, fixedFrame)
-            if (!placed) {
-                if (this.#gridPose) {
-                    this.#gridPose = null
-                    this.requestDraw()
-                }
-                if (!this.#problem) {
-                    this.#setStatus(this.#info, `no TF from "${this.#grid.frame}" to "${fixedFrame}"`)
-                }
-                return
-            }
-            const pose = floorPose(placed.clone().multiply(poseMatrix(this.#grid.origin)).elements)
-            const before = this.#gridPose
-            if (!before || Math.abs(before.x - pose.x) > 1e-4 || Math.abs(before.y - pose.y) > 1e-4 || Math.abs(before.yaw - pose.yaw) > 1e-5) {
-                this.#gridPose = pose
-                if (this.#problem.startsWith("no TF")) {
-                    this.#setStatus(this.#info, "")
-                }
-                this.requestDraw()
-            }
+        // both run every frame (no short circuit): each keeps its own placement current
+        const movedBase = this.#base?.place(fixedFrame) ?? false
+        const movedOverlay = this.#overlay?.place(fixedFrame) ?? false
+        if (movedBase || movedOverlay) {
+            this.requestDraw()
         }
     }
 
-    /** the drawn data's box in the fixed frame, or null */
+    /** the box around everything drawn, in the fixed frame, or null */
     #bounds(): [number, number, number, number] | null {
-        if (this.#grid && this.#gridPose) {
-            const { width, height, resolution } = this.#grid, { x, y, yaw } = this.#gridPose
-            const cos = Math.cos(yaw), sin = Math.sin(yaw)
-            const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([u, v]) => [x + (u * cos - v * sin) * resolution, y + (u * sin + v * cos) * resolution])
-            return [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))]
+        const boxes = [this.#base?.bounds(), this.#overlay?.bounds()].filter((box): box is [number, number, number, number] => !!box)
+        if (!boxes.length) {
+            return null
         }
-        if (this.#cloud) {
-            const { originX, originY, width, height, cell } = this.#cloud
-            return [originX, originY, originX + width * cell, originY + height * cell]
-        }
-        return null
+        return [Math.min(...boxes.map((b) => b[0])), Math.min(...boxes.map((b) => b[1])), Math.max(...boxes.map((b) => b[2])), Math.max(...boxes.map((b) => b[3]))]
     }
 
-    /** Shows all of the map (and stops following, unless the robot is the only thing there is). */
+    /** Shows all of the map (and stops following); with nothing to fit, centers on the robot. A no-op when it can't tell. */
     fit() {
-        const bounds = this.#bounds()
         const box = this.canvas.getBoundingClientRect()
-        if (bounds) {
-            if (this.#follow) {
-                this.#follow = false
-                this.events.onFollow(false)
-            }
-            this.#setView(fitView(bounds, box.width, box.height))
+        const bounds = this.#bounds()
+        const fitted = bounds && box.width >= 2 && box.height >= 2 ? fitView(bounds, box.width, box.height) : null
+        if (fitted) {
+            this.#stopFollowing()
+            this.#setView(fitted)
         } else if (this.#robot) {
             this.#setView({ centerX: this.#robot.x, centerY: this.#robot.y, metersPerPixel: DEFAULT_METERS_PER_PIXEL })
         }
     }
 
     #setView(view: MapView) {
+        // a NaN or out-of-range view would blank the map and be remembered: keep the last good one
+        if (!isValidView(view)) {
+            return
+        }
         this.#view = view
         this.#fitted = true
         this.requestDraw()
@@ -601,9 +681,10 @@ class MapRenderer {
             canvas.height = pixelHeight
         }
         // first data with nothing remembered: show all of it
-        if (!this.#fitted && this.#bounds()) {
-            const bounds = this.#bounds()!
-            this.#view = this.#follow && this.#robot ? { centerX: this.#robot.x, centerY: this.#robot.y, metersPerPixel: fitView(bounds, width, height).metersPerPixel } : fitView(bounds, width, height)
+        const bounds = this.#fitted ? null : this.#bounds()
+        const fitted = bounds && fitView(bounds, width, height)
+        if (fitted) {
+            this.#view = this.#follow && this.#robot ? { centerX: this.#robot.x, centerY: this.#robot.y, metersPerPixel: fitted.metersPerPixel } : fitted
             this.#fitted = true
         }
         const context = canvas.getContext("2d")!
@@ -634,21 +715,16 @@ class MapRenderer {
         }
         context.stroke()
 
-        // the map: world → screen (y flipped), then the image's own placement; row 0 lands at the lowest y
-        const worldTransform = () => context.setTransform(ratio * scale, 0, 0, -ratio * scale, ratio * (width / 2 - view.centerX * scale), ratio * (height / 2 + view.centerY * scale))
+        // the map: world → screen (y flipped), then each image's own placement; row 0 lands at the lowest y
         context.imageSmoothingEnabled = false
-        if (this.#grid && this.#gridImage && this.#gridPose) {
-            worldTransform()
-            context.translate(this.#gridPose.x, this.#gridPose.y)
-            context.rotate(this.#gridPose.yaw)
-            context.scale(this.#grid.resolution, this.#grid.resolution)
-            context.drawImage(this.#gridImage, 0, 0)
-        } else if (this.#cloud && this.#cloudImage) {
-            worldTransform()
-            context.translate(this.#cloud.originX, this.#cloud.originY)
-            context.scale(this.#cloud.cell, this.#cloud.cell)
-            context.drawImage(this.#cloudImage, 0, 0)
+        for (const [source, alpha] of [[this.#base, 1], [this.#overlay, 0.85]] as const) {
+            if (source) {
+                context.setTransform(ratio * scale, 0, 0, -ratio * scale, ratio * (width / 2 - view.centerX * scale), ratio * (height / 2 + view.centerY * scale))
+                context.globalAlpha = alpha
+                source.draw(context)
+            }
         }
+        context.globalAlpha = 1
         context.setTransform(ratio, 0, 0, ratio, 0, 0)
 
         // the world's origin: x (red) and y (green), a scale-bar step long but at least 24 px
