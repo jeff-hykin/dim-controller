@@ -105,7 +105,8 @@ function Driving({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
             {api.mobile
                 ? !onboarding.blocksDriving && (isArm ? <ArmHud app={app} mobile /> : <DriveHud app={app} mobile />)
                 : <ActionDock app={app} api={api} canDrive={!onboarding.blocksDriving} />}
-            {onboarding.message && (
+            {/* over the main view only: an open drawer covers it */}
+            {onboarding.message && !api.view.drawer && (
                 <div className="stage-message" style={rectStyle(api.layout.stage)}>
                     <EmptyLayer {...onboarding.message} />
                 </div>
