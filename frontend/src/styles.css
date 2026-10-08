@@ -409,8 +409,9 @@ h3.dim-label.first { margin-top: 4px; }
 .map-body { overflow: hidden; }
 .map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .map-canvas:active { cursor: grabbing; }
-/* nothing from the topic yet: said in the middle of the map */
-.map-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; box-sizing: border-box; text-align: center; pointer-events: none;
+/* nothing from the topic yet: said low in the map, clear of the robot (the map follows it, so it sits in the middle)
+   and above the scale bar */
+.map-empty { position: absolute; inset: 0; display: grid; place-items: end center; padding: 16px 16px 40px; box-sizing: border-box; text-align: center; pointer-events: none;
     font: 12px var(--sans); color: var(--muted-fg); }
 .map-problem { position: absolute; left: 8px; right: 84px; top: 8px; pointer-events: none; font: 11px var(--sans); color: var(--warn);
     padding: 3px 7px; background: color-mix(in srgb, var(--card) 80%, transparent); width: fit-content; max-width: calc(100% - 92px); }
