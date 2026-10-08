@@ -554,3 +554,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .steam-result.tone-warn { color: var(--warn); }
 .steam-link { white-space: nowrap; color: var(--primary); font-size: 11.5px; }
 .mobile .steam-banner { flex-wrap: wrap; }
+
+/* a short screen (a Steam Deck's 800 px, less in its browser, under Desktop's bar and dock): a slimmer strip and dock,
+   so the panels keep the height */
+@media (max-height: 760px) {
+    :root { --lv-strip-h: 38px; }
+    .app.desktop .strip-chip { height: 26px; }
+    .app.desktop .action-dock { height: 52px; }
+    .app.desktop .action-dock .key { width: 21px; height: 21px; font-size: 10px; }
+    .app .action-dock .dim-btn.dock-stop { height: 40px; padding: 0 16px; font-size: 15px; }
+}
