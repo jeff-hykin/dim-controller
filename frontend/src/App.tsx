@@ -24,6 +24,7 @@ import { type Dock, Panel } from "./ui/Panel.tsx"
 import { StatusPanel } from "./ui/StatusPanel.tsx"
 import { SettingsPanel } from "./ui/SettingsPanel.tsx"
 import { Icon } from "./ui/icons.tsx"
+import { ContainCrash } from "./ui/Unavailable.tsx"
 
 const noRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [], main: null })
@@ -100,17 +101,19 @@ export function App() {
 
     return (
         <div className={`app ${mobile ? "mobile" : "desktop"} layout-${layout.mode} ${classic ? (mainCamera ? "camera-main" : "scene-main") : "docked"}`} onPointerDownCapture={takeKeyboard}>
-            <ScenePanel host={host} app={app} placement={classic ? (mainCamera ? "float" : "main") : "dock"} dock={dock("scene")} mobile={mobile} onTf={() => setTab("tf")} onMain={() => {
-                chooseLayout()
-                cameraLayout.update({ main: null, auto: false, autoPanel: null })
-            }} />
+            <ContainCrash what="3D view">
+                <ScenePanel host={host} app={app} placement={classic ? (mainCamera ? "float" : "main") : "dock"} dock={dock("scene")} mobile={mobile} onTf={() => setTab("tf")} onMain={() => {
+                    chooseLayout()
+                    cameraLayout.update({ main: null, auto: false, autoPanel: null })
+                }} />
+            </ContainCrash>
             {app && (
                 <>
                     <TopBar app={app} tab={shownTab} onTab={onTab} />
                     <RecordControl app={app} />
                     {sideTab && <SidePanel app={app} tab={sideTab} onClose={() => setTab(null)} placement={sidePlacement} rect={rects.settings} />}
-                    <CameraPanels app={app} layout={cameraLayout} mobile={mobile} dock={dock("camera")} />
-                    <MapPanel app={app} mobile={mobile} dock={dock("map")} />
+                    <ContainCrash what="Cameras"><CameraPanels app={app} layout={cameraLayout} mobile={mobile} dock={dock("camera")} /></ContainCrash>
+                    <ContainCrash what="Map"><MapPanel app={app} mobile={mobile} dock={dock("map")} /></ContainCrash>
                     {settingsTile && (
                         <Panel placement="dock" dock={dock("settings")} className="settings-tile" head={<span className="map-title"><Icon name="settings" size={14} />Settings</span>} bodyClassName="panel-body">
                             <SettingsPanel app={app} />

@@ -19,6 +19,7 @@ import { clampPanelBox, PANEL_HEAD_PX, popoverPosition } from "./panelDrag.ts"
 import { type Dock, Panel, type Placement } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
 import { TfFootnote } from "./TfFootnote.tsx"
+import { Unavailable } from "./Unavailable.tsx"
 
 const MIN_WIDTH = 220, MIN_HEIGHT = 150 + PANEL_HEAD_PX
 
@@ -95,6 +96,7 @@ export function ScenePanel({ host, app, placement, dock, mobile, onMain, onTf }:
             )}
         >
             <div ref={host} className="scene" />
+            {app?.viewer.webglError && !off && <Unavailable what="3D view" reason={app.viewer.webglError} />}
             {app && !off && placement !== "float" && <ViewControls app={app} />}
             {app && !off && placement !== "float" && <TfFootnote app={app} onOpen={onTf} />}
             {app && !headed && !off && (
