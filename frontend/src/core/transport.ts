@@ -272,7 +272,7 @@ export class Connection {
      * applies on top of `options`, now and whenever it changes.
      */
     subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void): LiveHandle {
-        const tier = options.bandwidthPriority === undefined ? defaultBandwidthPriority(parseKey(key)?.type ?? "") : undefined
+        const tier = options.bandwidthPriority === undefined ? defaultBandwidthPriority(parseKey(key)?.type ?? "", parseKey(key)?.name ?? (key.startsWith("dimos/") ? "/" + key.split("/")[1] : "")) : undefined
         if (tier !== undefined) {
             options = { ...options, bandwidthPriority: tier }
         }

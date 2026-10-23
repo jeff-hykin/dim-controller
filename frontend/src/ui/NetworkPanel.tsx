@@ -179,17 +179,20 @@ function effectiveOf(consumer: Consumer | undefined, override: StreamOverride | 
         video,
         // the viewer's levels on top of the page's own priority for it (0: as the page set it)
         offset: override?.priorityOffset ?? 0,
+        // the page's own priority for it, as a level (0: zenoh-gateway's default)
+        baseLevel: levelOf(base.bandwidthPriority ?? DEFAULT_PRIORITY),
         // the gateway reserves a reliable stream at its measured rate and never shrinks it, so its priority does nothing
         reliable: !video && (override?.delivery ?? base.delivery) === "reliable",
     }
 }
 
-function PriorityStepper({ streamKey, offset, disabled }: { streamKey: string; offset: number; disabled: boolean }) {
+function PriorityStepper({ streamKey, offset, baseLevel, disabled }: { streamKey: string; offset: number; baseLevel: number; disabled: boolean }) {
     const name = streamName(streamKey)
+    const level = offset <= PRIORITY_LAST ? PRIORITY_LAST : baseLevel + offset
     return (
-        <span className={`net-priority ${offset !== 0 ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(offset)} on top of what the page gives it (0: as set; when the link is short, each step up halves what it gives up, each step down doubles it; "last" gives up first)`}>
+        <span className={`net-priority ${offset !== 0 ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(level)}: the page gives it ${priorityLabel(baseLevel)}, ${offset ? `you moved it ${priorityLabel(offset)}` : "as set"} (0: zenoh-gateway's default; when the link is short, each step up halves what it gives up, each step down doubles it; "last" gives up first)`}>
             <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || offset <= PRIORITY_LAST} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, -1) })}>−</button>
-            <span className="net-priority-value" data-testid="net-priority">{priorityLabel(offset)}</span>
+            <span className="net-priority-value" data-testid="net-priority">{priorityLabel(level)}</span>
             <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || offset >= PRIORITY_MAX} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, 1) })}>+</button>
         </span>
     )
@@ -198,7 +201,7 @@ function PriorityStepper({ streamKey, offset, disabled }: { streamKey: string; o
 /** One stream's advanced options, over the table (it doesn't move anything): what it runs with, the app's value shown as the default. */
 function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey: string; consumer: Consumer | undefined; override: StreamOverride | undefined; onClose: () => void }) {
     const base = consumer?.base ?? {}
-    const { video, offset, reliable } = effectiveOf(consumer, override)
+    const { video, offset, baseLevel, reliable } = effectiveOf(consumer, override)
     const tradeoff = override?.qualityToHzTradeoff ?? base.qualityToHzTradeoff ?? DEFAULT_TRADEOFF
     const [draft, setDraft] = useState(tradeoff)
     useEffect(() => setDraft(tradeoff), [tradeoff])
@@ -213,7 +216,7 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
             <div className="net-settings-body">
                 <label className="net-field">
                     <span className="net-field-name">Priority {appText(`${priorityLabel(levelOf(base.bandwidthPriority ?? DEFAULT_PRIORITY))} from the default`)}</span>
-                    <PriorityStepper streamKey={streamKey} offset={offset} disabled={reliable} />
+                    <PriorityStepper streamKey={streamKey} offset={offset} baseLevel={baseLevel} disabled={reliable} />
                 </label>
                 <div className="net-field wide">
                     <span className="net-field-name">Quality ↔ frequency {appText(String(base.qualityToHzTradeoff ?? DEFAULT_TRADEOFF))}</span>
@@ -303,7 +306,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                             const override = overrides[row.key]
                             const controllable = !!consumer || !!override
                             const paused = !!override?.paused
-                            const { video, offset, reliable } = effectiveOf(consumer, override)
+                            const { video, offset, baseLevel, reliable } = effectiveOf(consumer, override)
                             const heat = paused ? 0 : heatOf(row.bytesPerSec, busiest)
                             const tags = [paused ? "paused" : "", video ? "video" : reliable ? "reliable" : "", override && Object.keys(override).some((name) => name !== "paused") ? "tuned" : ""].filter(Boolean)
                             const measured = video ? latency(row.key) : null
@@ -324,7 +327,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                                     </td>
                                     <td className="net-col-video">{measured && <LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} />}</td>
                                     <td className={`net-col-drops ${(drops[row.key]?.perSecond ?? 0) > 0 ? "dropping" : ""}`} title={drops[row.key] ? `${drops[row.key].total} dropped since subscribing` : "no gateway counts for it"}>{drops[row.key]?.perSecond ?? "·"}</td>
-                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
+                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} baseLevel={baseLevel} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                                 {open && (

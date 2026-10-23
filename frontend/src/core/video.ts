@@ -60,7 +60,7 @@ export function streamOptions(depth: boolean, uses: Record<StreamUse, number>, q
     if (depth) {
         return { ...(viewed ? DEPTH_OPTIONS : DEPTH_PREVIEW_OPTIONS), bandwidthPriority: PRIORITY_TIERS.bulk }
     }
-    return { ...(viewed ? presetFor(quality).options : PREVIEW_OPTIONS), bandwidthPriority: main ? PRIORITY_TIERS.viewed : PRIORITY_TIERS.background }
+    return { ...(viewed ? presetFor(quality).options : PREVIEW_OPTIONS), bandwidthPriority: main ? PRIORITY_TIERS.sensors : PRIORITY_TIERS.viewed }
 }
 
 /** What `Subscription.update` needs to go from one set of options to another (null for what only `from` set). */
@@ -133,7 +133,7 @@ export class VideoSources {
 
     #main: string | null = null
 
-    /** The camera in the main view (its key, or null): it keeps the default priority, the others yield first. */
+    /** The camera in the main view (its key, or null): it is raised to the lidar's tier, the others keep the default. */
     setMain(key: string | null) {
         if (key === this.#main) {
             return

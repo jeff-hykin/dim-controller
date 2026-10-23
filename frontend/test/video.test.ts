@@ -6,7 +6,7 @@ import type { Connection, SubscribeOptions, SubscriptionUpdate } from "../src/co
 import { PRIORITY_TIERS } from "../src/core/bandwidth.ts"
 
 /** a camera not in the main view (none of these tests put one there) */
-const SIDE = PRIORITY_TIERS.background
+const SIDE = PRIORITY_TIERS.viewed
 
 function fakeConnection({ refuseUpdates = false } = {}) {
     const subscriptions: { key: string; options: SubscribeOptions; open: boolean; openBefore: number; updates: SubscriptionUpdate[] }[] = []
@@ -206,8 +206,8 @@ Deno.test("streamOptions: any panel on screen means the full stream", () => {
     assertEquals(streamOptions(false, { view: 1, preview: 1 }, "quality"), { ...preset("quality"), bandwidthPriority: SIDE })
     assertEquals(streamOptions(true, { view: 0, preview: 2 }, "balanced"), { ...DEPTH_PREVIEW_OPTIONS, bandwidthPriority: PRIORITY_TIERS.bulk })
     assertEquals(streamOptions(true, { view: 1, preview: 0 }, "balanced"), { ...DEPTH_OPTIONS, bandwidthPriority: PRIORITY_TIERS.bulk })
-    // the main view's camera keeps the default priority, the others yield first
-    assertEquals(streamOptions(false, { view: 1, preview: 0 }, "quality", true).bandwidthPriority, PRIORITY_TIERS.viewed)
+    // the main view's camera is raised (as the lidar), the others keep the default
+    assertEquals(streamOptions(false, { view: 1, preview: 0 }, "quality", true).bandwidthPriority, PRIORITY_TIERS.sensors)
 })
 
 Deno.test("panelStreams: a camera panel holds its stream only while on screen in a visible tab", () => {

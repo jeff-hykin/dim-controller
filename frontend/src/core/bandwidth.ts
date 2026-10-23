@@ -39,13 +39,22 @@ export const DEFAULT_PRIORITY = 1
  * This page's default bandwidthPriority tiers (levels +2 / 0 / −1 / −2): when the link is short, small control-critical
  * state keeps flowing, what you're looking at comes next, then the other views, then bulk.
  */
-export const PRIORITY_TIERS = { state: 4, viewed: 1, background: 0.5, bulk: 0.25 } as const
+export const PRIORITY_TIERS = { state: 4, sensors: 2, viewed: 1, background: 0.5, bulk: 0.25 } as const
 
 /** small messages you can't control the robot without */
 const STATE_TYPES = /^(sensor_msgs\.(JointState|BatteryState|Imu)|nav_msgs\.(Odometry|Path)|geometry_msgs\.\w+|std_msgs\.\w+)$/
 
-/** The priority a subscription to a topic of `type` gets when its code sets none: small state high, maps bulk. */
-export function defaultBandwidthPriority(type: string): number | undefined {
+/** the robot's model and its mesh files: big, and only needed once */
+const MODEL_TOPICS = /^\/(robot_description|file_info|file_request)(\/|$)/
+
+/** The priority a subscription to topic `name` of `type` gets when its code sets none: small state high, then the lidar, maps and the robot's model bulk. */
+export function defaultBandwidthPriority(type: string, name = ""): number | undefined {
+    if (MODEL_TOPICS.test(name) || type === "files.MeshFile") {
+        return PRIORITY_TIERS.bulk
+    }
+    if (type === "sensor_msgs.PointCloud2") {
+        return PRIORITY_TIERS.sensors
+    }
     if (STATE_TYPES.test(type)) {
         return PRIORITY_TIERS.state
     }
