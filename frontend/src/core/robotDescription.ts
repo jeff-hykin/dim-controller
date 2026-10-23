@@ -18,7 +18,7 @@ export type DisplayMode = "visual" | "collision" | "both"
 export interface ModelParts {
     robot: boolean
     groups: Record<string, boolean>
-    /** mesh files on links that move (the robot, people) */
+    /** mesh files on links that move (the robot, moving objects) */
     meshes: boolean
     /** mesh files on links fixed to the world (an env) */
     staticMeshes: boolean

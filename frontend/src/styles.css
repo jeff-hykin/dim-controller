@@ -390,6 +390,9 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 /* layers */
 .layer-group h3:first-child { margin-top: 6px; }
 .layer-row { border-radius: var(--radius); padding: 3px 4px; }
+/* a URDF's own groups, under its row: they belong to it */
+.layer-subrows { margin-left: 18px; padding-left: 8px; border-left: 1px solid var(--border); }
+.layer-subrows-label { display: block; font: 10px var(--mono); color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 4px; }
 .layer-row:hover { background: color-mix(in srgb, var(--accent) 60%, transparent); }
 .layer-line { display: flex; align-items: center; gap: 8px; }
 .layer-name { font: inherit; color: inherit; flex: 1; display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 3px 0; cursor: pointer; min-width: 0; text-align: left; }

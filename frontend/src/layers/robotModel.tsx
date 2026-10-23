@@ -8,7 +8,7 @@ import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import type { LayerEntry, LayerManager } from "../core/layers/manager.ts"
 import { LayerStatusLine, Row } from "../ui/LayersPanel.tsx"
 import { useStore, type Store } from "../core/store.ts"
-import { Field, Select, Slider } from "dimos-react"
+import { Field, Select, Slider, Toggle } from "dimos-react"
 import { type DisplayMode, groupNames, Kinematics, modelPartsOf, RobotModel, staticLinks } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
@@ -18,11 +18,11 @@ export interface RobotModelSettings {
     display: DisplayMode
     /** the links in no group (the robot's own) shown (unset: on) */
     robot?: boolean
-    /** each group's links shown, by the group's name (unset: on); unset before groups (`people` is read then) */
+    /** each group's links shown, by the group's name (unset: on) */
     groups?: Record<string, boolean>
     /** splat files shown (unset: on) */
     splats?: boolean
-    /** mesh files (not splats) shown (unset: on); with static links, only the moving links' (the robot, people) */
+    /** mesh files (not splats) shown (unset: on); with static links, only the moving links' (the robot, moving objects) */
     meshes?: boolean
     /** mesh files on links fixed to the world, the env (unset: as `meshes`) */
     staticMeshes?: boolean
@@ -167,8 +167,8 @@ class RobotModelLayer {
 
 const SPLAT_EXTENSIONS = new Set(["spz", "splat", "ksplat", "sog"])
 
-/** The layer's rows, top level in the list: URDF (the links in no group: the robot), Meshes (split into Moving meshes
- * and Static meshes when the URDF has links fixed to a world), Textures, Splats, then a
+/** The layer's rows, top level in the list: URDF (the links in no group: the robot) with its URDF groups under it, Meshes
+ * (inside it, the moving and the static ones apart when the URDF has links fixed to a world), Textures, Splats; a
  * row per group the URDF's links name. URDF and the groups say which links show: one shows while the layer is on, and
  * the layer runs (subscribed) while any is. Meshes, Textures and Splats apply across them, to their files. A row only
  * shows if the model has its part. */
@@ -204,8 +204,27 @@ function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerMan
                     />
                 </Field>
             </Row>
-            {hasMeshFiles && <Row value={parts.meshes} onChange={(meshes) => settings.update({ ...parts, meshes })} name={hasStatic ? "Moving meshes" : "Meshes"} title={hasStatic ? "mesh files on links that move (under a floating or moving joint: the robot, people), in every row" : "mesh files (not splats), in every row's links"} />}
-            {hasMeshFiles && hasStatic && <Row value={parts.staticMeshes} onChange={(staticMeshes) => settings.update({ ...parts, staticMeshes })} name="Static meshes" title="mesh files on links fixed to the world (the env), in every row; splats have their own row" />}
+            {groups.length > 0 && (
+                <div className="layer-subrows" title="the URDF's own <group>s, each shown or hidden apart from the robot's links">
+                    <span className="layer-subrows-label">URDF groups</span>
+                    {groups.map((group) => <Row key={group} value={groupShown(group)} onChange={(on) => show({ group, on })} name={group} title={`the URDF's links in <group>${group}</group>`} />)}
+                </div>
+            )}
+            {hasMeshFiles && (
+                <Row
+                    value={hasStatic ? parts.meshes || parts.staticMeshes : parts.meshes}
+                    onChange={(on) => settings.update({ ...parts, meshes: on, staticMeshes: on })}
+                    name="Meshes"
+                    title={hasStatic ? "mesh files (not splats), in every row's links; open it to show the moving and the static ones apart" : "mesh files (not splats), in every row's links"}
+                >
+                    {hasStatic && (
+                        <>
+                            <Field inline label="Moving" title="mesh files on links that move (under a floating or moving joint: the robot, moving objects)"><Toggle value={parts.meshes} onChange={(meshes: boolean) => settings.update({ ...parts, meshes })} /></Field>
+                            <Field inline label="Static" title="mesh files on links fixed to the world (the env); splats have their own row"><Toggle value={parts.staticMeshes} onChange={(staticMeshes: boolean) => settings.update({ ...parts, staticMeshes })} /></Field>
+                        </>
+                    )}
+                </Row>
+            )}
             <Row value={value.textures ?? true} onChange={(textures) => settings.update({ textures })} name="Textures" title="off: meshes in plain flat grey, to see their geometry" />
             {splatFileCount > 0 && (
                 <Row value={parts.splats} onChange={(splats) => settings.update({ ...parts, splats })} name="Splats" title="Gaussian splat files, in every row's links">
@@ -214,7 +233,6 @@ function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerMan
                     </Field>
                 </Row>
             )}
-            {groups.map((group) => <Row key={group} value={groupShown(group)} onChange={(on) => show({ group, on })} name={group} title={`the URDF's links in <group>${group}</group>`} />)}
         </>
     )
 }
