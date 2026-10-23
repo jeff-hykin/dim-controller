@@ -182,6 +182,15 @@ export class VideoSources {
         }
     }
 
+    /** Drops `topic`'s subscription and opens it again (a fresh transceiver): a stalled stream's way back. */
+    resubscribe(topic: Topic) {
+        const source = this.#sources.get(topic.key)
+        if (source) {
+            source.stop()
+            this.#open(topic, source)
+        }
+    }
+
     /** Times the frames a camera panel's <video> shows of `topic`'s stream (kept across resubscribes); call the result to stop. */
     watchLatency(topic: Topic, element: HTMLVideoElement): () => void {
         const source = this.#sources.get(topic.key)

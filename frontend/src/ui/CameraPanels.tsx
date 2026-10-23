@@ -30,6 +30,8 @@ import type { CameraActions } from "./useCommands.ts"
 
 /** a camera view with no new picture for this long says "slow / stopped link" and drops its fps */
 const STALL_MS = 1000
+/** stalled this long while on screen, the camera subscribes afresh (a stream lost in a reconnect or a source swap never comes back on its own), then again less and less often while it stays stalled */
+const RESUBSCRIBE_MS = 3000
 
 export interface PanelState {
     id: number
@@ -173,6 +175,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
     // paused in Network → Bandwidth Consumers: no subscription, so say so instead of looking stalled
     const paused = !!topic && !!overrides[topic.key]?.paused
     const open = panelStreams(slot, pageHidden)
+    const pausedRef = useRef(paused)
+    pausedRef.current = paused
 
     // the stream (shared with a 3D projection of the same topic), only while the panel is open
     useEffect(() => {
@@ -241,14 +245,29 @@ function CameraPanel({ app, panel, topics, onChange }: {
         if (!depth && element) {
             frameCallback = element.requestVideoFrameCallback(painted)
         }
-        const timer = setInterval(() => setStalled(performance.now() - lastPaint.current > STALL_MS), 250)
+        // (a camera that stays dark is retried less and less often: 3 s, 6 s, ... 30 s, back to 3 s once a picture shows)
+        let retriedAt = performance.now()
+        let retryEvery = RESUBSCRIBE_MS
+        const timer = setInterval(() => {
+            const now = performance.now()
+            setStalled(now - lastPaint.current > STALL_MS)
+            if (lastPaint.current > retriedAt) {
+                retryEvery = RESUBSCRIBE_MS
+            }
+            if (now - lastPaint.current > RESUBSCRIBE_MS && now - retriedAt > retryEvery && !document.hidden && !pausedRef.current) {
+                retriedAt = now
+                retryEvery = Math.min(retryEvery * 2, 10 * RESUBSCRIBE_MS)
+                console.warn(`[cameras] ${topic.name}: no picture for ${((now - lastPaint.current) / 1000).toFixed(1)} s; resubscribing`)
+                app.video.resubscribe(topic)
+            }
+        }, 250)
         return () => {
             clearInterval(timer)
             if (!depth && element) {
                 element.cancelVideoFrameCallback(frameCallback)
             }
         }
-    }, [topic?.key, open, depth])
+    }, [app, topic?.key, open, depth])
 
     // the overlay (latest message, redrawn as it arrives)
     useEffect(() => {
