@@ -3,7 +3,8 @@
 import { allLayerTypes, type LayerInstance, type LayerStatus, type LayerType } from "./registry.ts"
 import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
-import type { Connection, Topic } from "../transport.ts"
+import { type Connection, parseKey, type Topic } from "../transport.ts"
+import { FILE_REQUEST, urdfSource } from "../urdfSource.ts"
 import type { TfTree } from "dimos-react/three"
 import type { TfHistory } from "../tfHistory.ts"
 import type { Viewer } from "dimos-react/three"
@@ -30,7 +31,24 @@ export class LayerManager {
     #typeEnabled: Record<string, boolean> = {}
 
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly tfHistory: TfHistory, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
-        connection.status.subscribe(() => this.#sync(connection.status.get().topics))
+        // the URDF comes only when asked for, so no topic announces it: the page keeps asking (while the 3D view is on), and a URDF
+        // answered lists the robot model
+        const urdf = urdfSource(connection)
+        let releaseUrdf: (() => void) | null = null
+        const watchUrdf = () => {
+            if (this.paused.get().paused) {
+                releaseUrdf?.()
+                releaseUrdf = null
+            } else {
+                releaseUrdf ??= urdf.acquire()
+            }
+        }
+        this.paused.subscribe(watchUrdf)
+        watchUrdf()
+        const modelTopic = parseKey(FILE_REQUEST)!
+        const sync = () => this.#sync(urdf.state.get().description ? [...connection.status.get().topics, modelTopic] : connection.status.get().topics)
+        connection.status.subscribe(sync)
+        urdf.state.subscribe(sync)
         // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
         this.#enabled.subscribe(() => {
             for (const entry of this.entries.get().list) {

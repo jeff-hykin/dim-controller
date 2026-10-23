@@ -45,7 +45,7 @@ export const PRIORITY_TIERS = { state: 4, sensors: 2, viewed: 1, background: 0.5
 const STATE_TYPES = /^(sensor_msgs\.(JointState|BatteryState|Imu)|nav_msgs\.(Odometry|Path)|geometry_msgs\.\w+|std_msgs\.\w+)$/
 
 /** the robot's model and its mesh files: big, and only needed once */
-const MODEL_TOPICS = /^\/(robot_description|file_info|file_request)(\/|$)/
+const MODEL_TOPICS = /^\/(file_info|render_file_request)(\/|$)/
 
 /** The priority a subscription to topic `name` of `type` gets when its code sets none: small state high, then the lidar, maps and the robot's model bulk. */
 export function defaultBandwidthPriority(type: string, name = ""): number | undefined {

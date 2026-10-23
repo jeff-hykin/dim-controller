@@ -3,11 +3,10 @@
 import { assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import { IDBFactory } from "https://esm.sh/fake-indexeddb@6.0.0?bundle"
-import { encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { cachedFile, resetCacheConnection, storeFile } from "../src/core/meshCache.ts"
-import { FILE_INFO, ROBOT_DESCRIPTION, UrdfSource } from "../src/core/urdfSource.ts"
+import { FILE_INFO, UrdfSource } from "../src/core/urdfSource.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 const global = globalThis as { indexedDB?: IDBFactory }
@@ -59,7 +58,7 @@ function meshInfo(uri: string, data: Uint8Array): Uint8Array {
 const URI = "package://p/body.stl?hash=abc"
 const URDF = `<?xml version="1.0"?><robot name="r"><link name="base_link"><visual><geometry><mesh filename="${URI}"/></geometry></visual></link></robot>`
 
-/** a page load: a UrdfSource on a fake connection, the URDF sent, the robot answering each /file_request with the file */
+/** a page load: a UrdfSource on a fake connection, the URDF sent, the robot answering each /render_file_request with the file */
 async function load() {
     const requests: string[] = []
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
@@ -85,7 +84,7 @@ async function load() {
     } as unknown as Connection
     const source = new UrdfSource(connection)
     const release = source.acquire()
-    handlers.get(ROBOT_DESCRIPTION)!({ bytes: encode("std_msgs.String", { data: URDF }) })
+    handlers.get(FILE_INFO)!({ bytes: meshInfo("*.urdf", new TextEncoder().encode(URDF)) })
     for (let tries = 0; tries < 100 && source.state.get().meshesLoaded < 1; tries++) {
         await wait(20)
     }

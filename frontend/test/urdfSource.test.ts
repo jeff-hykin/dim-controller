@@ -1,15 +1,25 @@
-// UrdfSource (core/urdfSource.ts): an empty /file_request asks for /robot_description now, on subscribing and on every connect,
-// re-sent until the URDF comes (the first can beat the subscription), and an empty reply isn't a URDF.
+// UrdfSource (core/urdfSource.ts): "*.urdf" on /render_file_request asks for the URDF, on subscribing and on every connect,
+// re-sent until it comes on /file_info (the first can beat the subscription), and an empty reply isn't a URDF.
 import { assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
-import { decode, encode } from "../src/core/lcm/lcm.ts"
+import { decode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
-import { fileRanks, FILE_REQUEST, ROBOT_DESCRIPTION, UrdfSource } from "../src/core/urdfSource.ts"
+import { FILE_INFO, fileRanks, FILE_REQUEST, UrdfSource } from "../src/core/urdfSource.ts"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 
 const URDF = `<?xml version="1.0"?><robot name="box"><link name="base_link"><visual><geometry><box size="1 1 1"/></geometry></visual></link></robot>`
+
+/** a files.MeshFile on /file_info: the 8-byte timestamp, the name's length, the name, the bytes */
+function fileInfo(uri: string, data: Uint8Array): Uint8Array {
+    const name = new TextEncoder().encode(uri)
+    const bytes = new Uint8Array(12 + name.length + data.length)
+    new DataView(bytes.buffer).setUint32(8, name.length, true)
+    bytes.set(name, 12)
+    bytes.set(data, 12 + name.length)
+    return bytes
+}
 
 function fakeConnection(state: ConnectionState["state"] = "connected") {
     const requests: string[] = []
@@ -29,7 +39,7 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
             return () => handlers.delete(key)
         },
     }
-    const urdf = (xml: string) => handlers.get(ROBOT_DESCRIPTION)!({ bytes: encode("std_msgs.String", { data: xml }) })
+    const urdf = (xml: string) => handlers.get(FILE_INFO)!({ bytes: fileInfo("*.urdf", new TextEncoder().encode(xml)) })
     const connect = (to: ConnectionState["state"]) => {
         connection.client = client
         status.update({ state: to })
@@ -39,11 +49,11 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-Deno.test("subscribing asks for /robot_description at once, again until it comes, then not", async () => {
+Deno.test("subscribing asks for the URDF at once, again until it comes, then not", async () => {
     const { connection, requests, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()
-    assertEquals(requests, [""], "asked as it subscribes")
+    assertEquals(requests, ["*.urdf"], "asked as it subscribes")
     await wait(600)
     assertEquals(requests.length >= 2, true, "asked again while none came")
     urdf(URDF)
@@ -51,7 +61,7 @@ Deno.test("subscribing asks for /robot_description at once, again until it comes
     const asked = requests.length
     await wait(600)
     assertEquals(requests.length, asked, "no more once it came")
-    assertEquals(requests.every((request) => request === ""), true, "no mesh asked for: a box has none")
+    assertEquals(requests.every((request) => request === "*.urdf"), true, "no mesh asked for: a box has none")
     release()
 })
 
@@ -61,23 +71,23 @@ Deno.test("every connect asks again; a link that only dipped (degraded) doesn't"
     const release = source.acquire()
     assertEquals(requests, [], "no client yet")
     connect("connected")
-    assertEquals(requests, [""])
+    assertEquals(requests, ["*.urdf"])
     urdf(URDF)
     connect("degraded")
     connect("connected")
-    assertEquals(requests, [""])
+    assertEquals(requests, ["*.urdf"])
     connect("lost")
     connect("connected")
-    assertEquals(requests, ["", ""], "a reconnect asks again")
+    assertEquals(requests, ["*.urdf", "*.urdf"], "a reconnect asks again")
     urdf(URDF)
     release()
     connect("lost")
     connect("connected")
-    assertEquals(requests, ["", ""], "not once nothing uses it")
+    assertEquals(requests, ["*.urdf", "*.urdf"], "not once nothing uses it")
     await wait(300)
 })
 
-Deno.test("an empty /robot_description isn't a URDF: what's loaded stays", () => {
+Deno.test("an empty URDF isn't a URDF: what's loaded stays", () => {
     const { connection, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()
@@ -106,7 +116,7 @@ Deno.test("the robot's meshes are asked for first: a scene fixed to the root aft
     </robot>`)
     // no IndexedDB here: every lookup comes back empty, then the first two are asked for
     await wait(50)
-    assertEquals(requests.filter(Boolean), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
+    assertEquals(requests.filter((request) => request !== "*.urdf"), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
     const ranks = fileRanks(source.state.get().description!)
     assertEquals(Object.fromEntries([...ranks].map(([uri, rank]) => [uri.split("/").pop(), rank])), { "splats.spz?hash=1": 2, "tile_0.stl?hash=1": 1, "tile_1.stl?hash=1": 1, "body.stl?hash=1": 0, "leg.stl?hash=1": 0 })
     release()

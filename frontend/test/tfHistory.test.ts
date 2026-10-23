@@ -6,6 +6,7 @@ import type * as THREE from "three"
 import { TfTree } from "dimos-react/three"
 import { TfHistory } from "../src/core/tfHistory.ts"
 import { LayerManager } from "../src/core/layers/manager.ts"
+import { FILE_INFO } from "../src/core/urdfSource.ts"
 import { cloudQualities } from "../src/core/cloudQuality.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, SubscribeOptions, Topic } from "../src/core/transport.ts"
@@ -91,8 +92,11 @@ function cloudScene(tf: TfTree, history: TfHistory, mode: "latest" | "accumulate
     const status = new Store<{ topics: Topic[] }>({ topics: [] })
     const connection = {
         status,
-        subscribe(_key: string, options: SubscribeOptions, onMessage: (message: unknown) => void) {
-            subscriptions.push({ options, deliver: onMessage })
+        subscribe(key: string, options: SubscribeOptions, onMessage: (message: unknown) => void) {
+            // the layer manager's watch for the URDF isn't the lidar's
+            if (key !== FILE_INFO) {
+                subscriptions.push({ options, deliver: onMessage })
+            }
             return () => {}
         },
     } as unknown as Connection

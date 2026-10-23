@@ -40,7 +40,7 @@ Deno.test("a priority offset is levels on top of the page's own priority: +1 dou
 Deno.test("streams the page sets no priority for: small state above the default, maps below", () => {
     assertEquals(["sensor_msgs.JointState", "nav_msgs.Odometry", "geometry_msgs.PoseStamped", "nav_msgs.OccupancyGrid", "sensor_msgs.PointCloud2"].map((type) => defaultBandwidthPriority(type)), [4, 4, 4, 0.25, 2])
     // the robot's model is bulk whatever its type (a URDF is a std_msgs.String, state otherwise)
-    assertEquals([defaultBandwidthPriority("std_msgs.String", "/robot_description"), defaultBandwidthPriority("files.MeshFile", "/file_info/go2"), defaultBandwidthPriority("", "/file_info")], [0.25, 0.25, 0.25])
+    assertEquals([defaultBandwidthPriority("std_msgs.String", "/render_file_request"), defaultBandwidthPriority("files.MeshFile", "/file_info/go2"), defaultBandwidthPriority("", "/file_info")], [0.25, 0.25, 0.25])
 })
 
 Deno.test("overrides drop unset fields and empty streams; heat is against the busiest", () => {
