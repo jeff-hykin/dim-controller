@@ -59,6 +59,8 @@ export interface ConnectionState {
 
 /** Ten beats a second; the gateway fires a publisher's deadman after `heartbeatMisses` silent beats. */
 export const HEARTBEAT_HZ = 10
+/** a tab back from hidden this long or less keeps its connection (and its cameras' tracks) instead of opening a fresh one (zenoh-gateway's default 2 s rebuilt it on any tab switch: a 2 s gap in every camera) */
+export const FRESH_AFTER_MS = 30_000
 const DISCOVERY_MS = 2000
 /** A topic stays listed this long after discovery last saw it: a slow publisher (a 0.5 Hz map) can miss a round's probe. */
 export const TOPIC_FORGET_MS = 20000
@@ -136,7 +138,7 @@ export class Connection {
      */
     constructor(deadmanMs = 400) {
         const heartbeatMisses = Math.max(2, Math.round((deadmanMs / 1000) * HEARTBEAT_HZ))
-        this.#shared = getZenoh({ connect: connect as never, connectOptions: { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses } })
+        this.#shared = getZenoh({ connect: connect as never, connectOptions: { heartbeatHz: HEARTBEAT_HZ, heartbeatMisses, freshAfterMs: FRESH_AFTER_MS } })
         bandwidthOverrides.subscribe(() => this.#overridesChanged())
     }
 
