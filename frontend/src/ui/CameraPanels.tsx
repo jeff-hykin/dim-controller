@@ -258,8 +258,24 @@ function CameraPanel({ app, panel, topics, onChange }: {
             }
         }
         document.addEventListener("visibilitychange", onVisibility)
+        // a window behind others, or a hidden one the browser hasn't called hidden, paints nothing either: frames still
+        // decoding count as a picture, and while the page itself isn't drawing (no animation frames) the clock waits
+        let decodedFrames = 0
+        let drewAt = performance.now()
+        let animation = requestAnimationFrame(function drew() {
+            drewAt = performance.now()
+            animation = requestAnimationFrame(drew)
+        })
         const timer = setInterval(() => {
             const now = performance.now()
+            const decoded = !depth && element ? element.getVideoPlaybackQuality?.().totalVideoFrames ?? 0 : 0
+            if (decoded > decodedFrames) {
+                decodedFrames = decoded
+                lastPaint.current = Math.max(lastPaint.current, now)
+            }
+            if (now - drewAt > STALL_MS) {
+                lastPaint.current = retriedAt = now
+            }
             setStalled(now - lastPaint.current > STALL_MS)
             if (lastPaint.current > retriedAt) {
                 retryEvery = RESUBSCRIBE_MS
@@ -275,6 +291,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         }, 250)
         return () => {
             clearInterval(timer)
+            cancelAnimationFrame(animation)
             document.removeEventListener("visibilitychange", onVisibility)
             if (!depth && element) {
                 element.cancelVideoFrameCallback(frameCallback)
