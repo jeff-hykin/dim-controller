@@ -5,6 +5,7 @@
 // following, re-center (or a double-click) resumes it. Like the 3D view's layers, it keeps each topic's last message for
 // the page's life (a collapse, a reopen or a topic missing from discovery never blanks it). Redrawn only when something
 // changed (new data, the robot moved, a zoom or pan, a resize, the theme).
+import { PRIORITY_TIERS } from "../core/bandwidth.ts"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
@@ -440,7 +441,7 @@ class MapSource {
             frameStop = null
         })
         this.#stop.push(() => frameStop?.())
-        this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 1, encoding: "dimos_lcm_pointcloud2" }, (message) => {
+        this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 1, encoding: "dimos_lcm_pointcloud2", bandwidthPriority: PRIORITY_TIERS.background }, (message) => {
             const positions = (message.decoded as { positions?: Float32Array } | undefined)?.positions
             if (!positions || this.#cloudFrame === null) {
                 return
