@@ -164,6 +164,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
     // when a picture last reached the screen: the bridge's fps can hold while the track itself has stalled
     const lastPaint = useRef(0)
     const [stalled, setStalled] = useState(false)
+    // it has resubscribed since the last picture (the banner says it's reconnecting, not just slow)
+    const [reconnecting, setReconnecting] = useState(false)
     const depth = topic ? isDepthTopic(topic) : false
     const zoom = useHoldZoom(() => depth ? depthHost.current : video.current, [depth])
     const api = useWorkspaceApi()
@@ -234,6 +236,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         const element = video.current
         if (!topic || !open) {
             setStalled(false)
+            setReconnecting(false)
             return
         }
         lastPaint.current = performance.now()
@@ -248,21 +251,31 @@ function CameraPanel({ app, panel, topics, onChange }: {
         // (a camera that stays dark is retried less and less often: 3 s, 6 s, ... 30 s, back to 3 s once a picture shows)
         let retriedAt = performance.now()
         let retryEvery = RESUBSCRIBE_MS
+        // back from a hidden tab (it paints nothing while hidden): the stall clock starts again
+        const onVisibility = () => {
+            if (!document.hidden) {
+                lastPaint.current = retriedAt = performance.now()
+            }
+        }
+        document.addEventListener("visibilitychange", onVisibility)
         const timer = setInterval(() => {
             const now = performance.now()
             setStalled(now - lastPaint.current > STALL_MS)
             if (lastPaint.current > retriedAt) {
                 retryEvery = RESUBSCRIBE_MS
+                setReconnecting(false)
             }
             if (now - lastPaint.current > RESUBSCRIBE_MS && now - retriedAt > retryEvery && !document.hidden && !pausedRef.current) {
                 retriedAt = now
                 retryEvery = Math.min(retryEvery * 2, 10 * RESUBSCRIBE_MS)
+                setReconnecting(true)
                 console.warn(`[cameras] ${topic.name}: no picture for ${((now - lastPaint.current) / 1000).toFixed(1)} s; resubscribing`)
                 app.video.resubscribe(topic)
             }
         }, 250)
         return () => {
             clearInterval(timer)
+            document.removeEventListener("visibilitychange", onVisibility)
             if (!depth && element) {
                 element.cancelVideoFrameCallback(frameCallback)
             }
@@ -422,7 +435,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                     <Button variant="primary" onClick={() => setOverride(topic.key, { paused: undefined })}>Resume</Button>
                 </div>
             )}
-            {topic && open && stalled && !paused && <div className="camera-stalled" data-testid="camera-stalled">slow / stopped link</div>}
+            {topic && open && stalled && !paused && <div className="camera-stalled" data-testid="camera-stalled">{reconnecting ? "reconnecting…" : "slow / stopped link"}</div>}
             {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
         </Panel>
     )

@@ -33,10 +33,21 @@ export function panelStreams(slot: { hidden: boolean; collapsed: boolean } | und
     return !!slot && !slot.hidden && !slot.collapsed && !pageHidden
 }
 
-/** whether the browser tab is hidden (another tab, minimized window), kept current */
+/** a hidden tab keeps its cameras this long, so switching away and back finds the picture still there */
+export const HIDDEN_GRACE_MS = 60_000
+
+/** whether the browser tab has been hidden (another tab, minimized window) for HIDDEN_GRACE_MS; back to false as soon as it shows */
 export const pageVisibility = new Store<{ hidden: boolean }>({ hidden: typeof document !== "undefined" && document.hidden })
 if (typeof document !== "undefined") {
-    document.addEventListener("visibilitychange", () => pageVisibility.set({ hidden: document.hidden }))
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+    document.addEventListener("visibilitychange", () => {
+        clearTimeout(graceTimer)
+        if (document.hidden) {
+            graceTimer = setTimeout(() => pageVisibility.set({ hidden: document.hidden }), HIDDEN_GRACE_MS)
+        } else {
+            pageVisibility.set({ hidden: false })
+        }
+    })
 }
 
 /**
