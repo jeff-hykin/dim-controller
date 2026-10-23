@@ -13,17 +13,41 @@ const originMatrix = (origin: Origin) =>
 
 export type DisplayMode = "visual" | "collision" | "both"
 /** What the model draws, each shown or not: the links in no group (the robot's own), each group's links (by name;
- * unset: shown), and across those, mesh files and Gaussian splat files. */
+ * unset: shown), and across those, mesh files (those of moving links and of static ones, staticLinks, apart) and Gaussian
+ * splat files. */
 export interface ModelParts {
     robot: boolean
     groups: Record<string, boolean>
+    /** mesh files on links that move (the robot, people) */
     meshes: boolean
+    /** mesh files on links fixed to the world (an env) */
+    staticMeshes: boolean
     splats: boolean
 }
 
 /** The parts a layer's saved settings show (unset: shown). */
 export function modelPartsOf(saved: Partial<ModelParts>): ModelParts {
-    return { robot: saved.robot ?? true, groups: saved.groups ?? {}, meshes: saved.meshes ?? true, splats: saved.splats ?? true }
+    return { robot: saved.robot ?? true, groups: saved.groups ?? {}, meshes: saved.meshes ?? true, staticMeshes: saved.staticMeshes ?? saved.meshes ?? true, splats: saved.splats ?? true }
+}
+
+/** The links that never move (an env): fixed to the root only through fixed joints, when the root is a world that
+ * something hangs off by a floating joint (a robot's own URDF, rooted at its base, has none). */
+export function staticLinks(description: RobotDescription): Set<string> {
+    if (!description.joints.some((joint) => joint.type === "floating")) {
+        return new Set()
+    }
+    const children = new Set(description.joints.map((joint) => joint.child))
+    const still = new Set(description.links.filter((link) => !children.has(link.name)).map((link) => link.name))
+    for (let grew = true; grew;) {
+        grew = false
+        for (const joint of description.joints) {
+            if (joint.type === "fixed" && still.has(joint.parent) && !still.has(joint.child)) {
+                still.add(joint.child)
+                grew = true
+            }
+        }
+    }
+    return still
 }
 
 /** Each link's group: its own `<group>`, else that of the link it's fixed to (the parent of a fixed joint), else none. */
@@ -81,6 +105,7 @@ export class RobotModel {
         this.#material = material
         this.#look = look
         this.#groups = linkGroups(kinematics.description)
+        this.#static = staticLinks(kinematics.description)
         for (const link of kinematics.description.links) {
             const group = new THREE.Group()
             group.name = link.name
@@ -101,8 +126,9 @@ export class RobotModel {
     readonly #material: (color: THREE.ColorRepresentation, alpha: number) => THREE.MeshStandardMaterial
     readonly #look: { color?: string; opacity?: number; collisionColor?: string }
     #display: DisplayMode = "visual"
-    #parts: ModelParts = { robot: true, groups: {}, meshes: true, splats: true }
+    #parts: ModelParts = { robot: true, groups: {}, meshes: true, staticMeshes: true, splats: true }
     readonly #groups: Map<string, string>
+    readonly #static: Set<string>
     #textures = true
     #cutAbove: number | null = null
     #tint: { color: THREE.ColorRepresentation; opacity: number } | null = null
@@ -167,17 +193,18 @@ export class RobotModel {
     }
 
     /** Each object shown by the display mode (visual / collision), its link's group (or, in none, the robot's) toggle,
-     * and its file's: splats or meshes. */
+     * and its file's: splats, or meshes (a static link's by the static meshes toggle). */
     #applyVisibility() {
         for (const [name, link] of this.links) {
             const group = this.#groups.get(name)
             const linkShown = group === undefined ? this.#parts.robot : this.#parts.groups[group] ?? true
+            const meshesShown = this.#static.has(name) ? this.#parts.staticMeshes : this.#parts.meshes
             for (const object of link.children) {
                 const kind = object.userData.kind as string | undefined
                 if (!kind) {
                     continue
                 }
-                const fileShown = object.userData.splat ? this.#parts.splats : object.userData.meshFile ? this.#parts.meshes : true
+                const fileShown = object.userData.splat ? this.#parts.splats : object.userData.meshFile ? meshesShown : true
                 object.visible = (this.#display === "both" || this.#display === kind) && linkShown && fileShown
             }
         }
@@ -244,7 +271,7 @@ export class RobotModel {
         this.#applyVisibility()
     }
 
-    /** Which parts show: the robot, each group, mesh files, splat files, each on or off. */
+    /** Which parts show: the robot, each group, moving and static links' mesh files, splat files, each on or off. */
     setParts(parts: ModelParts) {
         this.#parts = { ...parts, groups: { ...parts.groups } }
         this.#applyVisibility()

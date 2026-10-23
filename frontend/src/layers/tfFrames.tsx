@@ -102,8 +102,8 @@ registerLayer<TfSettings>({
     label: "TF frames",
     types: ["tf2_msgs.TFMessage"],
     defaults: { axesSize: 0.25, names: true, links: true },
-    // one tf topic drawing is enough: the others are the same tree
-    enabledByDefault: (topic) => topic.name === "/tf",
+    // off until asked for (the frames clutter the view)
+    enabledByDefault: () => false,
     create: (context: LayerContext, _topic, settings) => new TfFramesLayer(context, settings),
     Settings: TfSettingsEditor,
 })

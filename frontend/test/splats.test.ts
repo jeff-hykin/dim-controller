@@ -75,7 +75,7 @@ Deno.test("the robot and each group show by their own toggle, mesh and splat fil
     assertEquals(new THREE.Vector3().setFromMatrixScale(splat.matrix).toArray(), [2, 2, 2])
     assertEquals(splat.opacity, 0.5)
     const shown = () => ({ body: body.visible, box: box.visible, arm: arm.visible, collision: collision.visible, tile: tile.visible, splat: splat.visible, visitor: visitor.visible })
-    const all = { robot: true, groups: {}, meshes: true, splats: true }
+    const all = { robot: true, groups: {}, meshes: true, staticMeshes: true, splats: true }
     const every = { body: true, box: true, arm: true, collision: true, tile: true, splat: true, visitor: true }
     assertEquals(shown(), every)
     model.setParts({ ...all, robot: false })
@@ -84,9 +84,11 @@ Deno.test("the robot and each group show by their own toggle, mesh and splat fil
     assertEquals(shown(), { ...every, collision: false, tile: false, splat: false })
     model.setParts({ ...all, groups: { people: false } })
     assertEquals(shown(), { ...every, visitor: false })
-    // meshes and splats are files, whoever's: a primitive is neither
+    // meshes and splats are files, whoever's: a primitive is neither; a static link's meshes (the scene's) have their own toggle
     model.setParts({ ...all, meshes: false })
-    assertEquals(shown(), { ...every, body: false, collision: false })
+    assertEquals(shown(), { ...every, body: false })
+    model.setParts({ ...all, staticMeshes: false })
+    assertEquals(shown(), { ...every, collision: false })
     model.setParts({ ...all, splats: false })
     assertEquals(shown(), { ...every, splat: false })
     // textures off doesn't touch what shows
@@ -126,6 +128,6 @@ Deno.test("textures off draws meshes flat grey at their opacity, on puts their o
 })
 
 Deno.test("a layer's saved parts: what's unset is shown", () => {
-    assertEquals(modelPartsOf({}), { robot: true, groups: {}, meshes: true, splats: true })
-    assertEquals(modelPartsOf({ groups: { scene: false }, meshes: false }), { robot: true, groups: { scene: false }, meshes: false, splats: true })
+    assertEquals(modelPartsOf({}), { robot: true, groups: {}, meshes: true, staticMeshes: true, splats: true })
+    assertEquals(modelPartsOf({ groups: { scene: false }, meshes: false }), { robot: true, groups: { scene: false }, meshes: false, staticMeshes: false, splats: true })
 })

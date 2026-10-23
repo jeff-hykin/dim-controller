@@ -1,11 +1,11 @@
 // The URDF API (dimos's UrdfManager): the XML read into a RobotDescription (origins, geometry, materials, mimic, the
 // root), MeshFile replies decoded, STL meshes (binary and ASCII) loaded, joint positions read back from link poses, and
-// a model filling in as its meshes arrive.
+// a model filling in as its meshes arrive, and its static links (an env) told from its moving ones.
 import { assert, assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
-import { Kinematics, RobotModel } from "../src/core/robotDescription.ts"
+import { Kinematics, modelPartsOf, RobotModel, staticLinks } from "../src/core/robotDescription.ts"
 
 // deno has no DOMParser; the browser's is what the page uses
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
@@ -136,4 +136,34 @@ Deno.test("a model fills in its meshes as they arrive", () => {
     assertAlmostEquals(new THREE.Vector3().setFromMatrixScale(scaled.matrix).x, 0.001, 1e-9)
     // collision geometry stays hidden on the visual display
     assertEquals(model.links.get("base_link")!.children.filter((object) => object.visible).length, 1)
+})
+
+// a sim's URDF: the robot on a floating joint off world, its leg on a revolute, the scene and its tile fixed at world
+const MESH = "package://sim/part.stl"
+const SIM_URDF = `<?xml version="1.0"?>
+<robot name="sim">
+  <link name="world"/>
+  <link name="base_link"><visual><geometry><mesh filename="${MESH}"/></geometry></visual></link>
+  <link name="leg"><visual><geometry><mesh filename="${MESH}"/></geometry></visual></link>
+  <link name="scene_mesh"><visual><geometry><mesh filename="${MESH}"/></geometry></visual><visual><geometry><box size="5 5 0.1"/></geometry></visual></link>
+  <link name="scene_tile"><visual><geometry><mesh filename="${MESH}"/></geometry></visual></link>
+  <joint name="base_joint" type="floating"><parent link="world"/><child link="base_link"/></joint>
+  <joint name="hip" type="revolute"><parent link="base_link"/><child link="leg"/><axis xyz="0 1 0"/><limit lower="-1" upper="1" effort="1" velocity="1"/></joint>
+  <joint name="scene_joint" type="fixed"><parent link="world"/><child link="scene_mesh"/></joint>
+  <joint name="tile_joint" type="fixed"><parent link="scene_mesh"/><child link="scene_tile"/></joint>
+</robot>`
+
+Deno.test("links fixed to world are static, their mesh files shown apart from the moving links'; a robot's own URDF has none", () => {
+    const description = parseUrdf(SIM_URDF)
+    assertEquals([...staticLinks(description)].sort(), ["scene_mesh", "scene_tile", "world"])
+    assertEquals(staticLinks(parseUrdf(URDF)).size, 0)
+    const model = new RobotModel(new Kinematics(description), new Map([[MESH, new THREE.BoxGeometry()]]))
+    const shown = (link: string) => model.links.get(link)!.children.filter((object) => object.visible).length
+    model.setParts({ ...modelPartsOf({}), staticMeshes: false })
+    // the scene's box isn't a mesh file, so it stays
+    assertEquals([shown("base_link"), shown("leg"), shown("scene_mesh"), shown("scene_tile")], [1, 1, 1, 0])
+    model.setParts({ ...modelPartsOf({}), meshes: false })
+    assertEquals([shown("base_link"), shown("leg"), shown("scene_mesh"), shown("scene_tile")], [0, 0, 2, 1])
+    // saved before static meshes had a toggle: they follow meshes
+    assertEquals(modelPartsOf({ meshes: false }).staticMeshes, false)
 })

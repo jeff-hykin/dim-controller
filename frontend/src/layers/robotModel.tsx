@@ -9,7 +9,7 @@ import type { LayerEntry, LayerManager } from "../core/layers/manager.ts"
 import { LayerStatusLine, Row } from "../ui/LayersPanel.tsx"
 import { useStore, type Store } from "../core/store.ts"
 import { Field, Select, Slider } from "dimos-react"
-import { type DisplayMode, groupNames, Kinematics, modelPartsOf, RobotModel } from "../core/robotDescription.ts"
+import { type DisplayMode, groupNames, Kinematics, modelPartsOf, RobotModel, staticLinks } from "../core/robotDescription.ts"
 import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 
@@ -22,8 +22,10 @@ export interface RobotModelSettings {
     groups?: Record<string, boolean>
     /** splat files shown (unset: on) */
     splats?: boolean
-    /** mesh files (not splats) shown (unset: on) */
+    /** mesh files (not splats) shown (unset: on); with static links, only the moving links' (the robot, people) */
     meshes?: boolean
+    /** mesh files on links fixed to the world, the env (unset: as `meshes`) */
+    staticMeshes?: boolean
     /** visual meshes in their materials, or plain flat grey */
     textures?: boolean
     /** splats above this height (m) are hidden, so ceilings don't hide the view from above */
@@ -165,7 +167,8 @@ class RobotModelLayer {
 
 const SPLAT_EXTENSIONS = new Set(["spz", "splat", "ksplat", "sog"])
 
-/** The layer's rows, top level in the list: URDF (the links in no group: the robot), Meshes, Textures, Splats, then a
+/** The layer's rows, top level in the list: URDF (the links in no group: the robot), Meshes (split into Moving meshes
+ * and Static meshes when the URDF has links fixed to a world), Textures, Splats, then a
  * row per group the URDF's links name. URDF and the groups say which links show: one shows while the layer is on, and
  * the layer runs (subscribed) while any is. Meshes, Textures and Splats apply across them, to their files. A row only
  * shows if the model has its part. */
@@ -177,12 +180,13 @@ function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerMan
     const groups = description ? groupNames(description) : []
     const hasMeshFiles = !!description?.links.some((link) => [...link.visuals, ...link.collisions].some((item) => item.mesh && !SPLAT_EXTENSIONS.has(item.mesh.split("?")[0].split(".").pop()?.toLowerCase() ?? "")))
     const parts = modelPartsOf(value)
+    const hasStatic = !!description && staticLinks(description).size > 0
     const groupShown = (group: string) => entry.enabled && (parts.groups[group] ?? true)
     /** turning one of URDF or the groups on while the layer is off shows that one alone */
     const show = (which: { robot: boolean } | { group: string; on: boolean }) => {
         const before = entry.enabled ? parts : { ...parts, robot: false, groups: Object.fromEntries(groups.map((group) => [group, false])) }
         const next = "group" in which ? { ...before, groups: { ...before.groups, [which.group]: which.on } } : { ...before, robot: which.robot }
-        settings.update({ robot: next.robot, groups: next.groups, meshes: next.meshes, splats: next.splats })
+        settings.update({ robot: next.robot, groups: next.groups, meshes: next.meshes, staticMeshes: next.staticMeshes, splats: next.splats })
         layers.setEnabled(entry.topic.key, next.robot || groups.some((group) => next.groups[group] ?? true))
     }
     return (
@@ -200,7 +204,8 @@ function RobotModelRows({ entry, layers }: { entry: LayerEntry; layers: LayerMan
                     />
                 </Field>
             </Row>
-            {hasMeshFiles && <Row value={parts.meshes} onChange={(meshes) => settings.update({ ...parts, meshes })} name="Meshes" title="mesh files (not splats), in every row's links" />}
+            {hasMeshFiles && <Row value={parts.meshes} onChange={(meshes) => settings.update({ ...parts, meshes })} name={hasStatic ? "Moving meshes" : "Meshes"} title={hasStatic ? "mesh files on links that move (under a floating or moving joint: the robot, people), in every row" : "mesh files (not splats), in every row's links"} />}
+            {hasMeshFiles && hasStatic && <Row value={parts.staticMeshes} onChange={(staticMeshes) => settings.update({ ...parts, staticMeshes })} name="Static meshes" title="mesh files on links fixed to the world (the env), in every row; splats have their own row" />}
             <Row value={value.textures ?? true} onChange={(textures) => settings.update({ textures })} name="Textures" title="off: meshes in plain flat grey, to see their geometry" />
             {splatFileCount > 0 && (
                 <Row value={parts.splats} onChange={(splats) => settings.update({ ...parts, splats })} name="Splats" title="Gaussian splat files, in every row's links">
