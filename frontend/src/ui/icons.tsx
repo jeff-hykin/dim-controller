@@ -18,6 +18,9 @@ const OWN_ICON_PATHS: Record<string, string> = {
     // a robot arm: base, two links, an open gripper
     arm: "M4 21h8 M8 21v-4 M8 17l4-7 M12 10l6-3 M18 7l3-2 M18 7l2 3",
     "fit-map": "M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13z M15.5 15.5 20 20 M8 8.5h5v4H8z",
+    // the map's height slice: kept above the followed frame (an arrow up off a line), and below it
+    "slice-above": "M4 20h16 M12 16V4 M7 9l5-5 5 5",
+    "slice-below": "M4 4h16 M12 8v12 M7 15l5 5 5-5",
 }
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {

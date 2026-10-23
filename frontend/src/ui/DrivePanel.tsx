@@ -53,11 +53,6 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                     )}
                 </section>
             )}
-            <div className="twist-readout">
-                <span>lin {state.twist.linear.map((value) => value.toFixed(2)).join(" ")}</span>
-                <span>ang {state.twist.angular.map((value) => value.toFixed(2)).join(" ")}</span>
-                <span>{state.publishing ? `sending · ${state.sent}` : "idle"}</span>
-            </div>
             {state.error && <p className="problem">{state.error}</p>}
         </div>
     )

@@ -258,7 +258,10 @@ Deno.test("layout: one store for the map's choices (its cog and Settings → Map
 
 Deno.test("the minimap's height slice: 0.91 m below to 3.66 m above the robot by default, off or without TF keeps everything", () => {
     assertEquals(sliceRange(DEFAULT_SLICE, 10), [10 - 0.91, 10 + 3.66])
-    assertEquals(sliceRange({ ...DEFAULT_SLICE, enabled: false }, 10), null)
+    assertEquals(sliceRange({ below: null, above: null }, 10), null)
+    // a cleared bound is open that way
+    assertEquals(sliceRange({ below: null, above: 2 }, 10), [-Infinity, 12])
+    assertEquals(sliceRange({ below: 1, above: null }, 10), [9, Infinity])
     assertEquals(sliceRange(DEFAULT_SLICE, null), null)
 })
 
@@ -275,5 +278,7 @@ Deno.test("projectCloud with a height range drops points outside it (another flo
 
 Deno.test("a saved map layout without a slice gets the default one; a broken one falls back field by field", () => {
     assertEquals(loadMapLayout({}).slice, DEFAULT_SLICE)
-    assertEquals(loadMapLayout({ slice: { enabled: false, below: -1, above: 2 } } as never).slice, { enabled: false, below: DEFAULT_SLICE.below, above: 2 })
+    // saved with the old checkbox off: no bounds; a bad number falls back; a cleared one stays cleared
+    assertEquals(loadMapLayout({ slice: { enabled: false, below: 1, above: 2 } } as never).slice, { below: null, above: null })
+    assertEquals(loadMapLayout({ slice: { below: -1, above: null } } as never).slice, { below: DEFAULT_SLICE.below, above: null })
 })

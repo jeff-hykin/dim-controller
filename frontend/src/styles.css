@@ -408,6 +408,11 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .controls { margin-top: 6px; }
 /* the drive topics list (auto off): the box on its own full-width line under the label */
 .drive-topics-field.editing > .dr-field-control { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+/* the auto checkbox keeps its word whole beside a long resolved-topic hint (it was squeezed to one letter a line) */
+.drive-topics-field .dr-check { flex: none; white-space: nowrap; }
+/* what auto resolves to goes on its own line under the checkbox */
+.drive-topics-field > .dr-field-control { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.drive-topics-field [data-testid="drive-topics-resolved"] { flex: 1 0 100%; }
 .drive-topics-field.editing .drive-topics { flex: 1 0 100%; width: 100%; min-height: 0; resize: vertical; font-family: var(--mono); }
 .twist-readout { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--muted-fg); margin-top: 10px; }
 /* settings: Drive is its first section */
@@ -480,9 +485,11 @@ h3.dr-h3.first { margin-top: 4px; }
 .map-settings-menu { padding: 8px 10px 10px; background: var(--card); display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); max-width: calc(100vw - 16px); box-sizing: border-box; }
 .map-setting { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--muted-fg); }
 .map-setting .dr-select { width: 100%; }
-.map-slice-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.map-slice { display: inline-flex; align-items: center; gap: 4px; }
-.map-slice-row .number { width: 56px; }
+.map-slice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.map-slice-bound { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--muted-fg); }
+.map-slice-bound .number { width: 64px; }
+/* the followed frame between its two bounds, on a rule: above is over it, below under it */
+.map-slice-frame { margin-left: 20px; padding: 0 6px; border-left: 2px solid var(--primary); font: 11px var(--mono); color: var(--muted-fg); }
 .map-source { min-width: 0; font: 10.5px var(--mono); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-fit.dr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .map-body { overflow: hidden; background: var(--scene-bg, var(--bg)); }

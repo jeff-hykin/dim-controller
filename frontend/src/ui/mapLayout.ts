@@ -1,7 +1,7 @@
 // What the 2D map panel remembers per viewer (localStorage: a phone and a desktop each keep their own), checked on load.
 // One store: the map's cog and Settings → Map change the same choices. Where the panel is and whether it's folded is
 // the workspace's (ui/workspace.ts).
-import { DEFAULT_FOLLOW_FRAME, DEFAULT_SLICE, isValidView, type MapBase, type MapView } from "../core/map2d.ts"
+import { DEFAULT_FOLLOW_FRAME, DEFAULT_SLICE, type HeightSlice, isValidView, type MapBase, type MapView } from "../core/map2d.ts"
 import { Store } from "../core/store.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
@@ -16,7 +16,7 @@ export interface MapLayout {
     followFrame: string
     view: MapView | null
     /** the lidar map keeps only points from `below` m under the followed frame to `above` m over it (one floor of a 3D place) */
-    slice: { enabled: boolean; below: number; above: number }
+    slice: HeightSlice
 }
 
 export const LAYOUT_KEY = "lv.map2d"
@@ -31,12 +31,17 @@ export function loadMapLayout(saved: Partial<MapLayout> = readLocal<Partial<MapL
         overlay: text(saved?.overlay),
         followFrame: text(saved?.followFrame) || DEFAULT_FOLLOW_FRAME,
         view: isValidView(saved?.view) ? saved.view : null,
-        slice: {
-            enabled: typeof saved?.slice?.enabled === "boolean" ? saved.slice.enabled : DEFAULT_SLICE.enabled,
-            below: meters(saved?.slice?.below, DEFAULT_SLICE.below),
-            above: meters(saved?.slice?.above, DEFAULT_SLICE.above),
-        },
+        slice: loadSlice(saved?.slice as Record<string, unknown> | undefined, meters),
     }
+}
+
+/** a saved slice: a bound cleared (null) stays cleared; one saved with the old "slice" checkbox off has neither */
+function loadSlice(saved: Record<string, unknown> | undefined, meters: (value: unknown, fallback: number) => number): HeightSlice {
+    if (saved?.enabled === false) {
+        return { below: null, above: null }
+    }
+    const bound = (value: unknown, fallback: number | null) => value === null ? null : meters(value, fallback ?? 0)
+    return { below: bound(saved?.below, DEFAULT_SLICE.below), above: bound(saved?.above, DEFAULT_SLICE.above) }
 }
 
 /** the map's choices in use (the map panel and Settings both read and change this one) */

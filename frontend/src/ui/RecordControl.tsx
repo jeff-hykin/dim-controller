@@ -8,7 +8,7 @@ import { persistentStore, useStore } from "../core/store.ts"
 import { recorder, type Compression, type ImageFormat, type StreamRate } from "../core/recorder.ts"
 import { biggestStreams, formatBytes, formatClock, formatRate, inRecordingsFolder, isRecorded, isRpcTopic, recordToggleState, TOP_STREAMS } from "../core/recordFormat.ts"
 import type { Topic } from "../core/transport.ts"
-import { Alert, Badge, Button, Card, Field, Heading, Label, NumberInput, Select, Text, TextInput, Toggle } from "dimos-react"
+import { Alert, Badge, Button, Card, Checkbox, Field, Heading, Label, NumberInput, Select, Text, TextInput, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { appInstalled, openApp, underDesktop } from "dimos-react/dim-app/desktop.js"
 
@@ -306,7 +306,7 @@ function StreamRow({ topic, rate, chosen, maxRate, onRate }: { topic: Topic; rat
     const on = isRecorded(topic.key, chosen)
     return (
         <div className={`record-topic ${on ? "" : "off"} ${isRpcTopic(topic) ? "rpc" : ""}`}>
-            <input type="checkbox" aria-label={`Record ${topic.name}`} checked={on} onChange={(event) => recordedTopics.update({ [topic.key]: event.target.checked })} />
+            <Checkbox aria-label={`Record ${topic.name}`} value={on} onChange={(checked: boolean) => recordedTopics.update({ [topic.key]: checked })} />
             <span className="topic-name" title={`${topic.key}`}>
                 {topic.name}
                 <span className="topic-type"> {topic.type.split(".")[1]}</span>

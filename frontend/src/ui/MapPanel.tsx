@@ -137,17 +137,20 @@ export function MapChoiceFields({ app, frames }: { app: ViewerApp; frames: strin
                     : <span className="map-source">{label}</span>}
             </label>
             {layout.source === "lidar" && (
-                <div className="map-setting" title="Keep only the lidar map between this far below and above the followed frame: one floor of a multi-level place">
+                <div className="map-setting" title="Keep only the lidar map between these heights around the followed frame (one floor of a multi-level place); clear a box for no bound that way">
                     <span>Height</span>
-                    <div className="map-slice-row">
-                    <label className="map-slice">
-                        <input type="checkbox" checked={layout.slice.enabled} onChange={(event) => updateMapLayout({ slice: { ...layout.slice, enabled: event.currentTarget.checked } })} />
-                        slice
-                    </label>
-                    <NumberInput className="number map-slice-m" step={0.1} min={0} title="meters below the followed frame" aria-label="Meters below" value={layout.slice.below} onChange={(below) => below !== null && updateMapLayout({ slice: { ...layout.slice, below } })} />
-                    <span className="map-slice-m">m below,</span>
-                    <NumberInput className="number map-slice-m" step={0.1} min={0} title="meters above the followed frame" aria-label="Meters above" value={layout.slice.above} onChange={(above) => above !== null && updateMapLayout({ slice: { ...layout.slice, above } })} />
-                    <span className="map-slice-m">m above</span>
+                    <div className="map-slice">
+                        <label className="map-slice-bound" title="meters kept above the followed frame (empty: no ceiling)">
+                            <Icon name="slice-above" size={14} />
+                            <NumberInput nullable className="number" step={0.1} min={0} placeholder="none" aria-label="Meters above" value={layout.slice.above} onChange={(above: number | null) => updateMapLayout({ slice: { ...layout.slice, above } })} />
+                            <span>m above</span>
+                        </label>
+                        <span className="map-slice-frame" title="the followed frame">{layout.followFrame}</span>
+                        <label className="map-slice-bound" title="meters kept below the followed frame (empty: no floor)">
+                            <Icon name="slice-below" size={14} />
+                            <NumberInput nullable className="number" step={0.1} min={0} placeholder="none" aria-label="Meters below" value={layout.slice.below} onChange={(below: number | null) => updateMapLayout({ slice: { ...layout.slice, below } })} />
+                            <span>m below</span>
+                        </label>
                     </div>
                 </div>
             )}
@@ -492,7 +495,8 @@ class MapSource {
 
     /** every frame: the lidar map re-sliced once the followed frame has moved up or down past RESLICE_METERS; true when it was */
     reslice(): boolean {
-        if (!this.#cloudPositions || !mapLayout.get().slice.enabled) {
+        const { below, above } = mapLayout.get().slice
+        if (!this.#cloudPositions || (below === null && above === null)) {
             return false
         }
         const z = this.#robotZ()

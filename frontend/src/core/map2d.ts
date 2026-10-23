@@ -343,11 +343,20 @@ export function chooseOverlay(topics: Topic[], picked: string, source: MapBase):
 }
 
 /** the minimap's default height slice (3 ft below the robot to 12 ft above), meters */
-export const DEFAULT_SLICE = { enabled: true, below: 0.91, above: 3.66 }
+export const DEFAULT_SLICE: HeightSlice = { below: 0.91, above: 3.66 }
+
+/** meters kept below and above the followed frame; null: no bound that way */
+export interface HeightSlice {
+    below: number | null
+    above: number | null
+}
 /** the robot moving this far up or down re-slices the map */
 export const RESLICE_METERS = 0.25
 
 /** The fixed-frame height band to keep around a robot at height `robotZ`, or null to keep everything. */
-export function sliceRange(slice: { enabled: boolean; below: number; above: number }, robotZ: number | null): [number, number] | null {
-    return slice.enabled && robotZ !== null && Number.isFinite(robotZ) ? [robotZ - slice.below, robotZ + slice.above] : null
+export function sliceRange(slice: HeightSlice, robotZ: number | null): [number, number] | null {
+    if (robotZ === null || !Number.isFinite(robotZ) || (slice.below === null && slice.above === null)) {
+        return null
+    }
+    return [robotZ - (slice.below ?? Infinity), robotZ + (slice.above ?? Infinity)]
 }
