@@ -12,7 +12,7 @@ import { Viewer } from "dimos-react/three"
 import { watchSplatBudget } from "./render/rendering.ts"
 import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
-import { VideoSources } from "./video.ts"
+import { HIDDEN_GRACE_MS, setHiddenGraceMs, VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
 import { JOY_TOPIC, JOY_TYPE, JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
@@ -52,6 +52,8 @@ export interface ViewSettings {
     camerasIn3d: boolean
     /** the CAD view cube in the 3D view's top-right corner (click a face to look from there) */
     viewCube: boolean
+    /** how long a hidden tab keeps its cameras subscribed (s; unset: 60) */
+    cameraHiddenGraceS?: number
 }
 
 export class ViewerApp {
@@ -115,6 +117,9 @@ export class ViewerApp {
         watchSplatBudget(this.viewer)
         this.highlight = new FrameHighlight(this.viewer, this.tf)
         this.video = new VideoSources(this.connection)
+        const applyGrace = () => setHiddenGraceMs((this.settings.get().cameraHiddenGraceS ?? HIDDEN_GRACE_MS / 1000) * 1000)
+        applyGrace()
+        this.settings.subscribe(applyGrace)
         this.layers = new LayerManager(this.viewer, this.tf, this.tfHistory, this.connection, this.video, this.profile)
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)

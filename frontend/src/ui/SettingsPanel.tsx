@@ -68,6 +68,12 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                 <Field inline label="Follow turns" title="following, the camera turns with the frame's heading (yaw only: the world stays level), like a third-person game; orbit and zoom stay an offset from it"><Toggle value={view.followTurns !== false} onChange={(followTurns: any) => app.settings.update({ followTurns })} /></Field>
                 <Field inline label="Cameras in 3D" title="each camera's picture and frustum at its CameraInfo frame; an open camera panel's stream is shared, else a small one a few times a second"><CamerasIn3dToggle app={app} /></Field>
             </section>
+            <section className="settings-section" data-section="cameras">
+                <Heading level={3}>Cameras</Heading>
+                <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
+                    <Slider min={0} max={300} step={5} value={view.cameraHiddenGraceS ?? 60} format={(seconds: number) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS: number) => app.settings.update({ cameraHiddenGraceS })} />
+                </Field>
+            </section>
             <Heading level={3}>Rendering</Heading>
             <div className="field-block">
                 <span className="field-label">Point style</span>
