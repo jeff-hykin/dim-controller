@@ -330,6 +330,8 @@ export class ViewerApp {
         this.#tfSeen = next
         if (JSON.stringify(issues) !== JSON.stringify(this.tfIssues.get().issues)) {
             this.tfIssues.set({ issues })
+            this.layers.tfProblemFrames = new Set(issues.flatMap((issue) => issue.frames))
+            this.viewer.requestRender()
         }
     }
 

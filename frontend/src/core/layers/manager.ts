@@ -30,6 +30,9 @@ export class LayerManager {
     /** a layer type switched on or off as a whole (camera3d: Settings → 3D view → Cameras in 3D); its topics follow */
     #typeEnabled: Record<string, boolean> = {}
 
+    /** the frames the TF check flags (set by the app on each check) */
+    tfProblemFrames: ReadonlySet<string> = new Set()
+
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly tfHistory: TfHistory, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
         // the URDF comes only when asked for, so no topic announces it: the page keeps asking (while the 3D view is on), and a URDF
         // answered lists the robot model
@@ -160,6 +163,7 @@ export class LayerManager {
             connection: this.connection,
             video: this.video,
             topics: () => this.connection.status.get().topics,
+            tfProblemFrames: () => this.tfProblemFrames,
             // the robot type can change while a layer runs (Settings → Robot, or auto)
             get profile() {
                 return manager.profile

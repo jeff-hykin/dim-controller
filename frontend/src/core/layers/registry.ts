@@ -23,6 +23,8 @@ export interface LayerContext {
     topics(): Topic[]
     /** the active robot profile (fork-specific defaults) */
     profile: RobotProfile
+    /** the frames the TF check flags (core/tfCheck.ts), a new set each time they change */
+    tfProblemFrames(): ReadonlySet<string>
     /** reports a problem the UI shows next to the layer (null clears it) */
     setStatus(status: LayerStatus): void
 }
