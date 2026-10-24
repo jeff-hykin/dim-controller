@@ -55,7 +55,7 @@ pub struct Args {
 const OLD_APP_NAME: &str = "dim-live-viewer";
 
 /// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
-/// app's data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
+/// app's own data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
 fn default_record_dir() -> PathBuf {
     if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref()) {
         let old = PathBuf::from(&dir).join("live-viewer");
@@ -65,23 +65,15 @@ fn default_record_dir() -> PathBuf {
             PathBuf::from(dir).join("controller")
         };
     }
-    if let Some(data) = app_data() {
-        let old = data
-            .parent()
-            .map(|apps| apps.join(OLD_APP_NAME).join("recordings"))
-            .filter(|old| old.is_dir());
-        return match old {
-            Some(old) if !data.join("recordings").is_dir() => old,
-            _ => data.join("recordings"),
-        };
+    let data = dimos_app::data_dir();
+    let old = data
+        .parent()
+        .map(|apps| apps.join(OLD_APP_NAME).join("recordings"))
+        .filter(|old| old.is_dir());
+    match old {
+        Some(old) if !data.join("recordings").is_dir() => old,
+        _ => data.join("recordings"),
     }
-    let home = std::env::var("DIMOS_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".dimos")
-        });
-    let app = dimos_app::field(|app| app.name.as_ref()).unwrap_or_else(|| "dim-controller".into());
-    home.join("data").join(app).join("recordings")
 }
 
 fn app_data() -> Option<PathBuf> {

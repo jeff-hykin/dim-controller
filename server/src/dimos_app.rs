@@ -1,6 +1,7 @@
 //! What dimOS Desktop tells this server at start: the `DIMOS_APP` env var, one JSON object (docs/apps.md in
 //! dimos-desktop), the whole interface: Desktop passes no flags or other variables.
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 #[derive(serde::Deserialize, Default, Debug, Clone)]
@@ -48,6 +49,20 @@ pub fn field(pick: impl Fn(&DimosApp) -> Option<&String>) -> Option<String> {
     get()
         .and_then(|app| pick(app).cloned())
         .filter(|value| !value.is_empty())
+}
+
+/// The app's own writable folder, where everything it saves goes: DIMOS_APP's `dataDir`, the one Desktop makes for it.
+/// Outside Desktop (no DIMOS_APP) it keeps its own, next to the hook's cache (hook_install.rs); rebuilding Desktop's
+/// own layout by hand would be reading exactly what DIMOS_APP is there to say.
+pub fn data_dir() -> PathBuf {
+    if let Some(dir) = field(|app| app.data_dir.as_ref()) {
+        return PathBuf::from(dir);
+    }
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share")))
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("dim-controller")
 }
 
 #[cfg(test)]

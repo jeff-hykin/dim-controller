@@ -539,9 +539,9 @@ async fn manipulation_poses(Query(query): Query<HashMap<String, String>>) -> Res
     if !crate::poses::valid_robot(robot) {
         return error_response(StatusCode::BAD_REQUEST, "robot: the URDF's name (letters, digits, . _ -)");
     }
-    let home = crate::poses::dimos_home();
-    match crate::poses::load(&home, robot) {
-        Ok(poses) => Json(json!({ "robot": robot, "file": crate::poses::file(&home, robot), "poses": poses })).into_response(),
+    let data = crate::dimos_app::data_dir();
+    match crate::poses::load(&data, robot) {
+        Ok(poses) => Json(json!({ "robot": robot, "file": crate::poses::file(&data, robot), "poses": poses })).into_response(),
         Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
     }
 }
@@ -555,7 +555,7 @@ async fn save_manipulation_poses(Extract(api): Extract<Api>, Body(body): Body) -
         Ok(poses) => poses,
         Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
-    match crate::poses::save(&crate::poses::dimos_home(), robot, &poses) {
+    match crate::poses::save(&crate::dimos_app::data_dir(), robot, &poses) {
         Ok(file) => {
             api.annotations.broadcast(json!({ "type": "manipulation", "savedPoses": { "robot": robot, "poses": poses }, "from": body["from"] }));
             Json(json!({ "ok": true, "file": file, "poses": poses })).into_response()
