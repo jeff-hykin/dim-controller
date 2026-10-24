@@ -71,6 +71,37 @@ speeds. `/` opens the palette (every action), `?` lists every key.
 <img src="docs/keys.jpg" alt="Every key" width="49%">
 </p>
 
+## SONIC G1
+
+The SONIC panel appears when a running `G1SonicPolicyModule` is discovered,
+including the WebXR teleop blueprint. It uses the DimOS gateway's module RPCs;
+install the companion SONIC Desktop PR with `activate()`, `stop_motion()` and
+the gateway's optional `run_id` request guard.
+
+Activate requests the measured-pose ramp into balancing. Stop motion cancels
+navigation and operator references without stopping balance. Deactivate holds
+the measured pose and requires a supported robot. The large red DAMPING STOP
+button, Space and gamepad LT+RT request latched software damping, not power
+isolation. Balancing stops; restart is required. Focus loss and Escape still
+stop motion without dropping balance. The UI does not automatically retry
+activation, and keyboard/stick driving is blocked on stale or inactive policy
+state. Other robot profiles retain their existing driving behavior.
+
+The same panel lists SONIC's available gaits/postures and installed motion clips.
+Select a gait and Apply, or a clip and Play. Pelvis height is an explicit planner
+request (0.2-0.8 m, matching NVIDIA's gamepad bounds), with a Mode default option;
+it is not measured robot height. Editing the controls does not send commands
+until Apply/Play. Each action stops navigation first and is tied to the inspected
+run ID. Gait, height and clip requests require live planner control; while a clip
+or WebXR owns the reference, Return to locomotion clears it without disarming.
+The panel shows the current gait, staged transitions and clip progress from
+policy feedback. Posture/clip changes on hardware require confirmation; the
+available mode list and height bounds are not hardware validation.
+
+Start with `dimos --simulation mujoco --transport zenoh --viewer none run
+unitree-g1-sonic-wbc`. Do not use the robot's stock locomotion controls while
+SONIC owns the motors.
+
 ## Arm
 
 With a manipulation blueprint running, the arm view does what viser does: drag a gizmo, move joint sliders or pick a
