@@ -23,6 +23,7 @@ mod pickle;
 mod poses;
 mod record;
 mod recorder;
+mod recordings;
 mod routes;
 mod settings;
 
@@ -41,8 +42,8 @@ pub struct Args {
     /// the built page (vite's dist); the nix wrapper sets it
     #[arg(long, env = "CONTROLLER_FRONTEND")]
     frontend: Option<PathBuf>,
-    /// where recordings go [default: Desktop's shared folder (DIMOS_APP's recordingsDir)/controller (or its live-viewer
-    /// folder, if this app made one before it was renamed), else DIMOS_APP's dataDir/recordings]
+    /// where recordings go [default: the shared folder the dimos gateway names (recordings.rs)/controller (or its
+    /// live-viewer folder, if this app made one before it was renamed), else DIMOS_APP's dataDir/recordings]
     #[arg(long, env = "CONTROLLER_RECORD_DIR")]
     record_dir: Option<PathBuf>,
     /// print the endpoints (openapi.json) and exit: scripts/check_endpoints.ts compares them with dimos.yaml
@@ -54,10 +55,11 @@ pub struct Args {
 /// `settings_file`), so nothing a user made is lost.
 const OLD_APP_NAME: &str = "dim-live-viewer";
 
-/// Where recordings go when nobody says: Desktop's shared recordings folder (where other apps find them), else the
-/// app's own data dir, never the app's own (git) checkout. A `live-viewer` folder from before the rename stays in use.
-fn default_record_dir() -> PathBuf {
-    if let Some(dir) = dimos_app::field(|app| app.recordings_dir.as_ref()) {
+/// Where recordings go when nobody says: the shared recordings folder the dimos gateway names (recordings.rs, where
+/// other apps find them), else the app's own data dir, never the app's own (git) checkout. A `live-viewer` folder from
+/// before the rename stays in use.
+async fn default_record_dir() -> PathBuf {
+    if let Some(dir) = recordings::ask().await {
         let old = PathBuf::from(&dir).join("live-viewer");
         return if old.is_dir() {
             old
@@ -123,7 +125,8 @@ async fn main() -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&api::openapi())?);
         return Ok(());
     }
-    let record_dir = args.record_dir.clone().unwrap_or_else(default_record_dir);
+    // always resolved, even when a folder was given: it's what the recorder panel shows as the shared one
+    let record_dir = args.record_dir.clone().unwrap_or(default_record_dir().await);
     let frontend = args
         .frontend
         .clone()

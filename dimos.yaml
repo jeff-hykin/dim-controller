@@ -9,6 +9,8 @@ uses:
         - GET /info
         # robots.json's robot types, for the auto robot type
         - GET /catalog/robots
+        # where recordings live: the gateway is the authority on the folder (DIMOS_APP's recordingsDir when it can't say)
+        - GET /history/recordings
     "@desktop-gateway":
         # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
         - GET /recordings

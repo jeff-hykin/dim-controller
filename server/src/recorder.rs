@@ -559,7 +559,7 @@ impl State {
             },
             directory: directory.display().to_string(),
             default_directory: self.record_dir.display().to_string(),
-            recordings_root: crate::dimos_app::field(|app| app.recordings_dir.as_ref()),
+            recordings_root: crate::recordings::root(),
             options,
         }
     }
@@ -661,7 +661,7 @@ pub struct Status {
     directory: String,
     /// where they go when no folder is chosen
     default_directory: String,
-    /// Desktop's shared recordings folder (what the Recordings app lists), if Desktop said
+    /// the shared recordings folder (what the Recordings app lists), if the dimos gateway or Desktop said
     recordings_root: Option<String>,
     options: Options,
 }
