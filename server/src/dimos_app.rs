@@ -36,7 +36,12 @@ pub fn get() -> Option<&'static DimosApp> {
         let json = std::env::var("DIMOS_APP")
             .ok()
             .filter(|json| !json.is_empty())?;
-        eprintln!("DIMOS_APP: {json}");
+        if let Ok(mut logged) = serde_json::from_str::<serde_json::Value>(&json) {
+            if let Some(token) = logged.get_mut("zenohGatewayToken") {
+                *token = serde_json::Value::String("***".into());
+            }
+            eprintln!("DIMOS_APP: {logged}");
+        }
         parse(&json)
             .map_err(|error| eprintln!("DIMOS_APP isn't valid JSON ({error}); ignoring it"))
             .ok()
