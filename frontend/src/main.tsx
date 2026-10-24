@@ -5,6 +5,9 @@ import "./styles.css"
 import "./layers/index.ts"
 import { App } from "./App.tsx"
 import { loadSettings } from "./core/store.ts"
+import { watchBuild } from "./core/buildWatch.ts"
+
+watchBuild()
 
 // the settings are the backend's (api/settings): the app starts once they're here. AppProvider: Desktop's skin (live),
 // toasts and dialogs; the page's zenoh connection is the app's own (core/transport.ts), so no URL-state bridge
