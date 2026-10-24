@@ -2,7 +2,7 @@
 // overrides go on top of the app's options; a pause closes the gateway subscription and a resume opens it again; what
 // the gateway changes in place goes as an update, the rest (delivery) as a new subscription.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { applyOverride, defaultBandwidthPriority, heatOf, isVideoOptions, levelOf, migrateOverrides, normalizeOverride, optionDiff, patchOverrides, PRIORITY_LAST, priorityLabel, stepPriority, withChanges } from "../src/core/bandwidth.ts"
+import { applyOverride, defaultBandwidthPriority, heatOf, isVideoOptions, levelOf, localLinkBandwidth, migrateOverrides, normalizeOverride, optionDiff, patchOverrides, PRIORITY_LAST, priorityLabel, stepPriority, withChanges } from "../src/core/bandwidth.ts"
 import { LiveSubscription, type SubscribeOptions, type SubscriptionUpdate } from "../src/core/transport.ts"
 import { streamTable } from "../src/core/netHistory.ts"
 
@@ -146,4 +146,12 @@ Deno.test("the app's own changes keep the override on top (a preset dropping max
     await subscription.update({ maxBitrate: null, qualityToHzTradeoff: null, maxResolution: [640, 360] })
     assertEquals(opened[0].updates, [{ qualityToHzTradeoff: null, maxResolution: [640, 360] }])
     assertEquals(subscription.base, { delivery: "latest", encoding: "dimos_lcm_image", maxResolution: [640, 360] })
+})
+
+Deno.test("a page on the gateway's machine tells it a link sized by the cores; a real network keeps the estimate", () => {
+    assertEquals(localLinkBandwidth("localhost", 12), 300e6)
+    assertEquals(localLinkBandwidth("127.0.0.1", 4), 100e6)
+    assertEquals(localLinkBandwidth("[::1]", 0), 25e6)
+    assertEquals(localLinkBandwidth("192.168.1.20", 12), null)
+    assertEquals(localLinkBandwidth("jeffs-mac.local", 12), null)
 })

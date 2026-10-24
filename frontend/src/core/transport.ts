@@ -6,7 +6,7 @@ import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
 import { LeaseKeeper, type LeaseClient } from "./lease.ts"
-import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOptions, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
+import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOptions, localLinkBandwidth, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
 
 export { Priority }
 export type { Message, Publisher, SubscribeOptions, SubscriptionUpdate }
@@ -182,6 +182,11 @@ export class Connection {
         this.client = client
         this.status.update({ state: "connected", error: null })
         client.onState((state) => this.status.update({ state }))
+        const local = localLinkBandwidth(location.hostname, navigator.hardwareConcurrency || 1)
+        if (local !== null) {
+            // a gateway older than 0.5.30 answers "unknown op": forget it, or every reconnect would re-send it and fail
+            client.setLinkBandwidth(local).catch(() => client.setLinkBandwidth(undefined).catch(() => {}))
+        }
         for (const subscription of this.#subscriptions) {
             subscription.open(client)
         }

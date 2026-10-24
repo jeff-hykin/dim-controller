@@ -88,6 +88,19 @@ export function offsetPriority(base: number | undefined, offset: number): number
     return offset <= PRIORITY_LAST ? 0 : (base ?? DEFAULT_PRIORITY) * 2 ** offset
 }
 
+/** bytes/s one core moves through the data channels' SCTP over loopback (one association, so one core's worth) */
+const LOOPBACK_BYTES_PER_SEC_PER_CORE = 25e6
+
+/**
+ * The link speed to tell the gateway (setLinkBandwidth) when the page is on the gateway's own machine: no network in
+ * the way, so it's what the machine moves, sized by its cores (a Pi's 4 → 100 MB/s, a MacBook's 10+ → 250+ MB/s).
+ * null on a real network, where the gateway's estimate is the right answer.
+ */
+export function localLinkBandwidth(hostname: string, cores: number): number | null {
+    const loopback = hostname === "localhost" || hostname.endsWith(".localhost") || /^127\./.test(hostname) || hostname === "[::1]" || hostname === "::1"
+    return loopback ? Math.max(1, cores) * LOOPBACK_BYTES_PER_SEC_PER_CORE : null
+}
+
 /** Whether options make a video channel (where delivery must stay "latest" and maxBitrate applies). */
 export function isVideoOptions(options: SubscribeOptions, channelName?: string | null): boolean {
     const channel = channelName ?? options.channel
