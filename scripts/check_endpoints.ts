@@ -106,3 +106,20 @@ if (JSON.stringify(sorted(declared)) !== JSON.stringify(sorted(served))) {
     Deno.exit(1)
 }
 console.log(`dimos.yaml lists all ${need.size} operations`)
+
+// server/Cargo.toml's version is the app's own version, so it has to be the one dimos.yaml ships: the repo bumps
+// dimos.yaml on release, and that crate had sat at 0.1.0 since 0.2.12. Nothing here reports `CARGO_PKG_VERSION` yet,
+// but dim-go2-dash does and wrote a stale one into thirty releases' worth of recordings' `app_version`, so the guard
+// goes in before something starts reading it. Checked here rather than in the build, because the flake's `src` is
+// ./server and so the build cannot read dimos.yaml. `dimos-desktop app check .` says the same from the outside.
+const shipped = (parse(text) as Record<string, unknown>).version
+const cargoToml = await Deno.readTextFile(new URL("../server/Cargo.toml", import.meta.url))
+const crateVersion = cargoToml.match(/^\[package\][^[]*?^version\s*=\s*"([^"]+)"/ms)?.[1]
+if (crateVersion !== shipped) {
+    console.error(
+        `server/Cargo.toml says version ${crateVersion}, dimos.yaml says ${shipped}: that version is what the server ` +
+            `reports of itself, so a release bumps both`,
+    )
+    Deno.exit(1)
+}
+console.log(`server/Cargo.toml and dimos.yaml agree on ${crateVersion}`)
