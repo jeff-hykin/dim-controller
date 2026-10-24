@@ -54,7 +54,7 @@ const DEFAULTS: CloudSettings = {
 
 const SPLAT_BUDGET = 3_000_000
 
-/** How often the cloud's frame_id is re-read from one raw message (the encoding's output carries no header). */
+/** How often the cloud's frame_id is re-read from one raw message, when the encoding's output carries no frameId (gateways before zenoh-dimos-codecs 0.3.5). */
 const FRAME_RECHECK_MS = 30_000
 
 class CloudLayer {
@@ -101,7 +101,13 @@ class CloudLayer {
         this.#readFrame()
         this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
-            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array } | undefined
+            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
+            // a gateway whose encoding carries each cloud's frame_id: one topic can mix frames (a lidar and a camera's
+            // depth on the R1's /lidar), so each cloud is placed by its own and the raw re-reads stop
+            if (typeof decoded?.frameId === "string") {
+                clearInterval(this.#frameTimer)
+                this.#frame = decoded.frameId
+            }
             if (decoded?.positions) {
                 this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
             }
