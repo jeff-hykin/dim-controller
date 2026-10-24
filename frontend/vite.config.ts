@@ -24,12 +24,7 @@ const dimosReact = Object.fromEntries(
 export default defineConfig({
     base: "./",
     // dimos-react comes from esm.sh (deno.json's URLs), fetched and bundled at build (tools/esm_fetch.ts)
-    plugins: [
-        esmFetch(dimosReact),
-        react(),
-        // the build's id, which open pages poll to reload onto a new build (src/core/buildWatch.ts)
-        { name: "build-id", generateBundle() { this.emitFile({ type: "asset", fileName: "build.json", source: JSON.stringify({ id: `${Date.now()}` }) }) } },
-    ],
+    plugins: [esmFetch(dimosReact), react()],
     server: {
         proxy: {
             "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true },
