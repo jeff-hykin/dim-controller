@@ -93,6 +93,29 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     )
 }
 
+/** Which group titles are folded, remembered per viewer (lv.layers.collapsed); `toggle(label)` folds or unfolds one.
+ * Each list using it draws its own groups, so a toggle merges into what's saved rather than this one's copy. */
+export function useCollapsedGroups(): { collapsed: Record<string, boolean>; toggle: (label: string) => void } {
+    const [collapsed, setCollapsed] = useState(() => readLocal<Record<string, boolean>>(COLLAPSED_KEY, {}))
+    const toggle = (label: string) => {
+        const next = { ...readLocal<Record<string, boolean>>(COLLAPSED_KEY, {}), [label]: !collapsed[label] }
+        setCollapsed(next)
+        writeLocal(COLLAPSED_KEY, next)
+    }
+    return { collapsed, toggle }
+}
+
+/** A group's title: a click folds or unfolds it; folded, it shows how many it holds. */
+export function GroupTitle({ label, count, collapsed, onToggle }: { label: string; count: number; collapsed: boolean; onToggle: () => void }) {
+    return (
+        <button type="button" className="quality-title layer-group-title" aria-expanded={!collapsed} onClick={onToggle}>
+            <span className={`chevron ${collapsed ? "" : "open"}`}><Icon name="chevron-right" size={12} /></span>
+            {label}
+            {collapsed && <span className="layer-group-count">{count}</span>}
+        </button>
+    )
+}
+
 /** @param heads controls at the top of a group, by its label (the group shows even with no layers in it)
  * @param lead group labels drawn first, in this order (when they have layers) */
 export function LayerList({ app, skip, heads = {}, lead = [] }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode>; lead?: string[] }) {
@@ -104,23 +127,14 @@ export function LayerList({ app, skip, heads = {}, lead = [] }: { app: ViewerApp
         groups.set(entry.type.label, [...(groups.get(entry.type.label) ?? []), entry])
     }
     const ordered = [...lead.filter((label) => groups.has(label)).map((label) => [label, groups.get(label)!] as const), ...[...groups].filter(([label]) => !lead.includes(label))]
-    const [collapsed, setCollapsed] = useState(() => readLocal<Record<string, boolean>>(COLLAPSED_KEY, {}))
-    const toggle = (label: string) => {
-        const next = { ...collapsed, [label]: !collapsed[label] }
-        setCollapsed(next)
-        writeLocal(COLLAPSED_KEY, next)
-    }
+    const { collapsed, toggle } = useCollapsedGroups()
     const drawn = new Set(all.map((entry) => entry.topic.key))
     const other = connection.topics.filter((topic) => !drawn.has(topic.key))
     return (
         <div className="layers">
             {ordered.map(([label, entries]) => (
                 <section key={label} className={`layer-group ${collapsed[label] ? "collapsed" : ""}`}>
-                    <button type="button" className="quality-title layer-group-title" aria-expanded={!collapsed[label]} onClick={() => toggle(label)}>
-                        <span className={`chevron ${collapsed[label] ? "" : "open"}`}><Icon name="chevron-right" size={12} /></span>
-                        {label}
-                        {collapsed[label] && <span className="layer-group-count">{entries.length}</span>}
-                    </button>
+                    <GroupTitle label={label} count={entries.length} collapsed={!!collapsed[label]} onToggle={() => toggle(label)} />
                     {!collapsed[label] && heads[label]}
                     {!collapsed[label] && entries.map((entry) => {
                         const Rows = entry.type.Rows

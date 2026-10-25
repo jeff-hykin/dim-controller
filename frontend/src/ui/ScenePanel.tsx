@@ -1,5 +1,5 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu: cameras in 3D (the same
+// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu (each group folding): cameras in 3D (the same
 // setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
 // this viewer's bandwidth preset, color and size), then every other layer (TF, maps, markers…: ui/LayersPanel.tsx).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
@@ -26,12 +26,14 @@ import { panelTitle } from "./commands.ts"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { Unavailable } from "./Unavailable.tsx"
-import { LayerList } from "./LayersPanel.tsx"
+import { GroupTitle, LayerList, useCollapsedGroups } from "./LayersPanel.tsx"
 import { ManipActions } from "./ManipPanel.tsx"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
 const isCloud = (entry: LayerEntry) => entry.topic.type === "sensor_msgs.PointCloud2"
+/** the menu's first group: the point clouds, each with its bandwidth preset and look */
+const CLOUDS_LABEL = "Point clouds"
 
 /** The sum over the clouds being drawn. */
 export function totalRate(rates: Record<string, CloudRate>): CloudRate & { clouds: number } {
@@ -181,6 +183,8 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     const rates = useStore(cloudRates)
     useStore(cloudQualities)
     const clouds = list.filter(isCloud)
+    const { collapsed, toggle } = useCollapsedGroups()
+    const cloudsFolded = !!collapsed[CLOUDS_LABEL]
     useEffect(() => {
         const close = (event: Event) => {
             if (!(event.target as HTMLElement).closest?.(".cloud-menu, .scene-clouds")) {
@@ -192,9 +196,9 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     }, [onClose])
     return createPortal(
         <Card padded={false} className="cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
-            <div className="quality-title">Point clouds</div>
-            {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
-            {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
+            <GroupTitle label={CLOUDS_LABEL} count={clouds.length} collapsed={cloudsFolded} onToggle={() => toggle(CLOUDS_LABEL)} />
+            {!cloudsFolded && !clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
+            {!cloudsFolded && clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
             <LayerList app={app} skip={isCloud} lead={[labelOf("graph")]} heads={{ [labelOf("camera3d")]: <CamerasIn3dRow app={app} /> }} />
         </Card>,
         document.body,
