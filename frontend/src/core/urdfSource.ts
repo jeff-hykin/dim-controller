@@ -1,12 +1,14 @@
 // The robot's URDF and its meshes from dimos's UrdfManager, one per page, shared by the robot model layer and the arm
 // view: the URDF asked for as `*.urdf` on /render_file_request (on subscribing, on every connect, and every second until it
 // comes) and each mesh asked for by the full path the URDF names; every reply comes on /file_info, a name ending in .urdf
-// being the URDF (replies come in any order, possibly from more than one publisher). Subscribed only while
+// being the URDF (replies come in any order, possibly from more than one publisher). A dimos without UrdfManager's
+// /render_file_request (dimos main for now) has /robot_description's XML (an empty /file_request has it sent now) and meshes
+// asked for on /file_request: both are asked until a URDF comes, and its meshes go where it came from. Subscribed only while
 // something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
 // with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load, uncached.
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
-import { encode } from "./lcm/lcm.ts"
+import { decode, encode } from "./lcm/lcm.ts"
 import { Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
@@ -15,6 +17,9 @@ import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./s
 import type { RobotDescription } from "./robotDescription.ts"
 
 export const FILE_REQUEST = dimosKey("/render_file_request", "std_msgs.String")
+/** the older dimos's: the URDF on /robot_description, meshes asked for on /file_request */
+export const ROBOT_DESCRIPTION = dimosKey("/robot_description", "std_msgs.String")
+const LEGACY_FILE_REQUEST = dimosKey("/file_request", "std_msgs.String")
 /** what a request for the URDF names: UrdfManager answers any *.urdf with its URDF, named as asked */
 const URDF_REQUEST = "*.urdf"
 /** /file_info and anything under it (/file_info/**): zenoh's `**` also matches no chunks */
@@ -54,7 +59,10 @@ export class UrdfSource {
     #xml = ""
     #users = 0
     #stops: (() => void)[] = []
-    #requests: Publisher | null = null
+    /** request publishers by key */
+    #requests = new Map<string, Publisher>()
+    /** where the URDF came from, so its meshes are asked for there (null: not yet, ask both) */
+    #meshRequestKey: string | null = null
     /** URI → when it was last asked for */
     #asked = new Map<string, number>()
     /** URI → the hash of the copy in the cache that isn't current (sent as &have=) */
@@ -80,6 +88,7 @@ export class UrdfSource {
     acquire(): () => void {
         if (this.#users++ === 0) {
             // the model loads once, behind everything live
+            this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onRobotDescription(message.bytes)))
             this.#stops.push(this.connection.subscribe(FILE_INFO, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
             let state = this.connection.status.get().state
@@ -102,8 +111,8 @@ export class UrdfSource {
                 this.#stops.splice(0).forEach((stop) => stop())
                 clearInterval(this.#timer!)
                 this.#stopAskingForUrdf()
-                this.#requests?.close()
-                this.#requests = null
+                this.#requests.forEach((publisher) => publisher.close())
+                this.#requests.clear()
                 this.#asked.clear()
             }
         }
@@ -125,7 +134,8 @@ export class UrdfSource {
 
     #putUrdfRequest() {
         try {
-            this.#publisher()?.put(encode("std_msgs.String", { data: URDF_REQUEST }))
+            this.#publisher(FILE_REQUEST)?.put(encode("std_msgs.String", { data: URDF_REQUEST }))
+            this.#publisher(LEGACY_FILE_REQUEST)?.put(encode("std_msgs.String", { data: "" }))
         } catch {
             // not open yet: the next one goes
         }
@@ -136,15 +146,23 @@ export class UrdfSource {
         this.#urdfAsk = null
     }
 
-    #publisher(): Publisher | null {
+    #publisher(key: string): Publisher | null {
         const client = this.connection.client
-        if (client) {
-            this.#requests ??= client.publisher(FILE_REQUEST, { delivery: "reliable" })
+        if (client && !this.#requests.has(key)) {
+            this.#requests.set(key, client.publisher(key, { delivery: "reliable" }))
         }
-        return this.#requests
+        return this.#requests.get(key) ?? null
     }
 
-    #onUrdf(xml: string) {
+    #onRobotDescription(bytes: Uint8Array) {
+        try {
+            this.#onUrdf(String(decode("std_msgs.String", bytes).data ?? ""), LEGACY_FILE_REQUEST)
+        } catch (error) {
+            this.state.update({ problem: `/robot_description isn't a std_msgs.String: ${error}` })
+        }
+    }
+
+    #onUrdf(xml: string, requestKey: string) {
         this.#stopAskingForUrdf()
         // nothing yet (or an empty one) isn't a URDF
         if (xml === this.#xml || !xml) {
@@ -153,6 +171,7 @@ export class UrdfSource {
         try {
             const description = parseUrdf(xml)
             this.#xml = xml
+            this.#meshRequestKey = requestKey
             this.#asked.clear()
             this.#have.clear()
             this.#failed.clear()
@@ -167,7 +186,7 @@ export class UrdfSource {
             this.#count()
             this.#loadCached(description)
         } catch (error) {
-            this.state.update({ problem: `the URDF on /file_info: ${error}` })
+            this.state.update({ problem: `the URDF: ${error}` })
         }
     }
 
@@ -183,7 +202,7 @@ export class UrdfSource {
             return
         }
         if (file.uri.endsWith(".urdf")) {
-            this.#onUrdf(new TextDecoder().decode(file.data))
+            this.#onUrdf(new TextDecoder().decode(file.data), FILE_REQUEST)
             return
         }
         if (!description) {
@@ -293,7 +312,7 @@ export class UrdfSource {
             }
         }
         const missing = this.#files.filter((uri) => !this.#loaded(uri) && !this.#decoding.has(uri) && !this.#failed.has(uri) && !this.#asked.has(uri))
-        const requests = this.#publisher()!
+        const requests = this.#publisher(this.#meshRequestKey ?? FILE_REQUEST)!
         for (const uri of missing.slice(0, Math.max(0, MESHES_IN_FLIGHT - this.#asked.size))) {
             const have = this.#have.get(uri)
             try {

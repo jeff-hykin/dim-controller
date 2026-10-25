@@ -127,7 +127,7 @@ export class ArmManipView {
         const { description } = this.urdf.state.get()
         const model = this.#model
         if (!description) {
-            this.status.update({ problem: "waiting for the URDF (dimos's UrdfManager, /render_file_request)" })
+            this.status.update({ problem: "waiting for the URDF (dimos's UrdfManager, /render_file_request or /robot_description)" })
         } else if (model?.description !== description) {
             this.#teardown()
             this.#build(description)

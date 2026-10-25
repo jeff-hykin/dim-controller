@@ -91,7 +91,7 @@ class RobotModelLayer {
     #status() {
         const { description, meshesLoaded, meshesWanted, problem, armDraws } = this.#source.state.get()
         if (!description) {
-            this.context.setStatus({ info: "waiting for the URDF (asked on /render_file_request)", problem })
+            this.context.setStatus({ info: "waiting for the URDF (asked on /render_file_request and /file_request)", problem })
             return
         }
         const meshes = meshesWanted ? ` · meshes ${meshesLoaded}/${meshesWanted}` : ""

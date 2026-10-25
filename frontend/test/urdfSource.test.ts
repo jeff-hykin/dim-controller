@@ -2,7 +2,7 @@
 // re-sent until it comes on /file_info (the first can beat the subscription), and an empty reply isn't a URDF.
 import { assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
-import { decode } from "../src/core/lcm/lcm.ts"
+import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { FILE_INFO, fileRanks, FILE_REQUEST, UrdfSource } from "../src/core/urdfSource.ts"
@@ -23,11 +23,14 @@ function fileInfo(uri: string, data: Uint8Array): Uint8Array {
 
 function fakeConnection(state: ConnectionState["state"] = "connected") {
     const requests: string[] = []
+    /** what went to the older dimos's /file_request */
+    const legacyRequests: string[] = []
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
     const client = {
         publisher(key: string) {
-            assertEquals(key, FILE_REQUEST)
-            return { put: (bytes: Uint8Array) => requests.push(String(decode("std_msgs.String", bytes).data)), close() {} }
+            const sent = key === FILE_REQUEST ? requests : legacyRequests
+            assertEquals([FILE_REQUEST, "dimos/file_request/std_msgs.String"].includes(key), true, key)
+            return { put: (bytes: Uint8Array) => sent.push(String(decode("std_msgs.String", bytes).data)), close() {} }
         },
     }
     const status = new Store({ state } as ConnectionState)
@@ -44,7 +47,8 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
         connection.client = client
         status.update({ state: to })
     }
-    return { connection: connection as unknown as Connection, requests, urdf, connect }
+    const robotDescription = (xml: string) => handlers.get("dimos/robot_description/std_msgs.String")!({ bytes: encode("std_msgs.String", { data: xml }) })
+    return { connection: connection as unknown as Connection, requests, legacyRequests, urdf, robotDescription, connect }
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -119,5 +123,18 @@ Deno.test("the robot's meshes are asked for first: a scene fixed to the root aft
     assertEquals(requests.filter((request) => request !== "*.urdf"), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
     const ranks = fileRanks(source.state.get().description!)
     assertEquals(Object.fromEntries([...ranks].map(([uri, rank]) => [uri.split("/").pop(), rank])), { "splats.spz?hash=1": 2, "tile_0.stl?hash=1": 1, "tile_1.stl?hash=1": 1, "body.stl?hash=1": 0, "leg.stl?hash=1": 0 })
+    release()
+})
+
+Deno.test("a dimos without /render_file_request: an empty /file_request asks, /robot_description answers", async () => {
+    const { connection, legacyRequests, robotDescription } = fakeConnection()
+    const source = new UrdfSource(connection)
+    const release = source.acquire()
+    assertEquals(legacyRequests, [""], "asked the older way too")
+    robotDescription(URDF)
+    assertEquals(source.state.get().description?.name, "box")
+    const asked = legacyRequests.length
+    await wait(600)
+    assertEquals(legacyRequests.length, asked, "no more once it came")
     release()
 })
