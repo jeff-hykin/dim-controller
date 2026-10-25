@@ -3,7 +3,7 @@
 // Color images arrive as the bridge's H.264 track, sized and paced by the viewer's latency/quality preset (core/videoQuality.ts); depth arrives lossless as fields (16UC1 mm / 32FC1 m).
 import { Store } from "./store.ts"
 import { PRIORITY_TIERS } from "./bandwidth.ts"
-import { type Connection, type LiveHandle, parseKey, type SubscribeOptions, type SubscriptionUpdate, type Topic } from "./transport.ts"
+import { type Connection, type LiveHandle, type Message, parseKey, type SubscribeOptions, type SubscriptionUpdate, type Topic } from "./transport.ts"
 import { loadQuality, presetFor, saveQuality, type VideoQuality } from "./videoQuality.ts"
 import { VIDEO_LATENCY_WINDOW_MS, type VideoLatency } from "./videoLatency.ts"
 
@@ -115,6 +115,8 @@ interface Source {
     watched: Map<HTMLVideoElement, () => void>
     video: Store<VideoState>
     depth: Store<{ image: DepthImage | null }>
+    /** the images' frame_id off their message header: undefined before any, null when they come without one (a gateway before 0.5.32, or 0.5.31 for video) */
+    frame: Store<{ frameId: string | null | undefined }>
     /** this viewer's latency/quality preset (core/videoQuality.ts): the bridge's size / bitrate / rate while viewed */
     quality: Store<{ quality: VideoQuality }>
     /** a playing element for textures (the 3D projection), made on first use */
@@ -136,7 +138,8 @@ export class VideoSources {
         const video = new Store<VideoState>({ stream: null, width: 0, height: 0, fps: 0 })
         const depth = new Store<{ image: DepthImage | null }>({ image: null })
         const quality = new Store<{ quality: VideoQuality }>({ quality: isDepthTopic(topic) ? "balanced" : loadQuality(topic.key) })
-        source = { uses: { view: 0, preview: 0 }, options: {}, stop: () => {}, watched: new Map(), video, depth, quality, element: null }
+        const frame = new Store<{ frameId: string | null | undefined }>({ frameId: undefined })
+        source = { uses: { view: 0, preview: 0 }, options: {}, stop: () => {}, watched: new Map(), video, depth, frame, quality, element: null }
         source.uses[use] = 1
         source.options = this.#wanted(topic, source)
         this.#open(topic, source)
@@ -168,17 +171,25 @@ export class VideoSources {
 
     /** Subscribes with the source's options: the color track, or the lossless depth encoding. */
     #open(topic: Topic, source: Source) {
-        const { video, depth } = source
+        const { video, depth, frame } = source
+        const noteFrame = (message: Message) => {
+            const frameId = message.header?.frameId ?? null
+            if (frameId !== frame.get().frameId) {
+                frame.set({ frameId })
+            }
+        }
         const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos_lcm_compressed_" : "dimos_lcm_"
         let frames = 0
         let since = performance.now()
         source.stop = isDepthTopic(topic)
             ? this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}depth` }, (message) => {
+                noteFrame(message)
                 if (message.decoded) {
                     depth.set({ image: message.decoded as DepthImage })
                 }
             })
             : this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}image` }, (message) => {
+                noteFrame(message)
                 frames++
                 const now = performance.now()
                 const state = video.get()

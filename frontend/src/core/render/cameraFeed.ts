@@ -18,6 +18,7 @@ export class CameraFeed {
     #videoCallback = 0
     #stops: (() => void)[] = []
     #stopFrame: (() => void) | null = null
+    #stopHeader: () => void
     #infoKeys = new Set<string>()
     #onFrame: () => void
 
@@ -34,14 +35,26 @@ export class CameraFeed {
             this.#videoCallback = this.#element.requestVideoFrameCallback(onVideoFrame)
         }
         this.#videoCallback = this.#element.requestVideoFrameCallback(onVideoFrame)
-        this.#stopFrame = context.connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
-            const frame = headerFrameId(topic.type, message.bytes)
-            if (frame !== null) {
-                this.frame ||= frame
+        // the frame_id off the images' message header (zenoh-gateway 0.5.32+, video 0.5.31+); without one, one raw image's
+        const onHeaderFrame = () => {
+            const { frameId } = source.frame.get()
+            if (typeof frameId === "string") {
+                this.frame ||= frameId
                 this.#stopFrame?.()
                 this.#stopFrame = null
+            } else if (frameId === null && !this.frame && !this.#stopFrame) {
+                this.#stopFrame = context.connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
+                    const frame = headerFrameId(topic.type, message.bytes)
+                    if (frame !== null) {
+                        this.frame ||= frame
+                        this.#stopFrame?.()
+                        this.#stopFrame = null
+                    }
+                })
             }
-        })
+        }
+        this.#stopHeader = source.frame.subscribe(onHeaderFrame)
+        onHeaderFrame()
         this.findInfo()
     }
 
@@ -82,6 +95,7 @@ export class CameraFeed {
         this.#element.cancelVideoFrameCallback(this.#videoCallback)
         this.#stops.forEach((stop) => stop())
         this.#stopFrame?.()
+        this.#stopHeader()
         this.context.video.release(this.topic, "preview")
         this.texture.dispose()
     }

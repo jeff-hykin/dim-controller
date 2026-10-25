@@ -73,7 +73,7 @@ function defaultGradient(topic: Topic): string {
     return defaultGradients.get(topic.key)!
 }
 
-/** How often the cloud's frame_id is re-read from one raw message, when the encoding's output carries no frameId (gateways before zenoh-dimos-codecs 0.3.5). */
+/** How often the cloud's frame_id is re-read from one raw message, when a cloud comes with neither a message header (zenoh-gateway 0.5.32+) nor a frameId in the encoding's output (zenoh-dimos-codecs 0.3.5+). */
 const FRAME_RECHECK_MS = 30_000
 
 class CloudLayer {
@@ -91,7 +91,8 @@ class CloudLayer {
     /** the bridge subscription at this viewer's preset (core/cloudQuality.ts) */
     #stream: CloudStream
     #rateSince = performance.now()
-    #frameTimer: ReturnType<typeof setInterval>
+    /** the raw re-reads of the frame_id, running only while clouds come without one */
+    #frameTimer: ReturnType<typeof setInterval> | null = null
     #fixedFrame: string
     /** the newest scan's timestamp (gateway ms): its TF is looked up as of then */
     #stamp: number | null = null
@@ -119,15 +120,18 @@ class CloudLayer {
         this.#points.matrixAutoUpdate = false
         this.root.add(this.#points)
         this.#resize(1024)
-        this.#readFrame()
-        this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
             const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
-            // a gateway whose encoding carries each cloud's frame_id: one topic can mix frames (a lidar and a camera's
-            // depth on the R1's /lidar), so each cloud is placed by its own and the raw re-reads stop
-            if (typeof decoded?.frameId === "string") {
-                clearInterval(this.#frameTimer)
-                this.#frame = decoded.frameId
+            // each cloud's own frame_id, off its message header or else the encoding's output: one topic can mix frames
+            // (a lidar and a camera's depth on the R1's /lidar), so each cloud is placed by its own
+            const frameId = message.header?.frameId ?? decoded?.frameId
+            if (typeof frameId === "string") {
+                this.#stopFrameReads()
+                this.#frame = frameId
+            } else if (this.#frameTimer === null) {
+                // an older gateway: one raw message's header now and every FRAME_RECHECK_MS
+                this.#readFrame()
+                this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
             }
             if (decoded?.positions) {
                 this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
@@ -214,6 +218,13 @@ class CloudLayer {
         this.#camera.uCamDepth.value = this.#cameraPass.render(renderer, this.#points, look.size, look.style === "voxel", feed.model)
         this.#camera.uCamColor.value = 1
         this.context.viewer.requestRender()
+    }
+
+    #stopFrameReads() {
+        if (this.#frameTimer !== null) {
+            clearInterval(this.#frameTimer)
+            this.#frameTimer = null
+        }
     }
 
     /** One raw message for its header's frame_id, then unsubscribe (a raw cloud is big). */
@@ -461,7 +472,7 @@ class CloudLayer {
     }
 
     dispose() {
-        clearInterval(this.#frameTimer)
+        this.#stopFrameReads()
         this.#unsubscribe.forEach((stop) => stop())
         this.#stream.close()
         setCloudRate(this.topic.key, null)

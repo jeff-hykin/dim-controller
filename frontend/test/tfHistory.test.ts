@@ -114,12 +114,15 @@ function cloudScene(tf: TfTree, history: TfHistory, mode: "latest" | "accumulate
     status.set({ topics: [lidar] })
     const entry = manager.entries.get().list.find((item) => item.topic.key === lidar.key)!
     entry.settings.update({ mode })
-    subscriptions.find((item) => !item.options.encoding)!.deliver({ bytes: rawCloud("lidar") }) // the frame_id read
     const stream = subscriptions.find((item) => item.options.encoding)!
     const points = added[0].children[0] as THREE.Points
     const frame = (now: number) => onFrames.forEach((callback) => callback({ now, fixedFrame: "world" }))
     return {
-        scan: (xyz: number[], stamp: number) => stream.deliver({ decoded: { positions: new Float32Array(xyz) }, bytes: new Uint8Array(1), timestamp: stamp }),
+        /** one compact scan, its frame_id on its message header (zenoh-gateway 0.5.32+) unless `header` is false */
+        scan: (xyz: number[], stamp: number, header = true) =>
+            stream.deliver({ decoded: { positions: new Float32Array(xyz) }, bytes: new Uint8Array(1), timestamp: stamp, ...(header ? { header: { stamp: stamp / 1000, sec: 0, nanosec: 0, frameId: "lidar" } } : {}) }),
+        /** the raw subscriptions the layer opened to read the frame_id */
+        rawReads: () => subscriptions.filter((item) => !item.options.encoding),
         drawn: (index = 0) => {
             const position = points.geometry.getAttribute("position")
             return new Vector3(position.getX(index), position.getY(index), position.getZ(index)).applyMatrix4(points.matrix)
@@ -168,5 +171,30 @@ Deno.test("a scan with no TF path is not drawn, and says why", () => {
     const scene = cloudScene(tree, history, "latest")
     scene.scan([1, 0, 0], 100)
     assert(scene.problem()?.includes("no TF path"))
+    scene.close()
+})
+
+Deno.test("a cloud with no message header (an older gateway) has its frame_id read off one raw message", () => {
+    const { tree, history, set } = feed()
+    set("world", "lidar", [0, 0, 1], none, 0)
+    const scene = cloudScene(tree, history, "latest")
+    scene.scan([1, 0, 0], 100, false)
+    assertEquals(scene.rawReads().length, 1, "the headerless scan starts the raw read")
+    scene.rawReads()[0].deliver({ bytes: rawCloud("lidar") })
+    scene.scan([1, 0, 0], 200, false)
+    scene.frame(200)
+    assertAlmostEquals(scene.drawn().z, 1, 1e-6, "placed in the raw message's frame")
+    assertEquals(scene.rawReads().length, 1, "no second read while one re-read timer runs")
+    scene.close()
+})
+
+Deno.test("a cloud with a message header opens no raw read", () => {
+    const { tree, history, set } = feed()
+    set("world", "lidar", [0, 0, 1], none, 0)
+    const scene = cloudScene(tree, history, "latest")
+    scene.scan([1, 0, 0], 100)
+    scene.frame(100)
+    assertEquals(scene.rawReads().length, 0)
+    assertAlmostEquals(scene.drawn().z, 1, 1e-6)
     scene.close()
 })

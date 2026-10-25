@@ -55,6 +55,7 @@ class Camera3dLayer {
     #infoKey = ""
     #stopInfo: (() => void) | null = null
     #stopFrame: (() => void) | null = null
+    #stopHeader: () => void
     #source
     #element: HTMLVideoElement | null = null
     #videoCallback = 0
@@ -101,29 +102,51 @@ class Camera3dLayer {
         this.#plane.material.depthWrite = false
         this.#content.add(this.#plane, this.#frustum.object)
         settings.subscribe(() => this.#reshape(true))
+        this.#stopHeader = this.#source.frame.subscribe(() => this.#onHeaderFrame())
+        this.#onHeaderFrame()
         this.#findInfo()
     }
 
+    /** The frame_id off each image's message header (zenoh-gateway 0.5.32+, video 0.5.31+); without one, one raw image's. */
+    #onHeaderFrame() {
+        const { frameId } = this.#source.frame.get()
+        if (typeof frameId === "string") {
+            this.#stopFrame?.()
+            this.#stopFrame = null
+            if (frameId !== this.#frame) {
+                this.#frame = frameId
+                this.#reshape(false)
+            }
+        } else if (frameId === null) {
+            this.#readFrame()
+        }
+    }
+
+    /** One raw image for its header's frame_id, then unsubscribe (a gateway that sends no message header). */
+    #readFrame() {
+        if (this.#frame !== null || this.#stopFrame) {
+            return
+        }
+        this.#stopFrame = this.context.connection.subscribe(this.topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
+            const frame = headerFrameId(this.topic.type, message.bytes)
+            if (frame === null) {
+                return
+            }
+            this.#frame = frame
+            this.#stopFrame?.()
+            this.#stopFrame = null
+            this.#reshape(false)
+        })
+    }
+
     /**
-     * The image's own frame comes from one raw image; intrinsics from the CameraInfo whose frame_id is that frame.
+     * The image's own frame comes from its message header (see #onHeaderFrame); intrinsics from the CameraInfo whose frame_id is that frame.
      * Several cameras can share one CameraInfo topic (Spot publishes all five on one port), so every info topic is
      * read and only messages for this camera's frame are used; the name-matched topic is the fallback when either
      * side has no frame_id.
      */
     #findInfo() {
         this.#checkedInfoAt = performance.now()
-        if (this.#frame === null && !this.#stopFrame) {
-            this.#stopFrame = this.context.connection.subscribe(this.topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
-                const frame = headerFrameId(this.topic.type, message.bytes)
-                if (frame === null) {
-                    return
-                }
-                this.#frame = frame
-                this.#stopFrame?.()
-                this.#stopFrame = null
-                this.#reshape(false)
-            })
-        }
         const infos = this.context.topics().filter((topic) => topic.type === "sensor_msgs.CameraInfo")
         const key = infos.map((topic) => topic.key).join(",")
         if (key === this.#infoKey || this.#intrinsics) {
@@ -227,6 +250,7 @@ class Camera3dLayer {
         this.#depth?.dispose()
         this.#stopInfo?.()
         this.#stopFrame?.()
+        this.#stopHeader()
         this.context.video.release(this.topic, "preview")
         this.#texture?.dispose()
         this.#plane.geometry.dispose()

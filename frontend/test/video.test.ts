@@ -2,18 +2,18 @@
 import { assertEquals } from "jsr:@std/assert@1"
 import { DEPTH_OPTIONS, DEPTH_PREVIEW_OPTIONS, needsNewReceiver, optionChanges, panelStreams, PREVIEW_OPTIONS, streamOptions, VideoSources } from "../src/core/video.ts"
 import { loadQuality, presetFor, QUALITY_PRESETS, saveQuality } from "../src/core/videoQuality.ts"
-import type { Connection, SubscribeOptions, SubscriptionUpdate } from "../src/core/transport.ts"
+import type { Connection, Message, SubscribeOptions, SubscriptionUpdate } from "../src/core/transport.ts"
 import { PRIORITY_TIERS } from "../src/core/bandwidth.ts"
 
 /** a camera not in the main view (none of these tests put one there) */
 const SIDE = PRIORITY_TIERS.viewed
 
 function fakeConnection({ refuseUpdates = false } = {}) {
-    const subscriptions: { key: string; options: SubscribeOptions; open: boolean; openBefore: number; updates: SubscriptionUpdate[] }[] = []
+    const subscriptions: { key: string; options: SubscribeOptions; open: boolean; openBefore: number; updates: SubscriptionUpdate[]; onMessage: (message: Message) => void }[] = []
     const connection = {
-        subscribe(key: string, options: SubscribeOptions) {
+        subscribe(key: string, options: SubscribeOptions, onMessage: (message: Message) => void) {
             const openBefore = subscriptions.filter((other) => other.open).length
-            const entry = { key, options, open: true, openBefore, updates: [] as SubscriptionUpdate[] }
+            const entry = { key, options, open: true, openBefore, updates: [] as SubscriptionUpdate[], onMessage }
             subscriptions.push(entry)
             const stop = () => (entry.open = false)
             return Object.assign(stop, {
@@ -256,4 +256,20 @@ Deno.test("minimizing a camera panel leaves the 3D view's projection of it subsc
     sources.release(camera, "preview")
     assertEquals(subscriptions.filter((entry) => entry.open).length, 1)
     assertEquals(subscriptions.filter((entry) => entry.open)[0].options, { delivery: "latest", bandwidthPriority: SIDE, encoding: "dimos_lcm_image" })
+})
+
+Deno.test("a source's frame_id comes off its images' message header; null when they carry none (an older gateway)", () => {
+    const { connection, subscriptions } = fakeConnection()
+    const sources = new VideoSources(connection)
+    const source = sources.acquire(camera, "preview")
+    assertEquals(source.frame.get().frameId, undefined, "nothing yet")
+    const message = (header?: { frameId: string }) => ({ key: camera.key, kind: "put", bytes: new Uint8Array(), timestamp: 0, seq: 0, ...(header ? { header: { stamp: 1, sec: 1, nanosec: 0, ...header } } : {}) }) as Message
+    subscriptions[0].onMessage(message())
+    assertEquals(source.frame.get().frameId, null)
+    let changes = 0
+    source.frame.subscribe(() => changes++)
+    subscriptions[0].onMessage(message({ frameId: "camera_optical" }))
+    subscriptions[0].onMessage(message({ frameId: "camera_optical" }))
+    assertEquals(source.frame.get().frameId, "camera_optical")
+    assertEquals(changes, 1, "set only when it changes, not every frame")
 })
