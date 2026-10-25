@@ -390,6 +390,10 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 
 /* layers */
 .layer-group h3:first-child { margin-top: 6px; }
+.layer-group-title { display: flex; align-items: center; gap: 4px; width: 100%; border: 0; background: none; font-family: inherit; cursor: pointer; text-align: left; }
+.layer-group-title:hover { color: var(--fg); }
+.layer-group-title .chevron { margin-left: 0; display: inline-flex; }
+.layer-group-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .layer-row { border-radius: var(--radius); padding: 3px 4px; }
 /* a URDF's own groups, under its row: they belong to it */
 .layer-subrows { margin-left: 18px; padding-left: 8px; border-left: 1px solid var(--border); }
@@ -469,6 +473,11 @@ h3.dr-h3.first { margin-top: 4px; }
 .zoom-debug-head { color: #ff9; margin-bottom: 2px; }
 /* fullscreen "fill": the picture (video, depth canvas) and its overlay crop alike, so boxes stay on what they mark */
 .camera-body.fill .camera-media, .camera-body.fill .camera-overlay, .camera-body.fill .depth-host canvas { object-fit: cover; }
+/* undistorting: the raw picture stays (it still decodes and takes the hold-zoom presses) under its straightened copy */
+.camera-media.undistorted, .depth-host.undistorted canvas { opacity: 0; }
+.camera-undistorted { pointer-events: none; }
+.quality-info-pick { padding: 0 8px 6px; }
+.quality-info-pick .dr-select, .quality-info-pick select { width: 100%; }
 .camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted-fg); font-size: 12px; }
 .camera-quality { display: flex; align-items: center; }

@@ -13,6 +13,8 @@ import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } fro
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
+import { UndistortCanvas, undistortInfoFor } from "../core/render/undistort.ts"
+import { type CameraModel, cameraModel } from "dimos-react/three"
 import { Button, Card, NumberInput, Select } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { popoverPosition } from "./panelDrag.ts"
@@ -204,6 +206,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         depthHost.current.prepend(depthRenderer.current.canvas)
                     }
                     const range = depthRenderer.current.draw(image, lookRef.current)
+                    undistortDraw.current?.(depthRenderer.current.canvas)
                     lastPaint.current = performance.now()
                     setDepthRange((old) => old && Math.abs(old[0] - range[0]) < 0.05 && Math.abs(old[1] - range[1]) < 0.05 ? old : range)
                     setSize((old) => old.width === image.width ? old : { width: image.width, height: image.height, fps: 0 })
@@ -340,6 +343,81 @@ function CameraPanel({ app, panel, topics, onChange }: {
         savePanelFill(panel.id, !fill)
     }
 
+    // the picture through its CameraInfo's lens model, straightened (Undistort); this viewer's, per panel. The CameraInfo is the
+    // one picked in the gear menu (lv.cameras.info, image name → info name), else <image>_info, else the nearest camera_info
+    const [undistort, setUndistort] = useState(() => loadPanelUndistort(panel.id))
+    const toggleUndistort = () => {
+        setUndistort(!undistort)
+        savePanelUndistort(panel.id, !undistort)
+    }
+    const pickedInfos = useStore(cameraInfoPicks)
+    const allTopics = useStore(app.connection.status).topics
+    const infoTopic = topic ? undistortInfoFor(topic, allTopics, pickedInfos[topic.name], app.profile.cameras.cameraInfo) : null
+    const [lens, setLens] = useState<{ key: string; model: CameraModel | null } | null>(null)
+    useEffect(() => {
+        setLens(null)
+        if (!undistort || !open || !infoTopic) {
+            return
+        }
+        // a camera's lens doesn't change: the first usable message is kept
+        let stop: (() => void) | null = app.connection.subscribe(infoTopic.key, { delivery: "latest", maxHz: 2 }, (message) => {
+            try {
+                const model = cameraModel(decode("sensor_msgs.CameraInfo", message.bytes) as Parameters<typeof cameraModel>[0])
+                setLens({ key: infoTopic.key, model })
+                if (model) {
+                    stop?.()
+                    stop = null
+                }
+            } catch {
+                setLens({ key: infoTopic.key, model: null })
+            }
+        })
+        return () => stop?.()
+    }, [app, undistort, open, infoTopic?.key])
+    const model = lens?.key === infoTopic?.key ? lens?.model ?? null : null
+    const undistorting = undistort && !!model
+    const undistortCanvas = useRef<HTMLCanvasElement>(null)
+    const undistortDraw = useRef<((source: HTMLVideoElement | HTMLCanvasElement) => void) | null>(null)
+    useEffect(() => {
+        const canvas = undistortCanvas.current
+        if (!undistorting || !open || !canvas) {
+            return
+        }
+        let renderer: UndistortCanvas
+        try {
+            renderer = new UndistortCanvas(canvas)
+        } catch (error) {
+            console.warn("undistort: WebGL2 unavailable", error)
+            return
+        }
+        undistortDraw.current = (source) => renderer.draw(source, model!)
+        const element = video.current
+        let frameCallback = 0
+        if (!depth && element) {
+            const drew = () => {
+                renderer.draw(element, model!)
+                frameCallback = element.requestVideoFrameCallback(drew)
+            }
+            frameCallback = element.requestVideoFrameCallback(drew)
+            renderer.draw(element, model!)
+        } else if (depthRenderer.current) {
+            renderer.draw(depthRenderer.current.canvas, model!)
+        }
+        return () => {
+            undistortDraw.current = null
+            element?.cancelVideoFrameCallback(frameCallback)
+            renderer.dispose()
+        }
+    }, [undistorting, open, depth, model, topic?.key])
+    const undistortTitle = !undistort
+        ? `Undistort: straighten the picture through its lens model (${infoTopic ? `CameraInfo ${infoTopic.name}` : "needs a CameraInfo"}; pick another in the gear menu)`
+        : model
+        ? `Undistorted with ${infoTopic!.name} (click to show the raw picture)`
+        : infoTopic
+        ? `Undistort: waiting for ${infoTopic.name}`
+        : `Undistort: no CameraInfo for ${topic?.name ?? "this camera"} (pick one in the gear menu)`
+    const infoOptions = allTopics.filter((other) => other.type === "sensor_msgs.CameraInfo")
+
     // the latency/quality menu (gear over the picture)
     const [qualityOpen, setQualityOpen] = useState(false)
     const gear = useRef<HTMLButtonElement>(null)
@@ -357,7 +435,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         return () => removeEventListener("pointerdown", close, true)
     }, [qualityOpen])
 
-    const info = size.width ? `${size.width}×${size.height}${size.fps && !stalled ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}` : ""
+    const info = size.width ? `${size.width}×${size.height}${size.fps && !stalled ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}${undistort && !model ? (infoTopic ? " · waiting for CameraInfo" : " · no CameraInfo") : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     const tabs = cameraTabs(topics)
     const nextTab = tabs.length > 1 ? tabs[(tabs.findIndex((tab) => tab.topic.key === panel.key) + 1) % tabs.length] : null
@@ -365,6 +443,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const nextQuality = QUALITY_PRESETS[(qualityIndex + 1) % QUALITY_PRESETS.length]
     useDockActions(cameraId(panel.id), [
         { id: "fill", label: fill ? "Fill" : "Fit", icon: fill ? "fill" : "fit", title: fill ? "Fill: the picture fills the view, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the view)", pressed: fill, run: toggleFill },
+        { id: "undistort", label: "Undistort", icon: "undistort", title: undistortTitle, pressed: undistort, run: toggleUndistort },
         ...(nextTab ? [{ id: "next", label: "Next camera", icon: "camera", title: `Show ${nextTab.topic.name}`, run: () => onChange({ key: nextTab.topic.key, picked: nextTab.topic.key }) }] : []),
     ])
     return (
@@ -411,15 +490,31 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         <Icon name={fill ? "fill" : "fit"} size={15} />
                         <span className="icon-label">{fill ? "Fill" : "Fit"}</span>
                     </Button>
-                    {topic && !depth && (
+                    <Button className="dr-btn--icon icon-button camera-undistort labeled" pressed={undistort} title={undistortTitle} onClick={toggleUndistort}>
+                        <Icon name="undistort" size={15} />
+                        <span className="icon-label">Undistort</span>
+                    </Button>
+                    {topic && (
                         <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
                             <Button ref={gear} className="dr-btn--icon quality-gear" title={`Latency ↔ quality: ${presetFor(quality).label}`} aria-label="Latency or quality" aria-haspopup="menu" aria-expanded={qualityOpen} onClick={() => setQualityOpen(!qualityOpen)}>
                                 <Icon name="settings" size={14} />
                             </Button>
                             {qualityOpen && createPortal(
                                 <Card padded={false} className="quality-menu" role="menu" aria-label="Latency or quality" style={popoverPosition(gear.current, 236)} onClick={(event) => event.stopPropagation()}>
-                                    <div className="quality-title">Latency ↔ quality</div>
-                                    {QUALITY_PRESETS.map((preset) => (
+                                    <div className="quality-title">Undistort with</div>
+                                    <div className="quality-info-pick">
+                                        <Select
+                                            aria-label="CameraInfo for undistort"
+                                            value={pickedInfos[topic.name] ?? ""}
+                                            options={[["", `auto${infoTopic && !pickedInfos[topic.name] ? ` (${infoTopic.name})` : ""}`], ...infoOptions.map((other) => [other.name, other.name] as [string, string])]}
+                                            onChange={(name: string) => {
+                                                const { [topic.name]: _, ...rest } = cameraInfoPicks.get()
+                                                cameraInfoPicks.set(name ? { ...rest, [topic.name]: name } : rest)
+                                            }}
+                                        />
+                                    </div>
+                                    {!depth && <div className="quality-title">Latency ↔ quality</div>}
+                                    {!depth && QUALITY_PRESETS.map((preset) => (
                                         <button
                                             key={preset.id}
                                             type="button"
@@ -444,7 +539,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
             }
         >
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
-            {depth ? <div ref={depthHost} className="camera-media depth-host" style={zoom.style} {...zoom.handlers} /> : <video ref={video} className="camera-media" style={zoom.style} {...zoom.handlers} muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
+            {depth ? <div ref={depthHost} className={`camera-media depth-host ${undistorting ? "undistorted" : ""}`} style={zoom.style} {...zoom.handlers} /> : <video ref={video} className={`camera-media ${undistorting ? "undistorted" : ""}`} style={zoom.style} {...zoom.handlers} muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
+            {undistorting && <canvas ref={undistortCanvas} className="camera-media camera-undistorted" style={zoom.style} />}
             <canvas ref={overlayCanvas} className="camera-overlay" style={zoom.style} />
             {topic && paused && (
                 <div className="camera-takeover" data-testid="camera-paused">
@@ -462,6 +558,13 @@ function CameraPanel({ app, panel, topics, onChange }: {
 const FILL_KEY = "lv.cameras.fill"
 const loadPanelFill = (id: number): boolean => readLocal<Record<string, boolean>>(FILL_KEY, {})[id] === true
 const savePanelFill = (id: number, fill: boolean) => writeLocal(FILL_KEY, { ...readLocal<Record<string, boolean>>(FILL_KEY, {}), [id]: fill })
+
+/** panel id → the picture undistorted through its CameraInfo; per viewer */
+const UNDISTORT_KEY = "lv.cameras.undistort"
+const loadPanelUndistort = (id: number): boolean => readLocal<Record<string, boolean>>(UNDISTORT_KEY, {})[id] === true
+const savePanelUndistort = (id: number, on: boolean) => writeLocal(UNDISTORT_KEY, { ...readLocal<Record<string, boolean>>(UNDISTORT_KEY, {}), [id]: on })
+/** image topic name → the CameraInfo topic name picked for undistorting it (shared settings) */
+const cameraInfoPicks = persistentStore<Record<string, string>>("lv.cameras.info", {})
 
 /** Press and hold on a camera to zoom in on that spot; moving while held looks around, letting go zooms back out. */
 function useHoldZoom(surface: () => HTMLElement | null, deps: unknown[]) {

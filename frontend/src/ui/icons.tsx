@@ -12,6 +12,8 @@ const OWN_ICON_PATHS: Record<string, string> = {
     fit: "M3 5v14M21 5v14 M6 12h12M9 9l-3 3 3 3M15 9l3 3-3 3",
     // a camera's fill: crop marks around a picture that runs past them
     fill: "M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4 M7 8h10v8H7z",
+    // a camera's undistort: a barrel-bent grid pulled straight
+    undistort: "M4 4h16v16H4z M4 12h16M12 4v16 M7 4q-2 8 0 16M17 4q2 8 0 16",
     // the map's "fit the whole map": a magnifier over a frame
     // three dots in a row (more actions)
     more: "M5 12h.01 M12 12h.01 M19 12h.01",
