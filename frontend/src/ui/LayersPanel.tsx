@@ -9,7 +9,7 @@ import { Icon } from "./icons.tsx"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 
 /** One switchable row: a toggle, the name (and type), what's below it (status), and settings behind a disclosure. */
-export function Row({ value, onChange, name, type, title, className = "", testKey, below, children }: {
+export function Row({ value, onChange, name, type, title, className = "", testKey, below, extra, children }: {
     value: boolean
     onChange: (on: boolean) => void
     name: string
@@ -18,6 +18,8 @@ export function Row({ value, onChange, name, type, title, className = "", testKe
     className?: string
     testKey?: string
     below?: ReactNode
+    /** controls on the row itself, after its name */
+    extra?: ReactNode
     children?: ReactNode
 }) {
     const [open, setOpen] = useState(false)
@@ -30,6 +32,7 @@ export function Row({ value, onChange, name, type, title, className = "", testKe
                     {type && <span className="topic-type">{type}</span>}
                     {children && <span className={`chevron ${open ? "open" : ""}`}><Icon name="chevron-right" size={14} /></span>}
                 </button>
+                {extra}
             </div>
             {below}
             {open && children && <div className="layer-settings">{children}</div>}
@@ -56,6 +59,7 @@ export function LayerStatusLine({ entry }: { entry: LayerEntry }) {
 
 function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     const Settings = entry.type.Settings
+    const RowControls = entry.type.RowControls
     return (
         <Row
             value={entry.enabled}
@@ -66,6 +70,7 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
             className={entry.status.problem ? "problem" : ""}
             testKey={entry.topic.key}
             below={<LayerStatusLine entry={entry} />}
+            extra={RowControls && <RowControls settings={entry.settings} topic={entry.topic} />}
         >
             {Settings && <Settings settings={entry.settings} topic={entry.topic} />}
         </Row>

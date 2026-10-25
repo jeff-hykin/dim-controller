@@ -5,6 +5,20 @@ import { Button, Checkbox, Field, Heading, Kbd, Slider, TextArea } from "dimos-r
 import { useEffect, useState } from "react"
 import { JointSection } from "./JointControl.tsx"
 
+const SPEED_STEP = 0.05
+
+/** A speed as − value + (steps of 0.05, from 0.05 to `max`): exact presses instead of dragging a slider. */
+function SpeedStepper({ label, max, unit, value, onChange }: { label: string; max: number; unit: string; value: number; onChange: (value: number) => void }) {
+    const step = (direction: number) => onChange(Math.min(max, Math.max(SPEED_STEP, Math.round((value + direction * SPEED_STEP) / SPEED_STEP) * SPEED_STEP)))
+    return (
+        <span className="speed-stepper">
+            <Button className="dr-btn--icon" aria-label={`${label} down`} disabled={value <= SPEED_STEP + 1e-9} onClick={() => step(-1)}>−</Button>
+            <span className="speed-value">{value.toFixed(2)} {unit}</span>
+            <Button className="dr-btn--icon" aria-label={`${label} up`} disabled={value >= max - 1e-9} onClick={() => step(1)}>+</Button>
+        </span>
+    )
+}
+
 export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
     const state = useStore(drive.state)
@@ -32,9 +46,9 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
             {candidates.length > 0 && settings.topics?.length
                 ? <p className="hint">Seen: {candidates.join(", ")}</p>
                 : null}
-            <Field inline label="Linear"><Slider min={0.05} max={3} step={0.05} value={settings.linear} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(linear) => drive.settings.update({ linear })} /></Field>
-            <Field inline label="Angular"><Slider min={0.05} max={3} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => drive.settings.update({ angular })} /></Field>
-            {usesVertical && <Field inline label="Vertical"><Slider min={0.05} max={2} step={0.05} value={settings.vertical} format={(speed) => `${speed.toFixed(2)} m/s`} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}
+            <Field inline label="Linear"><SpeedStepper label="Linear speed" max={3} unit="m/s" value={settings.linear} onChange={(linear) => drive.settings.update({ linear })} /></Field>
+            <Field inline label="Angular"><SpeedStepper label="Angular speed" max={3} unit="rad/s" value={settings.angular} onChange={(angular) => drive.settings.update({ angular })} /></Field>
+            {usesVertical && <Field inline label="Vertical"><SpeedStepper label="Vertical speed" max={2} unit="m/s" value={settings.vertical} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}
             <p className="hint">
                 Shift: ×{app.profile.drive.boost.linear} linear, ×{app.profile.drive.boost.angular} turning · Space: stop · <Kbd>?</Kbd> lists every key
             </p>

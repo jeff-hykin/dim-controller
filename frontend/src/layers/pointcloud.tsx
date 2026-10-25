@@ -9,7 +9,7 @@ import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
 import { materialLook, type PointLook, rendering, splatFallback } from "../core/render/rendering.ts"
-import { Field, Select, Slider, Toggle } from "dimos-react"
+import { Checkbox, Field, NumberInput, Select, Slider, Toggle } from "dimos-react"
 import { useStore } from "../core/store.ts"
 import { addCameraColor, CameraDepthPass, type CameraUniforms, setCameraModel } from "dimos-react/three"
 import { CameraFeed } from "../core/render/cameraFeed.ts"
@@ -23,6 +23,8 @@ export interface CloudSettings {
     mode: "latest" | "accumulate"
     /** accumulate: forget points older than this (0 = never) */
     windowSeconds: number
+    /** accumulating: only the newest this many scans are drawn (0: no limit but the window) */
+    frames?: number
     /** accumulate: ring capacity */
     maxPoints: number
     /** color the points with a live camera picture where the camera sees them */
@@ -48,6 +50,7 @@ const DEFAULTS: CloudSettings = {
     look: { style: "default", size: 0.04, colorMode: "height", gradient: "memworld", axis: 2, rangeMin: null, rangeMax: null, solid: "#7fd4ff", opacity: 1 },
     mode: "latest",
     windowSeconds: 10,
+    frames: 10,
     maxPoints: 2_000_000,
     camera: CAMERA_DEFAULTS,
 }
@@ -85,6 +88,8 @@ class CloudLayer {
     /** the camera's picture, pose or the points changed since the depth pass last ran */
     #cameraDirty = true
     #cameraPose = new THREE.Matrix4()
+    /** when each kept scan was written (s, the shader's aTime clock), oldest first, for the frame count */
+    #scanTimes: number[] = []
 
     constructor(readonly context: LayerContext, readonly topic: Topic, settings: Store<CloudSettings>) {
         this.#settings = settings
@@ -124,7 +129,7 @@ class CloudLayer {
             this.#mode = settings.mode
             this.#clear()
         }
-        this.#material.uniforms.uWindow.value = settings.mode === "accumulate" && settings.windowSeconds > 0 ? settings.windowSeconds : -1
+        this.#material.uniforms.uWindow.value = this.#window(this.#material.uniforms.uNow.value)
         applyLook(this.#material, this.#look(), this.#range)
         this.#syncSplatBudget()
         this.#syncCamera()
@@ -237,7 +242,21 @@ class CloudLayer {
         this.#filled = 0
     }
 
+    /** The shader's age cutoff (s): the window, or tighter, the age of the oldest of the newest `frames` scans; -1: none. */
+    #window(now: number) {
+        const { mode, windowSeconds, frames = 10 } = this.#settings.get()
+        if (mode !== "accumulate" || (windowSeconds <= 0 && frames <= 0)) {
+            return -1
+        }
+        if (frames <= 0) {
+            return windowSeconds
+        }
+        // the frame count rules over the time window; a huge window keeps the shader's window code compiled in until `frames` scans have come
+        return this.#scanTimes.length >= frames ? now - this.#scanTimes[this.#scanTimes.length - frames] + 1e-4 : 1e9
+    }
+
     #clear() {
+        this.#scanTimes = []
         this.#stamp = null
         this.#write = 0
         this.#filled = 0
@@ -289,6 +308,13 @@ class CloudLayer {
             }
             times[slot] = now
             values[slot] = intensity ? intensity[index] : 0
+        }
+        if (accumulate) {
+            this.#scanTimes.push(now)
+            const frames = settings.frames ?? 10
+            if (frames > 0 && this.#scanTimes.length > frames) {
+                this.#scanTimes.splice(0, this.#scanTimes.length - frames)
+            }
         }
         // upload only what changed (a wrapped write is two ranges)
         for (const attribute of [position, time, strength]) {
@@ -387,6 +413,9 @@ class CloudLayer {
             }
         }
         this.#material.uniforms.uNow.value = frame.now / 1000
+        if (this.#settings.get().mode === "accumulate") {
+            this.#material.uniforms.uWindow.value = this.#window(frame.now / 1000)
+        }
         if (frame.now - this.#rateSince > 1000) {
             const cameras = this.context.topics().filter((topic) => isImage(topic) && !isDepthTopic(topic))
             if (cameras.map((topic) => topic.key).join() !== colorCameras.get().topics.map((topic) => topic.key).join()) {
@@ -433,15 +462,39 @@ export function CloudQualitySelect({ topicKey }: { topicKey: string }) {
     return <Select value={cloudQualityOf(topicKey)} options={CLOUD_PRESETS.map((preset) => [preset.id, preset.label])} onChange={(quality: string) => setCloudQuality(topicKey, quality as CloudQuality)} />
 }
 
+/** On the layer's row: keep every scan (within the window) instead of only the newest. */
+function AccumulateCheckbox({ settings }: { settings: Store<CloudSettings>; topic: Topic }) {
+    const value = useStore(settings)
+    const on = value.mode === "accumulate"
+    return (
+        <span className="layer-row-controls">
+            <Checkbox
+                label="accumulate"
+                title="keep the newest scans instead of only the last one"
+                value={on}
+                onChange={(checked: boolean) => settings.update({ mode: checked ? "accumulate" : "latest" })}
+            />
+            {on && (
+                <NumberInput
+                    className="number accumulate-frames"
+                    step={1}
+                    min={1}
+                    title="scans kept (the newest)"
+                    aria-label="scans to accumulate"
+                    value={value.frames ?? 10}
+                    onChange={(frames: number | null) => settings.update({ frames: Math.max(1, Math.round(frames ?? 10)) })}
+                />
+            )}
+        </span>
+    )
+}
+
 function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSettings>; topic: Topic }) {
     const value = useStore(settings)
     return (
         <>
             <PointLookEditor look={value.look} onChange={(look) => settings.update({ look })} />
-            <Field inline label="Keep">
-                <Select value={value.mode} options={[["latest", "latest scan"], ["accumulate", "accumulate"]]} onChange={(mode: string) => settings.update({ mode: mode as CloudSettings["mode"] })} />
-            </Field>
-            {value.mode === "accumulate" && (
+            {value.mode === "accumulate" && value.frames === 0 && (
                 <Field inline label="Window">
                     <Select value={String(value.windowSeconds)} options={[["5", "5 s"], ["10", "10 s"], ["30", "30 s"], ["120", "2 min"], ["0", "forever"]]} onChange={(seconds: string) => settings.update({ windowSeconds: Number(seconds) })} />
                 </Field>
@@ -486,4 +539,5 @@ registerLayer<CloudSettings>({
     defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, size: 0.1 } } : structuredClone(DEFAULTS),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
+    RowControls: AccumulateCheckbox,
 })

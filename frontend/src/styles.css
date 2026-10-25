@@ -396,6 +396,12 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .layer-subrows-label { display: block; font: 10px var(--mono); color: var(--muted-fg); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 4px; }
 .layer-row:hover { background: color-mix(in srgb, var(--accent) 60%, transparent); }
 .layer-line { display: flex; align-items: center; gap: 8px; }
+/* a layer's own controls on its row (the point cloud's accumulate checkbox and scan count) */
+.layer-row-controls { display: flex; align-items: center; gap: 6px; flex: none; font-size: 11px; }
+.layer-row-controls .accumulate-frames { width: 52px; padding: 2px 4px; font-size: 11px; }
+/* drive speeds: − value + */
+.speed-stepper { display: inline-flex; align-items: center; gap: 6px; }
+.speed-stepper .speed-value { min-width: 72px; text-align: center; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
 .layer-name { font: inherit; color: inherit; flex: 1; display: flex; align-items: baseline; gap: 8px; border: 0; background: none; padding: 3px 0; cursor: pointer; min-width: 0; text-align: left; }
 .layer-name:disabled { cursor: default; }
 .topic-name { font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

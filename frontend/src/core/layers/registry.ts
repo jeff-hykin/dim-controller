@@ -61,6 +61,8 @@ export interface LayerType<Settings extends object = object> {
     enabledByDefault?: (topic: Topic) => boolean
     create(context: LayerContext, topic: Topic, settings: Store<Settings>): LayerInstance
     Settings?: ComponentType<{ settings: Store<Settings>; topic: Topic }>
+    /** a control or two on the layer's own row, beside its name (the point cloud's accumulate checkbox) */
+    RowControls?: ComponentType<{ settings: Store<Settings>; topic: Topic }>
     /** draws its rows in the layer list itself in place of the one (the robot model: a row per part it draws) */
     Rows?: ComponentType<{ entry: LayerEntry; layers: LayerManager }>
 }
