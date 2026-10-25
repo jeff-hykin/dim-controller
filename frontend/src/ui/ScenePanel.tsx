@@ -196,6 +196,8 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
     const quality = cloudQualityOf(entry.topic.key)
     const setLook = (patch: Partial<PointLook>) => settings.update({ look: { ...look, ...patch } })
     const preset = CLOUD_PRESETS.find((other) => other.id === quality)!
+    // the layer type's own row controls (a point cloud's accumulate + scan count), as the Layers list shows them
+    const RowControls = entry.type.RowControls
     return (
         <div className={`cloud-row ${entry.enabled ? "on" : ""}`} data-key={entry.topic.key}>
             <div className="cloud-line">
@@ -219,6 +221,7 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                             <Select size="sm" className="cloud-color" value={look.gradient} aria-label={`${entry.topic.name} colormap`} options={GRADIENTS} onChange={(gradient) => setLook({ gradient })} />
                         )}
                     <Slider className="cloud-size" title="point size" min={0.01} max={0.5} step={0.01} value={look.size} aria-label={`${entry.topic.name} point size`} format={(size) => `${Math.round(size * 100)} cm`} onChange={(size) => setLook({ size })} />
+                    {RowControls && <RowControls settings={entry.settings} topic={entry.topic} />}
                 </div>
             )}
         </div>
