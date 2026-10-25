@@ -1,5 +1,6 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu (a search box past ten switches, each group folding): cameras in 3D (the same
+// second, pause (hold what it shows while the camera still moves; core/freeze.ts), a snapshot and the gallery
+// (ui/SnapshotGallery.tsx), and its menu (a search box past ten switches, each group folding): cameras in 3D (the same
 // setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
 // this viewer's bandwidth preset, color and size), then every other layer (TF, maps, markers…: ui/LayersPanel.tsx).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
@@ -29,6 +30,8 @@ import { Unavailable } from "./Unavailable.tsx"
 import { GroupTitle, LayerList, useCollapsedGroups } from "./LayersPanel.tsx"
 import { FILTER_OVER, matchesQuery } from "../core/topicFilter.ts"
 import { ManipActions } from "./ManipPanel.tsx"
+import { SnapshotTools } from "./SnapshotGallery.tsx"
+import { saveSnapshot, snapshot3d } from "../core/snapshots.ts"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
 
@@ -76,6 +79,7 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             tools={app && !off && (
                 <div className="scene-tools">
                     <PauseButton app={app} />
+                    <SnapshotTools what="3D view" take={async () => saveSnapshot(await snapshot3d(() => app.viewer.capture()), "3d")} />
                     <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />
                 </div>
             )}

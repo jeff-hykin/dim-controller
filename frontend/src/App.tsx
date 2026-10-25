@@ -23,6 +23,7 @@ import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
 import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
 import { ScenePanel } from "./ui/ScenePanel.tsx"
+import { SnapshotGallery } from "./ui/SnapshotGallery.tsx"
 import { InfoPanels } from "./ui/InfoPanels.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 import { Overlays } from "./ui/Overlays.tsx"
@@ -96,6 +97,7 @@ export function App() {
                 {app && <StatsOverlay app={app} />}
                 <SteamDeckBanner />
                 {app && <SceneMenu app={app} />}
+                <SnapshotGallery />
             </div>
         </WorkspaceContext.Provider>
     )

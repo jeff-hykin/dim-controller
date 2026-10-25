@@ -1,6 +1,6 @@
 // Camera panels (ui/workspace.ts ids camera:<n>): one from the start (the profile's preferred camera once one is on
 // the bus; until then it says there's none), more from the palette. Each is a workspace panel like any other (the
-// main view by default). Its tools: a tab per image topic (a phone's main view: the top bar's view switch instead), a 2D detection overlay, the depth colormap and range; a gear
+// main view by default). Its tools: a tab per image topic (a phone's main view: the top bar's view switch instead), a 2D detection overlay, the depth colormap and range, a snapshot and the gallery; a gear
 // over the picture picks latency vs quality. Depth is drawn as a colormap. Collapsed (or off screen: a shut drawer, a
 // rail hidden by focus, a hidden browser tab) it holds no stream and no overlay subscription. As the main view it offers the dock fit / fill, the next camera and quality.
 import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react"
@@ -8,11 +8,13 @@ import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
-import { isDepthTopic, pageVisibility, panelStreams } from "../core/video.ts"
+import { type DepthImage, isDepthTopic, pageVisibility, panelStreams } from "../core/video.ts"
 import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
+import { canvasToPng, composeSnapshot, saveSnapshot } from "../core/snapshots.ts"
+import { SnapshotTools } from "./SnapshotGallery.tsx"
 import { UndistortCanvas, undistortInfoFor } from "../core/render/undistort.ts"
 import { type CameraModel, cameraModel } from "dimos-react/three"
 import { Button, Card, NumberInput, Select } from "dimos-react"
@@ -154,6 +156,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
     lookRef.current = depthLook
     const [depthRange, setDepthRange] = useState<[number, number] | null>(null)
     const overlayCanvas = useRef<HTMLCanvasElement>(null)
+    // the newest depth image, so a snapshot can draw it afresh (a WebGL canvas reads blank once it's been shown)
+    const lastDepth = useRef<DepthImage | null>(null)
     const topic = topics.find((other) => other.key === panel.key) ?? null
     // "(gone)" only once this topic was on the bus and then left, not while it's still being discovered
     const everSeen = useRef<string | null>(null)
@@ -192,6 +196,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         const unsubscribe = depth
             ? source.depth.subscribe(() => {
                 const image = source.depth.get().image
+                lastDepth.current = image
                 if (image && depthHost.current && !noWebGL) {
                     if (!depthRenderer.current) {
                         try {
@@ -441,6 +446,28 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const nextTab = tabs.length > 1 ? tabs[(tabs.findIndex((tab) => tab.topic.key === panel.key) + 1) % tabs.length] : null
     const qualityIndex = QUALITY_PRESETS.findIndex((preset) => preset.id === quality)
     const nextQuality = QUALITY_PRESETS[(qualityIndex + 1) % QUALITY_PRESETS.length]
+    /** The picture as it shows now (undistorted if it is, the overlay on top), drawn afresh in this task: its WebGL canvases keep no picture once shown. */
+    const takeSnapshot = async () => {
+        const element = video.current
+        let picture: HTMLVideoElement | HTMLCanvasElement | null = null
+        if (depth && depthRenderer.current && lastDepth.current) {
+            depthRenderer.current.draw(lastDepth.current, lookRef.current)
+            picture = depthRenderer.current.canvas
+        } else if (!depth && element?.videoWidth) {
+            picture = element
+        }
+        if (!picture || !topic) {
+            throw new Error("no picture yet")
+        }
+        if (undistorting && undistortDraw.current && undistortCanvas.current) {
+            undistortDraw.current(picture)
+            picture = undistortCanvas.current
+        }
+        const width = picture instanceof HTMLVideoElement ? picture.videoWidth : picture.width
+        const height = picture instanceof HTMLVideoElement ? picture.videoHeight : picture.height
+        const layers = overlayCanvas.current?.width ? [picture, overlayCanvas.current] : [picture]
+        return saveSnapshot(await canvasToPng(composeSnapshot(layers, width, height)), "camera", topic.key)
+    }
     useDockActions(cameraId(panel.id), [
         { id: "fill", label: fill ? "Fill" : "Fit", icon: fill ? "fill" : "fit", title: fill ? "Fill: the picture fills the view, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill the view)", pressed: fill, run: toggleFill },
         { id: "undistort", label: "Undistort", icon: "undistort", title: undistortTitle, pressed: undistort, run: toggleUndistort },
@@ -486,6 +513,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                             <NumberInput nullable className="number depth-range" step={0.1} placeholder="far" title="far (m); empty = auto" value={depthLook.far} onChange={(far) => onChange({ depth: { ...depthLook, far } })} />
                         </>
                     )}
+                    {topic && <SnapshotTools what={`${topic.name} camera`} take={takeSnapshot} />}
                     <Button className="dr-btn--icon icon-button camera-fit labeled" pressed={fill} title={fill ? "Fill: the picture fills its space, edges cropped (click to fit the whole picture)" : "Fit: the whole picture, letterboxed (click to fill its space)"} onClick={toggleFill}>
                         <Icon name={fill ? "fill" : "fit"} size={15} />
                         <span className="icon-label">{fill ? "Fill" : "Fit"}</span>

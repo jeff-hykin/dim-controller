@@ -26,6 +26,7 @@ mod recorder;
 mod recordings;
 mod routes;
 mod settings;
+mod snapshots;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -160,6 +161,7 @@ async fn main() -> Result<()> {
         drive: Arc::default(),
         manipulation: Arc::new(manipulation::Manipulation::new(state.clone())),
         desktop_url: Arc::new(dimos_app::field(|app| app.desktop_url.as_ref()).unwrap_or_default()),
+        snapshots: Arc::new(dimos_app::data_dir().join("snapshots")),
     };
     let app = api::routes()
         .router

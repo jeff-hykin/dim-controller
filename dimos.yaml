@@ -57,7 +57,7 @@ provides:
     openapi: 3.1.0
     info:
         title: Controller
-        version: 2.0.0
+        version: 2.1.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
             3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
@@ -865,6 +865,60 @@ provides:
                         schema:
                             type: string
                         description: the button's id (in the path)
+        /api/snapshots:
+            get:
+                description: >-
+                    The snapshot gallery: pictures of the 3D view or a camera view the user took with a snapshot
+                    button, kept on this machine, newest first. Each: name (its file name; GET api/snapshots/{name}
+                    is the PNG), view (3d | camera), source (the camera topic, punctuation as -), created (unix ms),
+                    bytes. Returns {snapshots [...]}.
+                x-when: you want the pictures the user took of the 3D view or a camera
+            post:
+                description: >-
+                    Save a PNG to the snapshot gallery: the request body is the PNG's bytes (content-type
+                    image/png), view and source go in the query (?view=camera&source=<topic>). Every open page's
+                    gallery shows it. Returns {snapshot {name, view, source, created, bytes}, snapshots}; 400 if the
+                    body isn't a PNG.
+                x-when: you want to add a picture to the snapshot gallery
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    source:
+                                        description: 'query: the camera topic it came from (empty for the 3D view)'
+                                        type: string
+                                    view:
+                                        description: 'query: what it shows, 3d (default) or camera'
+                                        type: string
+                                type: object
+        '/api/snapshots/{name}':
+            delete:
+                description: >-
+                    Delete a snapshot for good. Returns {ok, removed, snapshots}; 404 if there is no such snapshot,
+                    400 for a name that isn't one.
+                x-when: you want to delete a snapshot
+                parameters:
+                    -
+                        name: name
+                        in: path
+                        required: true
+                        schema:
+                            type: string
+                        description: 'the snapshot''s name, as GET api/snapshots lists it'
+            get:
+                description: >-
+                    One snapshot's picture. Returns the PNG (image/png); 404 if there is no such snapshot, 400 for a
+                    name that isn't one.
+                x-when: you want to see or download one snapshot
+                parameters:
+                    -
+                        name: name
+                        in: path
+                        required: true
+                        schema:
+                            type: string
+                        description: 'the snapshot''s name, as GET api/snapshots lists it'
 nix:
     cache:
         aarch64-linux:

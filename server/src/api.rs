@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::{FromRef, FromRequest, Query, Request, State as Extract};
+use axum::handler::Handler;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -25,7 +26,7 @@ use crate::settings::{self, Settings};
 pub const TITLE: &str = "Controller";
 
 /// the endpoints' API version (openapi.json's info.version): major = breaking, minor = added
-pub const API_VERSION: &str = "2.0.0";
+pub const API_VERSION: &str = "2.1.0";
 
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
@@ -44,6 +45,8 @@ pub struct Api {
     pub manipulation: Arc<Manipulation>,
     /// Desktop's own HTTP API (DIMOS_APP's `desktopUrl`): the running dimos's log dirs
     pub desktop_url: Arc<String>,
+    /// where snapshots are kept (snapshots.rs): `snapshots/` in the app's data dir
+    pub snapshots: Arc<std::path::PathBuf>,
 }
 
 impl FromRef<Api> for Arc<Annotations> {
@@ -146,6 +149,11 @@ pub fn routes() -> Routes<Api> {
         .endpoint("DELETE", "api/annotations/{id}", "you want to remove one 3D box from the view", "Remove an annotation by id. Returns {ok, removed}; 404 if there is no such id.", json!({ "id": required(s("the annotation's id, from GET api/annotations")) }), annotations::delete_annotation)
         .endpoint("DELETE", "api/annotations", "you want to clear every 3D box from the view", "Remove every annotation. Returns {removed} (how many were removed).", json!({}), annotations::clear_annotations)
         .endpoint("POST", "api/locate", "you need an object's 3D position or height from the camera image", "Find an object in 3D from a box around it in the robot camera image (pixel coordinates of the image GET api/view returns): uses the lidar points inside that box (else where the box's bottom meets the floor) and returns its 3D box and height. add=true also adds it as an annotation. Returns {method (lidar, or floor contact), points, depth, height (meters; null if a floor-contact box is cut off at the image top), ground, box {center, size, yaw, frame}, note}, or with add=true {located, annotation}; 400 for a bad bbox, 422 with the reason if it can't (no page open, no CameraInfo, no TF, ...).", json!({ "bbox": required(json!({ "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4, "description": "[x1, y1, x2, y2] pixels in the camera image" })), "label": s("with add=true: the annotation's label"), "add": b("also add the found box as an annotation"), "id": s("with add=true: the annotation's id (default box-<n>)") }), annotations::locate)
+        // snapshots: pictures of the 3D view or a camera view, the gallery's
+        .endpoint("GET", "api/snapshots", "you want the pictures the user took of the 3D view or a camera", "The snapshot gallery: pictures of the 3D view or a camera view the user took with a snapshot button, kept on this machine, newest first. Each: name (its file name; GET api/snapshots/{name} is the PNG), view (3d | camera), source (the camera topic, punctuation as -), created (unix ms), bytes. Returns {snapshots [...]}.", json!({}), crate::snapshots::list)
+        .endpoint("POST", "api/snapshots", "you want to add a picture to the snapshot gallery", "Save a PNG to the snapshot gallery: the request body is the PNG's bytes (content-type image/png), view and source go in the query (?view=camera&source=<topic>). Every open page's gallery shows it. Returns {snapshot {name, view, source, created, bytes}, snapshots}; 400 if the body isn't a PNG.", json!({ "view": s("query: what it shows, 3d (default) or camera"), "source": s("query: the camera topic it came from (empty for the 3D view)") }), crate::snapshots::save.layer(axum::extract::DefaultBodyLimit::max(crate::snapshots::MAX_BYTES)))
+        .endpoint("GET", "api/snapshots/{name}", "you want to see or download one snapshot", "One snapshot's picture. Returns the PNG (image/png); 404 if there is no such snapshot, 400 for a name that isn't one.", json!({ "name": required(s("the snapshot's name, as GET api/snapshots lists it")) }), crate::snapshots::get)
+        .endpoint("DELETE", "api/snapshots/{name}", "you want to delete a snapshot", "Delete a snapshot for good. Returns {ok, removed, snapshots}; 404 if there is no such snapshot, 400 for a name that isn't one.", json!({ "name": required(s("the snapshot's name, as GET api/snapshots lists it")) }), crate::snapshots::delete)
         // driving
         .endpoint("POST", "api/drive/arm", "an older script arms driving first (never needed now)", "No-op, kept for older callers: driving needs no arming (always armed). Use api/drive/stop to stop. Returns {armed: true, note}.", json!({ "armed": b("ignored"), "source": s("ignored") }), arm)
         .endpoint("POST", "api/drive", "you need to drive or turn the robot", "Drive the robot: publish a Twist (linear [x, y, z] m/s, angular [x, y, z] rad/s, each within ±5) at 10 Hz for seconds (default 1, at most 10), then a second of zeros. No arming needed. topic: default the drive panel's, else the cmd_vel on the bus. dryRun=true only says what it would send. A new command or a stop replaces a running one; every open page shows it. Returns {key, linear, angular, seconds, hz, messages (how many it sends), dryRun, source}; 400 for a speed, duration or topic out of range.", json!({ "linear": vec3("m/s, robot frame (x forward, y left)"), "angular": vec3("rad/s (z = turn left)"), "seconds": n("default 1, at most 10"), "topic": s("e.g. /cmd_vel"), "dryRun": b("send nothing, say what would be sent"), "source": s("who is driving, shown on the page (default agent)") }), drive_robot)
@@ -580,6 +588,7 @@ impl Api {
                 "tcp/127.0.0.1:9".into(),
             )))),
             desktop_url: Arc::new(String::new()),
+            snapshots: Arc::new(std::env::temp_dir().join(format!("lv_snapshots_{}", std::process::id()))),
         }
     }
 }
@@ -683,6 +692,50 @@ mod tests {
         assert_eq!(served, openapi());
         let roles: Vec<_> = table.endpoints.iter().filter_map(|e| e["role"].as_str()).collect();
         assert_eq!(roles, vec!["context", "view"]);
+    }
+
+    /// a PNG posted is listed, served and deleted; anything else is refused; every page hears of each change
+    #[tokio::test]
+    async fn snapshots_save_list_serve_and_delete() {
+        let (mut api, _) = router();
+        let dir = std::env::temp_dir().join(format!("lv_snapshots_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        api.snapshots = Arc::new(dir.clone());
+        let router = routes().router.with_state(api.clone());
+        let mut events = api.annotations.events.subscribe();
+        let png = [b"\x89PNG\r\n\x1a\n".as_slice(), &[7u8; 3 * 1024 * 1024]].concat();
+        let post = |body: Vec<u8>| {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/api/snapshots?view=camera&source=dimos/color_image/sensor_msgs.Image")
+                .header("content-type", "image/png")
+                .body(HttpBody::from(body))
+                .unwrap()
+        };
+        let response = router.clone().oneshot(post(png.clone())).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "bigger than axum's default 2 MB limit");
+        let saved: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+        let name = saved["snapshot"]["name"].as_str().unwrap().to_string();
+        assert!(name.ends_with("_camera_dimos-color-image-sensor-msgs.Image.png"), "{name}");
+        assert_eq!(saved["snapshot"]["bytes"], png.len());
+        assert_eq!(events.recv().await.unwrap()["type"], "snapshots");
+        let response = router.clone().oneshot(post(b"not a png".to_vec())).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let (_, listed) = call(&router, "GET", "/api/snapshots", None).await;
+        assert_eq!(listed["snapshots"][0]["name"], name.as_str());
+        assert_eq!(listed["snapshots"][0]["view"], "camera");
+        let response = router.clone().oneshot(axum::http::Request::builder().uri(format!("/api/snapshots/{name}")).body(HttpBody::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.headers()["content-type"], "image/png");
+        assert_eq!(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().as_ref(), png.as_slice());
+        let (status, _) = call(&router, "GET", "/api/snapshots/..%2Fsettings.json", None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let (status, removed) = call(&router, "DELETE", &format!("/api/snapshots/{name}"), None).await;
+        assert_eq!((status, removed["snapshots"].clone()), (StatusCode::OK, json!([])));
+        let (status, _) = call(&router, "DELETE", &format!("/api/snapshots/{name}"), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
