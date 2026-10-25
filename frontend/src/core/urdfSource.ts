@@ -11,7 +11,8 @@ import type * as THREE from "three"
 import { decode, encode } from "./lcm/lcm.ts"
 import { Store } from "./store.ts"
 import { type Connection, dimosKey, Priority, type Publisher } from "./transport.ts"
-import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
+import { meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
+import * as files from "dimos-lcm/files"
 import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
@@ -23,7 +24,7 @@ const LEGACY_FILE_REQUEST = dimosKey("/file_request", "std_msgs.String")
 /** what a request for the URDF names: UrdfManager answers any *.urdf with its URDF, named as asked */
 const URDF_REQUEST = "*.urdf"
 /** /file_info and anything under it (/file_info/**): zenoh's `**` also matches no chunks */
-export const FILE_INFO = dimosKey("/file_info/**", "files.MeshFile")
+export const FILE_INFO = dimosKey("/file_info/**", "files.File")
 /** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
  * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
 const MESHES_IN_FLIGHT = 2
@@ -194,9 +195,9 @@ export class UrdfSource {
 
     #onMesh(bytes: Uint8Array) {
         const description = this.state.get().description
-        let file: ReturnType<typeof decodeMeshFile>
+        let file: files.File
         try {
-            file = decodeMeshFile(bytes)
+            file = files.File.decode(bytes)
         } catch (error) {
             this.state.update({ problem: `/file_info: ${error}` })
             return

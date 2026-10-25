@@ -6,19 +6,15 @@ import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { FILE_INFO, fileRanks, FILE_REQUEST, UrdfSource } from "../src/core/urdfSource.ts"
+import * as files from "dimos-lcm/files"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 
 const URDF = `<?xml version="1.0"?><robot name="box"><link name="base_link"><visual><geometry><box size="1 1 1"/></geometry></visual></link></robot>`
 
-/** a files.MeshFile on /file_info: the 8-byte timestamp, the name's length, the name, the bytes */
+/** a files.File on /file_info */
 function fileInfo(uri: string, data: Uint8Array): Uint8Array {
-    const name = new TextEncoder().encode(uri)
-    const bytes = new Uint8Array(12 + name.length + data.length)
-    new DataView(bytes.buffer).setUint32(8, name.length, true)
-    bytes.set(name, 12)
-    bytes.set(data, 12 + name.length)
-    return bytes
+    return new files.File({ uri, data, data_length: data.length }).encode()
 }
 
 function fakeConnection(state: ConnectionState["state"] = "connected") {

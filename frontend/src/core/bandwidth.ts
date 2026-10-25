@@ -49,7 +49,7 @@ const MODEL_TOPICS = /^\/(robot_description|file_info|file_request|render_file_r
 
 /** The priority a subscription to topic `name` of `type` gets when its code sets none: small state high, then the lidar, maps and the robot's model bulk. */
 export function defaultBandwidthPriority(type: string, name = ""): number | undefined {
-    if (MODEL_TOPICS.test(name) || type === "files.MeshFile") {
+    if (MODEL_TOPICS.test(name) || type === "files.File") {
         return PRIORITY_TIERS.bulk
     }
     if (type === "sensor_msgs.PointCloud2") {

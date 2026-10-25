@@ -23,6 +23,7 @@
         "typescript": "npm:typescript@~5.9.2",
         "vite": "npm:vite@^7.1.0",
         "@std/assert": "jsr:@std/assert@1",
+        "dimos-lcm/files": "https://raw.githubusercontent.com/dimensionalOS/dimos-lcm/34fa51839797ea6c8c18b832a9138722cf6f37d4/generated/ts_lcm_msgs/files/mod.ts",
         "dimos-react": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.5/src/index.ts",
         "dimos-react/three": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.5/src/three.ts",
         "dimos-react/dim-app/desktop.js": "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.5/src/vendor/dim-app/desktop.js",
