@@ -1,9 +1,9 @@
 // The 3D view menu's layers past its point clouds (ui/ScenePanel.tsx): every other drawable topic, grouped by layer
 // type: a switch (on = subscribed), live info or the problem, and the layer's own settings behind a disclosure.
-import { type ReactNode, useState } from "react"
+import { createContext, type ReactNode, useContext, useId, useMemo, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
-import { useStore } from "../core/store.ts"
+import { Store, useStore } from "../core/store.ts"
 import { Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
@@ -11,6 +11,10 @@ import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
 /** layer group label → collapsed; per viewer */
 const COLLAPSED_KEY = "lv.layers.collapsed"
+
+/** Which row's settings are open among its siblings: opening one closes the others. A row's own settings hold a fresh
+ * one, so a nested row (a URDF group under its URDF) closes only its siblings, never its parent. */
+const OpenRow = createContext(new Store<{ id: string | null }>({ id: null }))
 
 /** One switchable row: a toggle, the name (and type), what's below it (status), and settings behind a disclosure. */
 export function Row({ value, onChange, name, type, title, className = "", testKey, below, extra, children }: {
@@ -26,7 +30,11 @@ export function Row({ value, onChange, name, type, title, className = "", testKe
     extra?: ReactNode
     children?: ReactNode
 }) {
-    const [open, setOpen] = useState(false)
+    const id = useId()
+    const siblings = useContext(OpenRow)
+    const open = useStore(siblings).id === id
+    const setOpen = (on: boolean) => siblings.set({ id: on ? id : null })
+    const childRows = useMemo(() => new Store<{ id: string | null }>({ id: null }), [])
     return (
         <div className={`layer-row ${value ? "on" : ""} ${className}`} data-key={testKey}>
             <div className="layer-line">
@@ -39,7 +47,7 @@ export function Row({ value, onChange, name, type, title, className = "", testKe
                 {extra}
             </div>
             {below}
-            {open && children && <div className="layer-settings">{children}</div>}
+            {open && children && <div className="layer-settings"><OpenRow.Provider value={childRows}>{children}</OpenRow.Provider></div>}
         </div>
     )
 }
