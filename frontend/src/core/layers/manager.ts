@@ -5,11 +5,13 @@ import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
 import { type Connection, parseKey, type Topic } from "../transport.ts"
 import { FILE_REQUEST, urdfSource } from "../urdfSource.ts"
+import type * as THREE from "three"
 import type { TfTree } from "dimos-react/three"
 import type { TfHistory } from "../tfHistory.ts"
 import type { Viewer } from "dimos-react/three"
 import type { VideoSources } from "../video.ts"
 import type { RobotProfile } from "../../profile/types.ts"
+import { MessageHold } from "../freeze.ts"
 
 export interface LayerEntry {
     topic: Topic
@@ -25,6 +27,10 @@ export class LayerManager {
     readonly entries = new Store<{ list: LayerEntry[] }>({ list: [] })
     /** the 3D view is switched off: no layer runs (nothing subscribed), the switches keep what to start again */
     readonly paused = new Store<{ paused: boolean }>({ paused: false })
+    /** the 3D view is paused (frozen): layers keep what they drew, their messages wait for resume (core/freeze.ts) */
+    readonly hold = new MessageHold()
+    /** the connection layers subscribe through: held while frozen */
+    readonly #layerConnection: Connection
     #instances = new Map<string, LayerInstance>()
     #enabled = persistentStore<Record<string, boolean>>(ENABLED_KEY, {})
     /** a layer type switched on or off as a whole (camera3d: Settings → 3D view → Cameras in 3D); its topics follow */
@@ -36,6 +42,7 @@ export class LayerManager {
     constructor(readonly viewer: Viewer, readonly tf: TfTree, readonly tfHistory: TfHistory, readonly connection: Connection, readonly video: VideoSources, public profile: RobotProfile) {
         // the URDF comes only when asked for, so no topic announces it: the page keeps asking (while the 3D view is on), and a URDF
         // answered lists the robot model
+        this.#layerConnection = this.hold.wrap(connection)
         const urdf = urdfSource(connection)
         let releaseUrdf: (() => void) | null = null
         const watchUrdf = () => {
@@ -62,6 +69,9 @@ export class LayerManager {
             }
         })
         viewer.onFrame((frame) => {
+            if (this.hold.frozen) {
+                return
+            }
             for (const instance of this.#instances.values()) {
                 instance.update?.(frame)
             }
@@ -141,6 +151,20 @@ export class LayerManager {
         }
     }
 
+    /** Paused: what's drawn stays (the camera still moves), no layer updates and their messages wait; resumed: they get
+     * what they missed and run live. */
+    setFrozen(frozen: boolean) {
+        if (frozen === this.hold.frozen) {
+            return
+        }
+        // a camera picture (Camera in 3D, a camera-colored cloud) is a video texture: it stops uploading new frames
+        for (const instance of this.#instances.values()) {
+            instance.root.traverse((object) => videoTexturesOf(object).forEach((texture) => holdVideoTexture(texture, frozen)))
+        }
+        this.hold.setFrozen(frozen)
+        this.viewer.requestRender()
+    }
+
     /** Topics of one type that are being drawn (e.g. to pick a robot pose source). */
     enabledOfType(...types: string[]): Topic[] {
         return this.entries.get().list.filter((entry) => entry.enabled && types.includes(entry.topic.type)).map((entry) => entry.topic)
@@ -160,7 +184,7 @@ export class LayerManager {
             viewer: this.viewer,
             tf: this.tf,
             tfHistory: this.tfHistory,
-            connection: this.connection,
+            connection: this.#layerConnection,
             video: this.video,
             topics: () => this.connection.status.get().topics,
             tfProblemFrames: () => this.tfProblemFrames,
@@ -196,6 +220,24 @@ export class LayerManager {
         instance.dispose()
         this.#patch(key, { status: {} })
         this.viewer.requestRender()
+    }
+}
+
+/** the video textures an object's materials draw (as a map or a shader uniform) */
+function videoTexturesOf(object: THREE.Object3D): THREE.VideoTexture[] {
+    const material = (object as THREE.Mesh).material
+    const materials = !material ? [] : Array.isArray(material) ? material : [material]
+    return materials.flatMap((one) => [...Object.values(one), ...Object.values((one as THREE.ShaderMaterial).uniforms ?? {}).map((uniform) => uniform?.value)])
+        .filter((value): value is THREE.VideoTexture => !!value?.isVideoTexture)
+}
+
+/** Held: the texture ignores the new frames three.js flags it with (needsUpdate); released: it takes the newest again. */
+function holdVideoTexture(texture: THREE.VideoTexture, held: boolean) {
+    if (held) {
+        Object.defineProperty(texture, "needsUpdate", { configurable: true, set() {} })
+    } else {
+        delete (texture as { needsUpdate?: boolean }).needsUpdate
+        texture.needsUpdate = true
     }
 }
 

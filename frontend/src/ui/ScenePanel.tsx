@@ -1,5 +1,6 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second and its menu: cameras in 3D (the same setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
+// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu: cameras in 3D (the same
+// setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
 // this viewer's bandwidth preset, color and size), then every other layer (TF, maps, markers…: ui/LayersPanel.tsx).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
 // bandwidth; expanded, they subscribe again. Follow sits over its corner, and in the dock while it's the main view.
@@ -54,6 +55,8 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
         app?.layers.setPaused(off)
         if (off) {
             setMenuOpen(false)
+            // its layers restart when it's back on: live, not paused with nothing to show
+            app?.layers.setFrozen(false)
         }
     }, [app, off])
 
@@ -66,9 +69,10 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             icon="cube"
             className={`scene-slot ${off ? "off" : ""}`}
             testid="scene-panel"
-            info={slot?.collapsed ? "collapsed · nothing subscribed" : app ? <SceneRate /> : undefined}
+            info={slot?.collapsed ? "collapsed · nothing subscribed" : app ? <SceneRate app={app} /> : undefined}
             tools={app && !off && (
                 <div className="scene-tools">
+                    <PauseButton app={app} />
                     <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />
                 </div>
             )}
@@ -134,8 +138,29 @@ function SceneDockActions({ app }: { app: ViewerApp }) {
     return null
 }
 
-function SceneRate() {
+/** Pause / resume the 3D view: paused, what's drawn stays put (orbit and zoom still work); resumed, it's live again. */
+function PauseButton({ app }: { app: ViewerApp }) {
+    const { frozen } = useStore(app.layers.hold.state)
+    return (
+        <Button
+            className="dr-btn--icon icon-button scene-pause"
+            pressed={frozen}
+            data-testid="scene-pause"
+            title={frozen ? "Paused: the 3D view holds what it showed (orbit and zoom still work). Click to go live" : "Pause the 3D view: hold what it shows now while you look around"}
+            aria-label={frozen ? "Resume the 3D view" : "Pause the 3D view"}
+            onClick={() => app.layers.setFrozen(!frozen)}
+        >
+            <Icon name={frozen ? "play" : "pause"} size={15} />
+        </Button>
+    )
+}
+
+function SceneRate({ app }: { app: ViewerApp }) {
+    const { frozen, since } = useStore(app.layers.hold.state)
     const total = totalRate(useStore(cloudRates))
+    if (frozen) {
+        return <span className="scene-rate" title="The 3D view is paused: press play to go live">paused at {new Date(since!).toLocaleTimeString()}</span>
+    }
     const text = total.clouds ? `${formatCount(total.pointsPerSecond)} pts/s · ${formatBytes(total.bytesPerSecond)}/s` : "no cloud"
     return <span className="scene-rate" title={`${total.clouds} point cloud${total.clouds === 1 ? "" : "s"} drawn: points and bytes received a second`}>{text}</span>
 }

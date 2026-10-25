@@ -266,6 +266,10 @@ export class ViewerApp {
         const followPose = followFrame === this.profile.baseFrame ? robot : this.tf.lookup(followFrame, fixedFrame)
         const followed = followPose ? new THREE.Vector3().setFromMatrixPosition(followPose) : null
         const heading = followPose ? headingOf(followPose, followFrame) : null
+        if (this.layers.hold.frozen) {
+            // the 3D view is paused: the followed point and the robot's stand-in stay where they were drawn
+            return
+        }
         if (position && !this.#framed) {
             this.#framed = true
             this.viewer.followTarget = followed ?? position
