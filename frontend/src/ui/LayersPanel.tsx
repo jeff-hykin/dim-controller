@@ -93,8 +93,9 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     )
 }
 
-/** @param heads controls at the top of a group, by its label (the group shows even with no layers in it) */
-export function LayerList({ app, skip, heads = {} }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode> }) {
+/** @param heads controls at the top of a group, by its label (the group shows even with no layers in it)
+ * @param lead group labels drawn first, in this order (when they have layers) */
+export function LayerList({ app, skip, heads = {}, lead = [] }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode>; lead?: string[] }) {
     const all = useStore(app.layers.entries).list
     const list = all.filter((entry) => !skip(entry))
     const connection = useStore(app.connection.status)
@@ -102,6 +103,7 @@ export function LayerList({ app, skip, heads = {} }: { app: ViewerApp; skip: (en
     for (const entry of list) {
         groups.set(entry.type.label, [...(groups.get(entry.type.label) ?? []), entry])
     }
+    const ordered = [...lead.filter((label) => groups.has(label)).map((label) => [label, groups.get(label)!] as const), ...[...groups].filter(([label]) => !lead.includes(label))]
     const [collapsed, setCollapsed] = useState(() => readLocal<Record<string, boolean>>(COLLAPSED_KEY, {}))
     const toggle = (label: string) => {
         const next = { ...collapsed, [label]: !collapsed[label] }
@@ -112,7 +114,7 @@ export function LayerList({ app, skip, heads = {} }: { app: ViewerApp; skip: (en
     const other = connection.topics.filter((topic) => !drawn.has(topic.key))
     return (
         <div className="layers">
-            {[...groups].map(([label, entries]) => (
+            {ordered.map(([label, entries]) => (
                 <section key={label} className={`layer-group ${collapsed[label] ? "collapsed" : ""}`}>
                     <button type="button" className="quality-title layer-group-title" aria-expanded={!collapsed[label]} onClick={() => toggle(label)}>
                         <span className={`chevron ${collapsed[label] ? "" : "open"}`}><Icon name="chevron-right" size={12} /></span>

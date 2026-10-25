@@ -170,11 +170,14 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
             <div className="quality-title">Point clouds</div>
             {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
-            <LayerList app={app} skip={isCloud} heads={{ [allLayerTypes().find((type) => type.id === "camera3d")?.label ?? "Camera in 3D"]: <CamerasIn3dRow app={app} /> }} />
+            <LayerList app={app} skip={isCloud} lead={[labelOf("graph")]} heads={{ [labelOf("camera3d")]: <CamerasIn3dRow app={app} /> }} />
         </Card>,
         document.body,
     )
 }
+
+/** a layer type's group label */
+const labelOf = (id: string) => allLayerTypes().find((type) => type.id === id)?.label ?? id
 
 /** Cameras in 3D: the same setting as Settings → 3D view (lv.view camerasIn3d) */
 export function CamerasIn3dToggle({ app, label }: { app: ViewerApp; label?: string }) {
