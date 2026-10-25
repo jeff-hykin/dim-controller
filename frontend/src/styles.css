@@ -339,9 +339,10 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
 .cloud-preset:hover, .cloud-preset:focus-visible { color: var(--fg); background: var(--accent); }
 .cloud-preset.on { color: var(--fg); background: var(--accent); box-shadow: inset 0 -2px 0 var(--primary); }
 .cloud-controls .dr-select.cloud-color { width: auto; flex: 0 1 auto; padding: 2px 28px 2px 6px; font-size: 11px; background-position: right 12px center, right 7px center; }
+.cloud-opacity { width: 72px; flex: none; }
 .cloud-solid { width: 28px; height: 22px; padding: 0; border: 1px solid var(--border); background: none; }
-.cloud-size, .cloud-opacity { display: flex; align-items: center; gap: 6px; flex: 1 1 120px; font: 10px var(--mono); color: var(--muted-fg); }
-.cloud-size input, .cloud-opacity input { flex: 1; min-width: 60px; }
+.cloud-size { display: flex; align-items: center; gap: 6px; flex: 1 1 120px; font: 10px var(--mono); color: var(--muted-fg); }
+.cloud-size input { flex: 1; min-width: 60px; }
 /* follow / top-down over the view's bottom-right corner, the TF note beside them */
 /* a panel's own in-panel buttons (.panel-chrome: the tools row, the camera's gear, the 3D view's follow, the map's cog
    and follow) only while the panel is hovered, has focus or an open menu; on touch, for a few seconds after a tap on it */

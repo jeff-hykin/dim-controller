@@ -16,7 +16,7 @@ import { GRADIENTS, ViewCube } from "dimos-react/three"
 import type { PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
-import { Button, Card, Select, Slider, Toggle } from "dimos-react"
+import { Button, Card, NumberInput, Select, Slider, Toggle } from "dimos-react"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
@@ -219,7 +219,7 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                         ? (
                             <>
                                 <input type="color" className="cloud-solid" value={look.solid} aria-label={`${entry.topic.name} solid color`} onChange={(event) => setLook({ solid: event.target.value })} />
-                                <Slider className="cloud-opacity" title="opacity" min={0.05} max={1} step={0.05} value={look.opacity ?? 1} aria-label={`${entry.topic.name} opacity`} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => setLook({ opacity })} />
+                                <NumberInput size="sm" className="number cloud-opacity" unit="%" title="opacity, % (5–100)" step={5} min={5} max={100} value={Math.round((look.opacity ?? 1) * 100)} aria-label={`${entry.topic.name} opacity`} onChange={(percent: number | null) => setLook({ opacity: Math.min(100, Math.max(5, percent ?? 100)) / 100 })} />
                             </>
                         )
                         : (
