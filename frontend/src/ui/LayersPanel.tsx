@@ -7,6 +7,10 @@ import { useStore } from "../core/store.ts"
 import { Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
+import { readLocal, writeLocal } from "../core/videoQuality.ts"
+
+/** layer group label → collapsed; per viewer */
+const COLLAPSED_KEY = "lv.layers.collapsed"
 
 /** One switchable row: a toggle, the name (and type), what's below it (status), and settings behind a disclosure. */
 export function Row({ value, onChange, name, type, title, className = "", testKey, below, extra, children }: {
@@ -77,22 +81,34 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
     )
 }
 
-export function LayerList({ app, skip }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean }) {
+/** @param heads controls at the top of a group, by its label (the group shows even with no layers in it) */
+export function LayerList({ app, skip, heads = {} }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode> }) {
     const all = useStore(app.layers.entries).list
     const list = all.filter((entry) => !skip(entry))
     const connection = useStore(app.connection.status)
-    const groups = new Map<string, LayerEntry[]>()
+    const groups = new Map<string, LayerEntry[]>(Object.keys(heads).map((label) => [label, []]))
     for (const entry of list) {
         groups.set(entry.type.label, [...(groups.get(entry.type.label) ?? []), entry])
+    }
+    const [collapsed, setCollapsed] = useState(() => readLocal<Record<string, boolean>>(COLLAPSED_KEY, {}))
+    const toggle = (label: string) => {
+        const next = { ...collapsed, [label]: !collapsed[label] }
+        setCollapsed(next)
+        writeLocal(COLLAPSED_KEY, next)
     }
     const drawn = new Set(all.map((entry) => entry.topic.key))
     const other = connection.topics.filter((topic) => !drawn.has(topic.key))
     return (
         <div className="layers">
             {[...groups].map(([label, entries]) => (
-                <section key={label} className="layer-group">
-                    <div className="quality-title">{label}</div>
-                    {entries.map((entry) => {
+                <section key={label} className={`layer-group ${collapsed[label] ? "collapsed" : ""}`}>
+                    <button type="button" className="quality-title layer-group-title" aria-expanded={!collapsed[label]} onClick={() => toggle(label)}>
+                        <span className={`chevron ${collapsed[label] ? "" : "open"}`}><Icon name="chevron-right" size={12} /></span>
+                        {label}
+                        {collapsed[label] && <span className="layer-group-count">{entries.length}</span>}
+                    </button>
+                    {!collapsed[label] && heads[label]}
+                    {!collapsed[label] && entries.map((entry) => {
                         const Rows = entry.type.Rows
                         return Rows ? <Rows key={entry.topic.key} entry={entry} layers={app.layers} /> : <LayerRow key={entry.topic.key} app={app} entry={entry} />
                     })}

@@ -9,6 +9,7 @@ import { type RefObject, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import type { LayerEntry } from "../core/layers/manager.ts"
+import { allLayerTypes } from "../core/layers/registry.ts"
 import { type Store, useStore } from "../core/store.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, type CloudQuality, type CloudRate, cloudRates, formatBytes, formatCount, setCloudQuality } from "../core/cloudQuality.ts"
 import { GRADIENTS, ViewCube } from "dimos-react/three"
@@ -166,11 +167,10 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     }, [onClose])
     return createPortal(
         <Card padded={false} className="cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
-            <CamerasIn3dRow app={app} />
             <div className="quality-title">Point clouds</div>
             {!clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
-            <LayerList app={app} skip={isCloud} />
+            <LayerList app={app} skip={isCloud} heads={{ [allLayerTypes().find((type) => type.id === "camera3d")?.label ?? "Camera in 3D"]: <CamerasIn3dRow app={app} /> }} />
         </Card>,
         document.body,
     )
