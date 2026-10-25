@@ -78,7 +78,7 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                                 <span className="record-live" data-testid="record-live">
                                     <span className="record-label">{busy ? "Stopping…" : "Stop recording"}</span>
                                     <Text mono className="record-clock">{formatClock(status.recording.seconds)}</Text>
-                                    <Text mono className="record-extra">· {formatBytes(status.recording.bytes)} · {status.keys.length} streams</Text>
+                                    <Text mono className="record-extra">· {formatBytes(status.recording.bytes)}</Text>
                                 </span>
                             )
                             : <span className="record-label">{busy ? "Starting…" : "Record"}</span>}
