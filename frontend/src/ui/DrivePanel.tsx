@@ -1,23 +1,14 @@
 // Drive settings: which Twist topics (auto or a list), speeds, a profile's joint control, and its extra controls.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { Button, Checkbox, Field, Heading, Kbd, Slider, TextArea } from "dimos-react"
+import { Button, Checkbox, Field, Heading, Kbd, TextArea } from "dimos-react"
 import { useEffect, useState } from "react"
 import { JointSection } from "./JointControl.tsx"
 
-const SPEED_STEP = 0.05
+import { Stepper } from "./Stepper.tsx"
 
-/** A speed as − value + (steps of 0.05, from 0.05 to `max`): exact presses instead of dragging a slider. */
-function SpeedStepper({ label, max, unit, value, onChange }: { label: string; max: number; unit: string; value: number; onChange: (value: number) => void }) {
-    const step = (direction: number) => onChange(Math.min(max, Math.max(SPEED_STEP, Math.round((value + direction * SPEED_STEP) / SPEED_STEP) * SPEED_STEP)))
-    return (
-        <span className="speed-stepper">
-            <Button className="dr-btn--icon" aria-label={`${label} down`} disabled={value <= SPEED_STEP + 1e-9} onClick={() => step(-1)}>−</Button>
-            <span className="speed-value">{value.toFixed(2)} {unit}</span>
-            <Button className="dr-btn--icon" aria-label={`${label} up`} disabled={value >= max - 1e-9} onClick={() => step(1)}>+</Button>
-        </span>
-    )
-}
+/** a drive speed: − value + in steps of 0.05, from 0.05 to `max` */
+const SpeedStepper = ({ unit, ...props }: { label: string; max: number; unit: string; value: number; onChange: (value: number) => void }) => <Stepper min={0.05} step={0.05} format={(value) => `${value.toFixed(2)} ${unit}`} {...props} />
 
 export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
@@ -60,7 +51,7 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
                         control.kind === "slider"
                             ? (
                                 <Field inline key={control.id} label={control.label} title={`${control.type} on ${control.topic}`}>
-                                    <Slider min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
+                                    <Stepper label={control.label} min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
                                 </Field>
                             )
                             : <Button key={control.id} size="sm" onClick={() => drive.pressButton(control.id)}>{control.label}</Button>

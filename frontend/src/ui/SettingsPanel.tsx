@@ -18,6 +18,7 @@ import { MapChoiceFields } from "./MapPanel.tsx"
 import { CamerasIn3dToggle } from "./ScenePanel.tsx"
 import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
+import { Stepper } from "./Stepper.tsx"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
@@ -104,7 +105,7 @@ function GamepadSettingsFields() {
         <div className="field-block gamepad-settings" data-testid="gamepad-settings">
             <span className="field-label">Gamepad</span>
             <Field inline label="Dead zone" title="how far a stick moves before it drives (raise it for a drifting stick)">
-                <Slider value={settings.deadZone} min={0.05} max={0.4} step={0.01} onChange={(deadZone: any) => gamepadSettings.update({ deadZone })} format={(value) => `${Math.round(value * 100)}%`} />
+                <Stepper label="Dead zone" value={settings.deadZone} min={0.05} max={0.4} step={0.01} onChange={(deadZone) => gamepadSettings.update({ deadZone })} format={(value) => `${Math.round(value * 100)}%`} />
             </Field>
             <Field inline label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
             <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>

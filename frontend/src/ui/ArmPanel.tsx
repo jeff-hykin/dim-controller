@@ -8,6 +8,7 @@ import { isGripperJoint } from "../core/armTopics.ts"
 import type { ArmControl, Joint } from "../core/arm.ts"
 import { EE_AXES, type EeAxis } from "../profile/types.ts"
 import { Button, Field, Heading, HoldButton, Slider } from "dimos-react"
+import { Stepper } from "./Stepper.tsx"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
 const shortName = (name: string) => name.replace(/^.*\//, "")
@@ -88,7 +89,7 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
                 : armJoints.map((joint) => <JointRow key={joint.name} arm={arm} joint={joint} armed={armed} canCommand={!!topics.jointCommand} />)}
             {topics.jointCommand && armJoints.length > 0 && (
                 <>
-                    <Field inline label="Joint speed"><Slider min={0.05} max={1.5} step={0.05} value={settings.jointSpeed} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(jointSpeed) => arm.settings.update({ jointSpeed })} /></Field>
+                    <Field inline label="Joint speed"><Stepper label="Joint speed" min={0.05} max={1.5} step={0.05} value={settings.jointSpeed} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(jointSpeed) => arm.settings.update({ jointSpeed })} /></Field>
                     <div className="button-row">
                         <Button size="sm" disabled={!armed} data-testid="arm-home-zero" title="Send every joint to 0 (joint_command); the coordinator limits the speed" onClick={() => arm.home("zero")}>Home (all 0)</Button>
                         <Button size="sm" disabled={!armed || !arm.hasStartPose()} data-testid="arm-home-start" title="Back to where the joints were when the Controller first saw them" onClick={() => arm.home("start")}>Start pose</Button>
@@ -109,8 +110,8 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
                                 </div>
                             ))}
                         </div>
-                        <Field inline label="Linear"><Slider min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
-                        <Field inline label="Angular"><Slider min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
+                        <Field inline label="Linear"><Stepper label="End effector linear speed" min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
+                        <Field inline label="Angular"><Stepper label="End effector angular speed" min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
                     </>
                 )
                 : <p className="hint">What's running has no <code>ee_twist_command</code> input (an arm teleop blueprint has one: keyboard-teleop-*, coordinator-teleop-*).</p>}

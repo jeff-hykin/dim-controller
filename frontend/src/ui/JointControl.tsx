@@ -5,8 +5,9 @@ import { useEffect, useRef } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { jogPicked, movableJoints, pickJoint } from "../core/baseJoint.ts"
 import { useStore } from "../core/store.ts"
-import { Field, HoldButton, Kbd, Select, Slider, TextInput } from "dimos-react"
+import { Field, HoldButton, Kbd, Select, TextInput } from "dimos-react"
 import { keyName } from "./keymap.ts"
+import { Stepper } from "./Stepper.tsx"
 
 const shortName = (name: string) => name.replace(/^.*\//, "")
 /** the chip's name: without the namespace or "joint" (r1pro/torso_joint1 → torso1), so it fits between a phone's sticks */
@@ -131,7 +132,7 @@ export function JointSection({ app }: { app: ViewerApp }) {
                     <span className="hint"><Kbd>{up}</Kbd> / <Kbd>{down}</Kbd></span>
                 </div>
             </Field>
-            <Field inline label="Joint speed" title="The arm's joint speed (the same setting)"><Slider min={0.05} max={1.5} step={0.05} value={speed} format={(value) => `${value.toFixed(2)} rad/s`} onChange={(jointSpeed) => app.arm.settings.update({ jointSpeed })} /></Field>
+            <Field inline label="Joint speed" title="The arm's joint speed (the same setting)"><Stepper label="Joint speed" min={0.05} max={1.5} step={0.05} value={speed} format={(value) => `${value.toFixed(2)} rad/s`} onChange={(jointSpeed) => app.arm.settings.update({ jointSpeed })} /></Field>
             <Field inline label="Joint topic" title="The JointState topic targets go to; empty: the running coordinator's joint_command">
                 <TextInput data-testid="joint-topic" aria-label="Joint command topic" placeholder={`auto: ${joint.arm.topics.jointCommand ?? "none"}`} value={settings.jointTopic} onCommit={(text) => app.drive.settings.update({ jointTopic: text.trim().replace(/^(?=[^/])/, "/") })} />
             </Field>

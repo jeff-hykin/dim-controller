@@ -9,6 +9,7 @@ import { isTypingTarget } from "./keymap.ts"
 import { useStore } from "../core/store.ts"
 import { canonical, jointControl, type ManipulationTarget, type PlanningMode, wrapAngle } from "../core/manipulation.ts"
 import { Badge, Button, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { Stepper } from "./Stepper.tsx"
 
 const degrees = (radians: number) => `${((radians * 180) / Math.PI).toFixed(1)}°`
 
@@ -183,7 +184,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
             <Heading level={3}>Planning</Heading>
             <Field inline label="Next plan speed">
-                <Slider min={0.05} max={1} step={0.05} value={options.speed} disabled={busy} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
+                <Stepper label="Next plan speed" min={0.05} max={1} step={0.05} value={options.speed} disabled={busy} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
             </Field>
             <Field inline label="Planning mode">
                 <Select<PlanningMode>
