@@ -82,9 +82,13 @@ function LayerRow({ app, entry }: { app: ViewerApp; entry: LayerEntry }) {
             className={entry.status.problem ? "problem" : ""}
             testKey={entry.topic.key}
             below={<LayerStatusLine entry={entry} />}
-            extra={RowControls && <RowControls settings={entry.settings} topic={entry.topic} />}
         >
-            {Settings && <Settings settings={entry.settings} topic={entry.topic} />}
+            {(RowControls || Settings) && (
+                <>
+                    {RowControls && <RowControls settings={entry.settings} topic={entry.topic} />}
+                    {Settings && <Settings settings={entry.settings} topic={entry.topic} />}
+                </>
+            )}
         </Row>
     )
 }
