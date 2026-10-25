@@ -45,6 +45,9 @@ const CAMERA_DEFAULTS: CameraColorSettings = { on: false, topic: "", tolerance: 
 /** the color cameras on the bus, for the settings' camera menu (the layers keep it current) */
 const colorCameras = new Store<{ topics: Topic[] }>({ topics: [] })
 
+/** a topic name's last part (/planner/surface_map → surface_map) */
+const lastName = (topic: Topic) => topic.name.split("/").pop() ?? ""
+
 const isMap = (topic: Topic) => /map|global|voxel|terrain|costmap/i.test(topic.name)
 
 const DEFAULTS: CloudSettings = {
@@ -523,7 +526,18 @@ registerLayer<CloudSettings>({
     label: "Point cloud",
     types: ["sensor_msgs.PointCloud2"],
     // MemWorld's look: lit spheres (a map's at its 10 cm voxel size), lit cubes as the "voxel" style
-    defaults: (topic) => ({ ...structuredClone(DEFAULTS), look: { ...DEFAULTS.look, gradient: defaultGradient(topic), ...(isMap(topic) ? { size: 0.1 } : {}) } }),
+    defaults: (topic) => ({
+        ...structuredClone(DEFAULTS),
+        // the MLS planner's surfaces build up over many scans
+        ...(lastName(topic) === "surface_map" ? { mode: "accumulate" as const, frames: 100 } : {}),
+        look: {
+            ...DEFAULTS.look,
+            gradient: defaultGradient(topic),
+            ...(isMap(topic) ? { size: 0.1 } : {}),
+            // a graph's nodes read as balls, not voxels
+            ...(lastName(topic) === "nodes" ? { style: "disc" as const } : {}),
+        },
+    }),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
     RowControls: AccumulateControls,
