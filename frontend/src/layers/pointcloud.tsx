@@ -8,8 +8,9 @@ import { applyLook, GRADIENTS, makePointMaterial } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
+import { AccumulateControls } from "../ui/AccumulateControls.tsx"
 import { materialLook, type PointLook, rendering, splatFallback } from "../core/render/rendering.ts"
-import { Checkbox, Field, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { Field, Select, Slider, Toggle } from "dimos-react"
 import { useStore } from "../core/store.ts"
 import { addCameraColor, CameraDepthPass, type CameraUniforms, setCameraModel } from "dimos-react/three"
 import { CameraFeed } from "../core/render/cameraFeed.ts"
@@ -475,32 +476,6 @@ export function CloudQualitySelect({ topicKey }: { topicKey: string }) {
 }
 
 /** On the layer's row: keep every scan (within the window) instead of only the newest. */
-function AccumulateCheckbox({ settings }: { settings: Store<CloudSettings>; topic: Topic }) {
-    const value = useStore(settings)
-    const on = value.mode === "accumulate"
-    return (
-        <span className="layer-row-controls">
-            <Checkbox
-                label="accumulate"
-                title="keep the newest scans instead of only the last one"
-                value={on}
-                onChange={(checked: boolean) => settings.update({ mode: checked ? "accumulate" : "latest" })}
-            />
-            {on && (
-                <NumberInput
-                    className="number accumulate-frames"
-                    step={1}
-                    min={1}
-                    title="scans kept (the newest)"
-                    aria-label="scans to accumulate"
-                    value={value.frames ?? 10}
-                    onChange={(frames: number | null) => settings.update({ frames: Math.max(1, Math.round(frames ?? 10)) })}
-                />
-            )}
-        </span>
-    )
-}
-
 function CloudSettingsEditor({ settings, topic }: { settings: Store<CloudSettings>; topic: Topic }) {
     const value = useStore(settings)
     return (
@@ -551,5 +526,5 @@ registerLayer<CloudSettings>({
     defaults: (topic) => ({ ...structuredClone(DEFAULTS), look: { ...DEFAULTS.look, gradient: defaultGradient(topic), ...(isMap(topic) ? { size: 0.1 } : {}) } }),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
-    RowControls: AccumulateCheckbox,
+    RowControls: AccumulateControls,
 })
