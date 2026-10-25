@@ -15,6 +15,7 @@ clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
 image-webp = "0.2.4"
 jpeg-encoder = "0.6"
+lcm-msgs = { git = "https://github.com/dimensionalOS/dimos-lcm", rev = "34fa51839797ea6c8c18b832a9138722cf6f37d4" }
 mcap = { version = "0.25.0", default-features = false, features = ["lz4", "zstd"] }
 png = "0.18.1"
 serde = { version = "1", features = ["derive"] }

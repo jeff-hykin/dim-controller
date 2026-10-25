@@ -1086,7 +1086,7 @@ mod tests {
         config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
         config.insert_json5("scouting/multicast/enabled", "false").unwrap();
         let robot = zenoh::open(config).await.unwrap();
-        // the robot's UrdfManager: each name on /file_request answered with a MeshFile on /file_info
+        // the robot's UrdfManager: each name on /file_request answered with a files.File on /file_info
         let answers = robot.clone();
         let _manager = robot
             .declare_subscriber("dimos/file_request/std_msgs.String")
@@ -1100,13 +1100,10 @@ mod tests {
                 if uri.is_empty() {
                     return;
                 }
-                let mut mesh = 0f64.to_le_bytes().to_vec();
-                mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
-                mesh.extend_from_slice(uri.as_bytes());
-                mesh.extend_from_slice(b"solid x");
+                let mesh = lcm_msgs::files::File { uri: uri.clone(), data: b"solid x".to_vec(), ..Default::default() }.encode();
                 let answers = answers.clone();
                 // c comes on a topic under /file_info, the rest on /file_info itself
-                let key = if uri.ends_with("c.stl") { "dimos/file_info/r/files.MeshFile" } else { "dimos/file_info/files.MeshFile" };
+                let key = if uri.ends_with("c.stl") { "dimos/file_info/r/files.File" } else { "dimos/file_info/files.File" };
                 tokio::spawn(async move { answers.put(key, mesh).await.unwrap() });
             })
             .await
@@ -1133,7 +1130,7 @@ mod tests {
             .unwrap()
             .map(|message| message.unwrap())
             .filter(|message| message.channel.topic.starts_with("/file_info"))
-            .map(|message| format!("{} {}", message.channel.topic, asks::mesh_file_uri(&message.data).unwrap()))
+            .map(|message| format!("{} {}", message.channel.topic, asks::file_uri(&message.data).unwrap()))
             .collect();
         meshes.sort();
         assert_eq!(meshes, vec!["/file_info package://r/a.stl", "/file_info package://r/b.stl", "/file_info/r package://r/c.stl"]);
@@ -1165,11 +1162,8 @@ mod tests {
                         return;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(700)).await;
-                    let mut mesh = 0f64.to_le_bytes().to_vec();
-                    mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
-                    mesh.extend_from_slice(uri.as_bytes());
-                    mesh.extend_from_slice(b"solid x");
-                    answers.put("dimos/file_info/files.MeshFile", mesh).await.unwrap();
+                    let mesh = lcm_msgs::files::File { uri, data: b"solid x".to_vec(), ..Default::default() }.encode();
+                    answers.put("dimos/file_info/files.File", mesh).await.unwrap();
                 });
             })
             .await
@@ -1211,7 +1205,7 @@ mod tests {
             let message = message.unwrap();
             topics.insert(message.channel.topic.clone());
             if message.channel.topic == "/file_info" {
-                meshes.push(asks::mesh_file_uri(&message.data).unwrap());
+                meshes.push(asks::file_uri(&message.data).unwrap());
             }
         }
         meshes.sort();

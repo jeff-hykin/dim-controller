@@ -1,10 +1,11 @@
 // The URDF API (dimos's UrdfManager): the XML read into a RobotDescription (origins, geometry, materials, mimic, the
-// root), MeshFile replies decoded, STL meshes (binary and ASCII) loaded, joint positions read back from link poses, and
+// root), files.File replies decoded, STL meshes (binary and ASCII) loaded, joint positions read back from link poses, and
 // a model filling in as its meshes arrive, and its static links (an env) told from its moving ones.
 import { assert, assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
 import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
-import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
+import { meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
+import * as files from "dimos-lcm/files"
 import { Kinematics, modelPartsOf, RobotModel, staticLinks } from "../src/core/robotDescription.ts"
 
 // deno has no DOMParser; the browser's is what the page uses
@@ -56,17 +57,8 @@ endloop
 endfacet
 endsolid t`
 
-/** files.MeshFile as dimos encodes it */
-function meshFile(uri: string, data: Uint8Array): Uint8Array {
-    const name = new TextEncoder().encode(uri)
-    const bytes = new Uint8Array(12 + name.length + data.length)
-    const view = new DataView(bytes.buffer)
-    view.setFloat64(0, 1234.5, true)
-    view.setUint32(8, name.length, true)
-    bytes.set(name, 12)
-    bytes.set(data, 12 + name.length)
-    return bytes
-}
+/** a files.File as dimos-lcm's Python encoder writes it: header (seq 7, 1s 2ns, "map"), "package://r/a.stl", then `solid x` */
+const FILE_LCM = "f07c51da6b932ba5000000070000000100000002000000046d617000000000127061636b6167653a2f2f722f612e73746c0000000007736f6c69642078"
 
 Deno.test("a URDF reads into a description at its root link", () => {
     const description = parseUrdf(URDF)
@@ -91,12 +83,12 @@ Deno.test("a URDF reads into a description at its root link", () => {
     assertThrows(() => parseUrdf("<notarobot/>"))
 })
 
-Deno.test("a MeshFile reply decodes to its uri and the file's bytes", () => {
-    const decoded = decodeMeshFile(meshFile("package://two/meshes/base.STL", binaryStl()))
-    assertEquals(decoded.ts, 1234.5)
-    assertEquals(decoded.uri, "package://two/meshes/base.STL")
-    assertEquals(decoded.data.length, 134)
-    assertThrows(() => decodeMeshFile(new Uint8Array(4)))
+Deno.test("a files.File reply decodes to its uri and the file's bytes", () => {
+    const python = Uint8Array.from(FILE_LCM.match(/../g)!, (pair) => parseInt(pair, 16))
+    const decoded = files.File.decode(python)
+    assertEquals([decoded.header.frame_id, decoded.uri, new TextDecoder().decode(decoded.data)], ["map", "package://r/a.stl", "solid x"])
+    assertEquals(new files.File(decoded).encode(), python)
+    assertThrows(() => files.File.decode(new Uint8Array(4)))
 })
 
 Deno.test("STL meshes load, binary and ASCII", () => {

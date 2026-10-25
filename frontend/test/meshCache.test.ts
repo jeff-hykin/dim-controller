@@ -7,6 +7,7 @@ import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { cachedFile, resetCacheConnection, storeFile } from "../src/core/meshCache.ts"
 import { FILE_INFO, UrdfSource } from "../src/core/urdfSource.ts"
+import * as files from "dimos-lcm/files"
 
 ;(globalThis as { DOMParser?: unknown }).DOMParser = DOMParser
 const global = globalThis as { indexedDB?: IDBFactory }
@@ -45,14 +46,9 @@ function stl(): Uint8Array {
     return bytes
 }
 
-/** files.MeshFile's wire form: `<f64 ts><u32 uri length><uri><file bytes>` */
+/** a files.File on /file_info */
 function meshInfo(uri: string, data: Uint8Array): Uint8Array {
-    const name = new TextEncoder().encode(uri)
-    const bytes = new Uint8Array(12 + name.length + data.length)
-    new DataView(bytes.buffer).setUint32(8, name.length, true)
-    bytes.set(name, 12)
-    bytes.set(data, 12 + name.length)
-    return bytes
+    return new files.File({ uri, data, data_length: data.length }).encode()
 }
 
 const URI = "package://p/body.stl?hash=abc"

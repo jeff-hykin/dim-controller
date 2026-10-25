@@ -36,7 +36,7 @@ pub fn answer_keys(key: &str) -> Vec<String> {
             key,
             "robot_description",
             "std_msgs.String",
-            "file_info/**/files.MeshFile",
+            "file_info/**/files.File",
         ),
         sibling(
             key,
@@ -88,10 +88,11 @@ pub fn mesh_uris(urdf: &str) -> BTreeSet<String> {
     uris
 }
 
-/// files.MeshFile's uri: `<f64 ts><u32 uri length LE><uri><file bytes>` (dimos/msgs/files/MeshFile.py).
-pub fn mesh_file_uri(payload: &[u8]) -> Option<String> {
-    let length = u32::from_le_bytes(payload.get(8..12)?.try_into().ok()?) as usize;
-    Some(String::from_utf8_lossy(payload.get(12..12 + length)?).into_owned())
+/// The uri a files.File on /file_info answers.
+pub fn file_uri(payload: &[u8]) -> Option<String> {
+    lcm_msgs::files::File::decode(payload)
+        .ok()
+        .map(|file| file.uri)
 }
 
 #[derive(Default)]
@@ -175,8 +176,8 @@ impl Asks {
                 meshes.request_key = request_key;
                 meshes.wanted.extend(mesh_uris(&urdf));
             }
-        } else if key.ends_with("/files.MeshFile") && key.contains("/file_info/") {
-            if let Some(uri) = mesh_file_uri(payload) {
+        } else if key.ends_with("/files.File") && key.contains("/file_info/") {
+            if let Some(uri) = file_uri(payload) {
                 wanted.meshes.got.insert(uri);
             }
         } else if let Some(request_key) = sibling(
@@ -237,11 +238,28 @@ impl Asks {
 mod tests {
     use super::*;
 
+    /// A files.File as dimos-lcm's Python encoder writes it: header (seq 7, 1s 2ns, "map"), the uri, then `solid x`.
+    const FILE_LCM: &str = "f07c51da6b932ba5000000070000000100000002000000046d617000000000127061636b6167653a2f2f722f612e73746c0000000007736f6c69642078";
+
+    #[test]
+    fn a_python_encoded_file_gives_its_uri() {
+        let payload: Vec<u8> = (0..FILE_LCM.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&FILE_LCM[index..index + 2], 16).unwrap())
+            .collect();
+        assert_eq!(file_uri(&payload).as_deref(), Some("package://r/a.stl"));
+        assert_eq!(
+            lcm_msgs::files::File::decode(&payload).unwrap().data,
+            b"solid x"
+        );
+        assert_eq!(file_uri(&payload[..payload.len() - 1]), None);
+    }
+
     #[test]
     fn announcements_bring_their_answer_streams() {
         assert_eq!(
             answer_keys("dimos/robot_description/std_msgs.String"),
-            vec!["dimos/file_info/**/files.MeshFile"]
+            vec!["dimos/file_info/**/files.File"]
         );
         assert_eq!(
             answer_keys("dimos/r1/scene_info/std_msgs.String"),

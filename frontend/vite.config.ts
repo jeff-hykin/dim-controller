@@ -9,14 +9,14 @@ import { esmFetch } from "./tools/esm_fetch.ts"
 const desktop = process.env.DESKTOP_URL ?? "http://127.0.0.1:7077"
 const app = process.env.APP_NAME ?? "dim-controller"
 const imports: Record<string, string> = JSON.parse(readFileSync(new URL("./deno.json", import.meta.url), "utf8")).imports
-// dimos-react: its TypeScript source at its tag on GitHub (deno.json's URLs, the same files deno and the tests read),
-// fetched and compiled into the page; its react, react-dom and three resolve to this page's own
-const dimosReact = Object.fromEntries(Object.entries(imports).filter(([name]) => name.startsWith("dimos-react")))
+// dimos-react and dimos-lcm: their TypeScript source on GitHub (deno.json's URLs, the same files deno and the tests read),
+// fetched and compiled into the page; dimos-react's react, react-dom and three resolve to this page's own
+const fetched = Object.fromEntries(Object.entries(imports).filter(([name]) => /^dimos-(react|lcm)/.test(name)))
 
 export default defineConfig({
     base: "./",
-    // dimos-react's source is fetched at build (tools/esm_fetch.ts)
-    plugins: [esmFetch(dimosReact), react()],
+    // dimos-react's and dimos-lcm's source is fetched at build (tools/esm_fetch.ts)
+    plugins: [esmFetch(fetched), react()],
     server: {
         proxy: {
             "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true },

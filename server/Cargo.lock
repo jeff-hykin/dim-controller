@@ -662,6 +662,7 @@ dependencies = [
  "image-webp",
  "jpeg-encoder",
  "jxl-oxide",
+ "lcm-msgs",
  "mcap",
  "png",
  "serde",
@@ -1564,6 +1565,14 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
+name = "lcm-msgs"
+version = "0.1.0"
+source = "git+https://github.com/dimensionalOS/dimos-lcm?rev=34fa51839797ea6c8c18b832a9138722cf6f37d4#34fa51839797ea6c8c18b832a9138722cf6f37d4"
+dependencies = [
+ "byteorder",
+]
 
 [[package]]
 name = "libc"
