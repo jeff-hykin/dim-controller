@@ -16,7 +16,7 @@ import { GRADIENTS, ViewCube } from "dimos-react/three"
 import type { PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
-import { Button, Card, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { Button, Card, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
@@ -228,7 +228,7 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                         : (
                             <Select size="sm" className="cloud-color" value={look.gradient} aria-label={`${entry.topic.name} colormap`} options={GRADIENTS} onChange={(gradient) => setLook({ gradient })} />
                         )}
-                    <Select size="sm" className="cloud-style" value={look.style === "disc" ? "disc" : "voxel"} aria-label={`${entry.topic.name} point shape`} title="each point as a lit voxel (cube on the grid) or a lit sphere" options={[["voxel", "voxels"], ["disc", "spheres"]]} onChange={(style) => setLook({ style: style as PointLook["style"] })} />
+                    <Segmented size="sm" className="cloud-style" label={`${entry.topic.name} point shape`} items={[["voxel", "Voxels"], ["disc", "Spheres"]]} value={look.style === "disc" ? "disc" : "voxel"} onChange={(style) => setLook({ style: style as PointLook["style"] })} />
                     <Slider className="cloud-size" title="point size" min={0.01} max={0.5} step={0.01} value={look.size} aria-label={`${entry.topic.name} point size`} format={(size) => `${Math.round(size * 100)} cm`} onChange={(size) => setLook({ size })} />
                     {RowControls && <RowControls settings={entry.settings} topic={entry.topic} />}
                 </div>
