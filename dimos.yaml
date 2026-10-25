@@ -1,6 +1,6 @@
 title: Controller
-spec-version: v1.4 # the dimos.yaml spec version this file follows
-version: "0.2.16"
+spec-version: v1.5 # the dimos.yaml spec version this file follows
+version: "0.3.0"
 uses:
     "@dimos-gateway":
         # what's running (and its log dir, for recordings), then its Twist inputs, for the drive topic picker
@@ -12,25 +12,42 @@ uses:
         # where recordings live: the gateway is the authority on the folder (DIMOS_APP's recordingsDir when it can't say)
         - GET /history/recordings
     "@desktop-gateway":
-        # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
-        - GET /recordings
-        - GET /recordings/{id}/file
-        - DELETE /recordings/{id}
-        # Desktop's default robot (ui.default_robot), for the auto robot type
-        - GET /settings
-        # dim-app's appInstalled (listApps): whether the Launcher / Recordings are there to point at
-        - GET /info/apps
-        # dim-app's notify (battery low), with the app's icon
-        - POST /ui/notifications
-        - GET /info/apps/{pkg}/icon
-        # dim-app's getZenoh: where the zenoh-gateway and this app's namespace are
-        - GET /management/gateways/zenoh
-        # the backend's page events when it can't open its own zenoh session (Desktop's relay)
-        - POST /ui/apps/{pkg}/frontend/{topic}
-        # the 3D view's one-time "Try right-click" tip
-        - POST /ui/narration
-        # on a Steam Deck opened outside Steam (the backend's api/host says so): the banner offering to open dimOS in Steam
-        - POST /ui/steam/open
+        # what this server reads of DIMOS_APP; `app check` says when Desktop doesn't set one, and a launch that
+        # can't resolve one says so in this app's own log
+        env:
+            DIMOS_APP.socket: the unix socket this server binds
+            DIMOS_APP.name: names this install in its links
+            DIMOS_APP.dataDir: its own folder, for the saved poses
+            DIMOS_APP.desktopUrl: Desktop's loopback origin, which the gateway is asked through
+            DIMOS_APP.zenohConnect:
+                required: false
+                description: the zenoh endpoint its own session dials
+            DIMOS_APP.zenohPrefix:
+                required: false
+                description: this app's subtree; its pages hear <prefix>/frontend/<topic>
+            DIMOS_APP.recordingsDir:
+                required: false
+                description: where recordings go when the gateway can't say
+        endpoints:
+            # recordings go to Desktop's shared folder; the recorder panel lists, downloads and deletes them there
+            - GET /recordings
+            - GET /recordings/{id}/file
+            - DELETE /recordings/{id}
+            # Desktop's default robot (ui.default_robot), for the auto robot type
+            - GET /settings
+            # dim-app's appInstalled (listApps): whether the Launcher / Recordings are there to point at
+            - GET /info/apps
+            # dim-app's notify (battery low), with the app's icon
+            - POST /ui/notifications
+            - GET /info/apps/{pkg}/icon
+            # dim-app's getZenoh: where the zenoh-gateway and this app's namespace are
+            - GET /management/gateways/zenoh
+            # the backend's page events when it can't open its own zenoh session (Desktop's relay)
+            - POST /ui/apps/{pkg}/frontend/{topic}
+            # the 3D view's one-time "Try right-click" tip
+            - POST /ui/narration
+            # on a Steam Deck opened outside Steam (the backend's api/host says so): the banner offering to open dimOS in Steam
+            - POST /ui/steam/open
     "@zenoh-gateway": ">=0.5 <0.6"
 # Desktop's nix builds of this app pull from this cache (CI fills it)
 caches:

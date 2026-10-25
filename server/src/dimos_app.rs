@@ -23,6 +23,25 @@ pub struct DimosApp {
     pub zenoh_namespace: Option<String>,
     /// `<ns>/apps/<name>`: this app's keys; pages hear `<zenohPrefix>/frontend/<topic>`
     pub zenoh_prefix: Option<String>,
+    /// this app's secrets (its zenohGatewayToken among them): never print it, never pass it on
+    /// which computer this is, for a recording's name (Desktop 0.2.226 and newer; older ones leave it out)
+    pub machine_id: Option<String>,
+    pub secrets: Option<std::collections::BTreeMap<String, String>>,
+}
+
+/// `DIMOS_APP`'s JSON without its `secrets`: what may be printed.
+///
+/// Desktop redacts the zenoh-gateway token out of the log it serves precisely because apps print this object at
+/// startup. `secrets` is the section that makes that unnecessary, so the whole of it goes rather than one key of it,
+/// and the next secret is covered without a change here.
+fn loggable(json: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return "(not valid JSON)".to_string();
+    };
+    if let Some(map) = value.as_object_mut() {
+        map.remove("secrets");
+    }
+    value.to_string()
 }
 
 pub fn parse(json: &str) -> Result<DimosApp, serde_json::Error> {
@@ -36,7 +55,7 @@ pub fn get() -> Option<&'static DimosApp> {
         let json = std::env::var("DIMOS_APP")
             .ok()
             .filter(|json| !json.is_empty())?;
-        eprintln!("DIMOS_APP: {json}");
+        eprintln!("DIMOS_APP: {}", loggable(&json));
         parse(&json)
             .map_err(|error| eprintln!("DIMOS_APP isn't valid JSON ({error}); ignoring it"))
             .ok()
@@ -81,5 +100,19 @@ mod tests {
         assert_eq!(app.zenoh_gateway_url, None);
         assert_eq!(app.zenoh_prefix.as_deref(), Some("ns/apps/b"));
         assert_eq!(app.zenoh_namespace.as_deref(), Some("ns"));
+    }
+    /// What may be printed leaves the whole `secrets` section out, whatever is in it: that is what makes Desktop's
+    /// redaction of the zenoh-gateway token unnecessary, and covers the next secret without a change here.
+    #[test]
+    fn what_is_printed_has_no_secrets_in_it() {
+        let json = r#"{"name":"b","machineId":"3f8a","secrets":{"zenohGatewayToken":"b.deadbeef","next":"also-secret"}}"#;
+        let shown = loggable(json);
+        assert!(!shown.contains("secrets"), "{shown}");
+        assert!(!shown.contains("deadbeef"), "{shown}");
+        assert!(!shown.contains("also-secret"), "{shown}");
+        assert!(shown.contains("3f8a"), "the rest is still shown: {shown}");
+        let app = parse(json).unwrap();
+        assert_eq!(app.secrets.as_ref().and_then(|s| s.get("zenohGatewayToken")).map(String::as_str), Some("b.deadbeef"));
+        assert_eq!(loggable("{not json"), "(not valid JSON)");
     }
 }
