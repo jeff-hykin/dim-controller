@@ -47,7 +47,7 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                     </>
                 )}
             <Field inline label="Opacity">
-                <Slider min={0.1} max={1} step={0.05} value={look.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => set({ opacity })} />
+                <Slider min={0.05} max={1} step={0.05} value={look.opacity} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => set({ opacity })} />
             </Field>
         </>
     )

@@ -216,7 +216,12 @@ function CloudRow({ app, entry, rate }: { app: ViewerApp; entry: LayerEntry; rat
                     </div>
                     <Select size="sm" className="cloud-color" value={look.colorMode} aria-label={`${entry.topic.name} color by`} options={COLOR_MODES} onChange={(colorMode) => setLook({ colorMode })} />
                     {look.colorMode === "solid"
-                        ? <input type="color" className="cloud-solid" value={look.solid} aria-label={`${entry.topic.name} solid color`} onChange={(event) => setLook({ solid: event.target.value })} />
+                        ? (
+                            <>
+                                <input type="color" className="cloud-solid" value={look.solid} aria-label={`${entry.topic.name} solid color`} onChange={(event) => setLook({ solid: event.target.value })} />
+                                <Slider className="cloud-opacity" title="opacity" min={0.05} max={1} step={0.05} value={look.opacity ?? 1} aria-label={`${entry.topic.name} opacity`} format={(opacity) => `${Math.round(opacity * 100)}%`} onChange={(opacity) => setLook({ opacity })} />
+                            </>
+                        )
                         : (
                             <Select size="sm" className="cloud-color" value={look.gradient} aria-label={`${entry.topic.name} colormap`} options={GRADIENTS} onChange={(gradient) => setLook({ gradient })} />
                         )}
