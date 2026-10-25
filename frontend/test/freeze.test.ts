@@ -89,4 +89,6 @@ Deno.test("a paused 3D view holds its layers' messages and frame updates, and re
     assertEquals(drawn, ["a", "c"], "resumed: the newest message it missed, then live")
     frames.forEach((frame) => frame({}))
     assertEquals(updates, 2)
+    // a hidden 3D view lets go of the URDF source, stopping its timers
+    manager.paused.set({ paused: true })
 })
