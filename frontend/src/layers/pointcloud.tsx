@@ -4,7 +4,7 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { applyLook, makePointMaterial } from "dimos-react/three"
+import { applyLook, GRADIENTS, makePointMaterial } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
@@ -56,6 +56,18 @@ const DEFAULTS: CloudSettings = {
 }
 
 const SPLAT_BUDGET = 3_000_000
+
+/** cloud topic → its default gradient: each new cloud takes the first one no other has yet (memworld first), so two clouds
+ * read apart without anyone picking colors; only a cloud with no saved look uses it */
+const defaultGradients = new Map<string, string>()
+function defaultGradient(topic: Topic): string {
+    if (!defaultGradients.has(topic.key)) {
+        const used = [...defaultGradients.values()]
+        const ordered = [DEFAULTS.look.gradient, ...GRADIENTS.filter((name) => name !== DEFAULTS.look.gradient)]
+        defaultGradients.set(topic.key, ordered.find((name) => !used.includes(name)) ?? ordered[defaultGradients.size % ordered.length])
+    }
+    return defaultGradients.get(topic.key)!
+}
 
 /** How often the cloud's frame_id is re-read from one raw message, when the encoding's output carries no frameId (gateways before zenoh-dimos-codecs 0.3.5). */
 const FRAME_RECHECK_MS = 30_000
@@ -536,7 +548,7 @@ registerLayer<CloudSettings>({
     label: "Point cloud",
     types: ["sensor_msgs.PointCloud2"],
     // MemWorld's look: lit spheres (a map's at its 10 cm voxel size), lit cubes as the "voxel" style
-    defaults: (topic) => isMap(topic) ? { ...DEFAULTS, look: { ...DEFAULTS.look, size: 0.1 } } : structuredClone(DEFAULTS),
+    defaults: (topic) => ({ ...structuredClone(DEFAULTS), look: { ...DEFAULTS.look, gradient: defaultGradient(topic), ...(isMap(topic) ? { size: 0.1 } : {}) } }),
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
     RowControls: AccumulateCheckbox,
