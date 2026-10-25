@@ -8,6 +8,7 @@ import { Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
+import { matchesQuery } from "../core/topicFilter.ts"
 
 /** layer group label → collapsed; per viewer */
 const COLLAPSED_KEY = "lv.layers.collapsed"
@@ -117,19 +118,22 @@ export function GroupTitle({ label, count, collapsed, onToggle }: { label: strin
 }
 
 /** @param heads controls at the top of a group, by its label (the group shows even with no layers in it)
- * @param lead group labels drawn first, in this order (when they have layers) */
-export function LayerList({ app, skip, heads = {}, lead = [] }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode>; lead?: string[] }) {
+ * @param lead group labels drawn first, in this order (when they have layers)
+ * @param query the menu's search: only the matching topics (core/topicFilter.ts), their groups unfolded */
+export function LayerList({ app, skip, heads = {}, lead = [], query = "" }: { app: ViewerApp; skip: (entry: LayerEntry) => boolean; heads?: Record<string, ReactNode>; lead?: string[]; query?: string }) {
     const all = useStore(app.layers.entries).list
-    const list = all.filter((entry) => !skip(entry))
+    const searching = query.trim() !== ""
+    const list = all.filter((entry) => !skip(entry) && (!searching || matchesQuery(query, entry.topic.name, entry.topic.type, entry.type.label)))
     const connection = useStore(app.connection.status)
-    const groups = new Map<string, LayerEntry[]>(Object.keys(heads).map((label) => [label, []]))
+    const groups = new Map<string, LayerEntry[]>(Object.keys(heads).filter((label) => !searching || matchesQuery(query, label)).map((label) => [label, []]))
     for (const entry of list) {
         groups.set(entry.type.label, [...(groups.get(entry.type.label) ?? []), entry])
     }
     const ordered = [...lead.filter((label) => groups.has(label)).map((label) => [label, groups.get(label)!] as const), ...[...groups].filter(([label]) => !lead.includes(label))]
-    const { collapsed, toggle } = useCollapsedGroups()
+    const { collapsed: folded, toggle } = useCollapsedGroups()
+    const collapsed = searching ? {} : folded
     const drawn = new Set(all.map((entry) => entry.topic.key))
-    const other = connection.topics.filter((topic) => !drawn.has(topic.key))
+    const other = connection.topics.filter((topic) => !drawn.has(topic.key) && (!searching || matchesQuery(query, topic.name, topic.type)))
     return (
         <div className="layers">
             {ordered.map(([label, entries]) => (

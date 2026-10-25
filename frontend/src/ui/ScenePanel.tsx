@@ -1,5 +1,5 @@
 // The 3D view (lidar, maps, TF, the robot model) as a workspace panel (ui/Panel.tsx). Its tools: points and bytes a
-// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu (each group folding): cameras in 3D (the same
+// second, pause (hold what it shows while the camera still moves; core/freeze.ts), and its menu (a search box past ten switches, each group folding): cameras in 3D (the same
 // setting as Settings → 3D view), then each PointCloud2 on the bus (on/off,
 // this viewer's bandwidth preset, color and size), then every other layer (TF, maps, markers…: ui/LayersPanel.tsx).
 // Collapsed (or off screen: a shut drawer, a rail hidden by focus) every 3D layer stops: nothing subscribed, no
@@ -17,7 +17,7 @@ import { GRADIENTS, ViewCube } from "dimos-react/three"
 import type { PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
-import { Button, Card, NumberInput, Segmented, Select, Slider, Toggle } from "dimos-react"
+import { Button, Card, NumberInput, SearchInput, Segmented, Select, Slider, Toggle } from "dimos-react"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
 import { ViewControls } from "./ViewControls.tsx"
@@ -27,6 +27,7 @@ import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { Unavailable } from "./Unavailable.tsx"
 import { GroupTitle, LayerList, useCollapsedGroups } from "./LayersPanel.tsx"
+import { FILTER_OVER, matchesQuery } from "../core/topicFilter.ts"
 import { ManipActions } from "./ManipPanel.tsx"
 
 const COLOR_MODES: [PointLook["colorMode"], string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"]]
@@ -182,9 +183,11 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     const { list } = useStore(app.layers.entries)
     const rates = useStore(cloudRates)
     useStore(cloudQualities)
-    const clouds = list.filter(isCloud)
+    const [query, setQuery] = useState("")
+    const searching = query.trim() !== ""
+    const clouds = list.filter((entry) => isCloud(entry) && (!searching || matchesQuery(query, entry.topic.name, entry.topic.type, CLOUDS_LABEL)))
     const { collapsed, toggle } = useCollapsedGroups()
-    const cloudsFolded = !!collapsed[CLOUDS_LABEL]
+    const cloudsFolded = !searching && !!collapsed[CLOUDS_LABEL]
     useEffect(() => {
         const close = (event: Event) => {
             if (!(event.target as HTMLElement).closest?.(".cloud-menu, .scene-clouds")) {
@@ -196,10 +199,11 @@ function CloudMenu({ app, anchor, onClose }: { app: ViewerApp; anchor: HTMLEleme
     }, [onClose])
     return createPortal(
         <Card padded={false} className="cloud-menu" role="menu" aria-label="3D view settings" style={popoverPosition(anchor, 320)}>
-            <GroupTitle label={CLOUDS_LABEL} count={clouds.length} collapsed={cloudsFolded} onToggle={() => toggle(CLOUDS_LABEL)} />
-            {!cloudsFolded && !clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
+            {list.length + 1 > FILTER_OVER && <SearchInput className="cloud-search" value={query} onChange={setQuery} placeholder="Filter topics…" aria-label="Filter the 3D view's topics" />}
+            {(!searching || clouds.length > 0) && <GroupTitle label={CLOUDS_LABEL} count={clouds.length} collapsed={cloudsFolded} onToggle={() => toggle(CLOUDS_LABEL)} />}
+            {!cloudsFolded && !searching && !clouds.length && <p className="cloud-empty">No PointCloud2 on the bus yet.</p>}
             {!cloudsFolded && clouds.map((entry) => <CloudRow key={entry.topic.key} app={app} entry={entry} rate={rates[entry.topic.key]} />)}
-            <LayerList app={app} skip={isCloud} lead={[labelOf("graph")]} heads={{ [labelOf("camera3d")]: <CamerasIn3dRow app={app} /> }} />
+            <LayerList app={app} skip={isCloud} lead={[labelOf("graph")]} heads={{ [labelOf("camera3d")]: <CamerasIn3dRow app={app} /> }} query={query} />
         </Card>,
         document.body,
     )
