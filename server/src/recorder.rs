@@ -326,12 +326,10 @@ impl State {
         };
         let (recorder, asks, seen) = (recorder.clone(), asks.clone(), seen.clone());
         let session = self.session().await?;
-        if wildcard || Asks::announces(key) {
-            asks.ask_on(session.clone());
-        }
+        let asking = (wildcard || Asks::announces(key)).then(|| asks.clone());
         let store = self.settings.clone();
         let throttles: Mutex<HashMap<String, Arc<Throttle>>> = Mutex::default();
-        session
+        let subscriber = session
             .declare_subscriber(key.to_string())
             .callback(move |sample| {
                 let sample_key = sample.key_expr().as_str();
@@ -358,7 +356,12 @@ impl State {
                 recorder.offer(topic, Some(msg_type), &payload)
             })
             .await
-            .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))
+            .map_err(|error| anyhow::anyhow!("subscribe {key}: {error}"))?;
+        // ask only once the subscriber that records the answer exists, or the URDF it asks for comes and goes unheard
+        if let Some(asks) = asking {
+            asks.ask_on(session);
+        }
+        Ok(subscriber)
     }
 
     /// Records `keys`, or with none the whole bus but the unticked topics (lv.record.topics).
