@@ -996,3 +996,49 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-window .g2g-code { width: 100%; height: auto; aspect-ratio: 1; }
 .g2g-window-resize { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%, var(--border-strong) 60%, transparent 60%, transparent 72%, var(--border-strong) 72%, var(--border-strong) 82%, transparent 82%); }
 .g2g-warning { font-size: 12px; color: var(--warn); max-width: 40ch; }
+
+/* ── a panel's × (left end of the header) and cog (right end), and the cog's popover ── */
+.panel-close.dr-btn--icon.icon-button { width: 22px; height: 22px; margin-left: -6px; border-color: transparent; background: transparent; color: var(--muted-fg); flex: none; }
+.panel-close.dr-btn--icon.icon-button:hover:not(:disabled) { color: var(--danger); background: var(--hover); border-color: var(--border); }
+.panel-settings-pop { position: fixed; z-index: 45; overflow-y: auto; box-shadow: var(--shadow-lg); }
+
+/* ── Plot panels (ui/PlotPanel.tsx) ── */
+.panel-content.plot-body { display: flex; flex-direction: column; padding-top: 32px; }
+.plot-tools { display: flex; align-items: center; gap: 4px; }
+.plot-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 4px 8px 0; flex: none; }
+.plot-legend-item { all: unset; cursor: pointer; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; font: 11px var(--sans); color: var(--fg); max-width: 100%; }
+.plot-legend-item.off { opacity: 0.4; }
+.plot-legend-item.off .plot-legend-label { text-decoration: line-through; }
+.plot-legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.plot-legend-value { font: 600 11px var(--mono); min-width: 5ch; }
+.plot-legend-stats { flex-basis: 100%; padding-left: 15px; font: 10px var(--mono); color: var(--muted-fg); }
+.plot-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.plot-canvas-wrap { position: relative; flex: 1; min-height: 60px; }
+.plot-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+.plot-readout { position: absolute; pointer-events: none; z-index: 2; min-width: 120px; max-width: 200px; padding: 5px 7px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--card) 92%, transparent); box-shadow: var(--shadow-md); font: 11px var(--sans); }
+.plot-readout-time { font: 10px var(--mono); color: var(--muted-fg); margin-bottom: 2px; }
+.plot-readout-row { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.plot-readout-row b { margin-left: auto; padding-left: 8px; font: 600 11px var(--mono); }
+.plot-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted-fg); font: 12px var(--sans); }
+.plot-picker { position: fixed; z-index: 45; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); overflow: hidden; }
+.plot-picker-search { padding: 6px; border-bottom: 1px solid var(--hair); flex: none; }
+.plot-picker-list { overflow-y: auto; padding: 4px; }
+.plot-picker-none { padding: 8px; }
+.plot-picker-row { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border-radius: var(--radius-sm); }
+.plot-picker-row:hover, .plot-picker-field:hover { background: var(--accent); }
+.plot-picker-row.on, .plot-picker-field.on { box-shadow: inset 3px 0 0 var(--primary); }
+.plot-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+.plot-picker-type { font: 10px var(--mono); color: var(--muted-fg); white-space: nowrap; }
+.plot-picker-fields { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px 18px; }
+.plot-picker-field { all: unset; cursor: pointer; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); font: 11px var(--mono); }
+.plot-settings { display: flex; flex-direction: column; gap: 6px; }
+.plot-settings .dr-field--inline .dr-field-control { justify-content: flex-end; }
+.plot-settings .dr-input-wrap, .plot-settings .dr-number { max-width: 150px; }
+.plot-settings-head { margin-top: 6px; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-fg); }
+.plot-series-settings { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.plot-series-head { display: flex; align-items: center; gap: 6px; }
+.plot-series-head .dr-input-wrap { flex: 1; max-width: none; }
+.plot-color { width: 26px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; flex: none; }
+.plot-series-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.plot-inline { display: inline-flex; align-items: center; gap: 3px; font: 11px var(--sans); color: var(--muted-fg); }
+.plot-inline .dr-input-wrap, .plot-inline .dr-number { width: 64px; }

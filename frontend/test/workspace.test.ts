@@ -11,9 +11,11 @@ import {
     layoutWorkspace,
     loadArrangement,
     locate,
+    closePanel,
     movePanel,
     normalizeArrangement,
     PANEL_HEAD,
+    placePanel,
     popOut,
     type Rect,
     resizeRail,
@@ -22,12 +24,15 @@ import {
     showPanel,
     snapBox,
     SNAP_PX,
+    SPLIT_SHARE,
     toggleCollapsed,
     workspace,
     WORKSPACE_KEY,
 } from "../src/ui/workspace.ts"
 
 const IDS = ["camera:1", ...FIXED_PANELS]
+/** every panel open, each at home (a saved arrangement that closed nothing) */
+const opened = (ids = IDS) => normalizeArrangement({}, ids)
 const desktop: Frame = { width: 1440, height: 900, top: 44, bottom: 900 - 64, mobile: false }
 const phone: Frame = { width: 390, height: 844, top: 48, bottom: 520, mobile: true }
 const shown = { drawer: null, hide: [] }
@@ -36,22 +41,51 @@ const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width
 const within = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height
 const center = (rect: Rect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
 
-Deno.test("default: the camera is the main view, map and 3D on the left, status and settings on the right (TF folded)", () => {
-    const arrangement = defaultArrangement(IDS)
+Deno.test("first visit: every fixed panel closed (an empty main view), a camera there is the main view", () => {
+    const empty = defaultArrangement(FIXED_PANELS)
+    assertEquals([empty.stage, empty.left, empty.right, empty.floating], [null, [], [], []])
+    assertEquals(empty.closed.sort(), [...FIXED_PANELS].sort())
+    const withCamera = defaultArrangement(IDS)
+    assertEquals(withCamera.stage, "camera:1")
+    assertEquals([withCamera.left, withCamera.right], [[], []])
+})
+
+Deno.test("open: the camera is the main view, map and 3D on the left, settings on the right (TF folded)", () => {
+    const arrangement = opened()
     assertEquals(arrangement.stage, "camera:1")
     assertEquals(arrangement.left, ["map", "scene"])
-    assertEquals(arrangement.right, ["status", "settings", "tf"])
+    assertEquals(arrangement.right, ["settings", "tf"])
     assertEquals(arrangement.collapsed.sort(), ["tf"])
     assertEquals(arrangement.floating, [])
+    assertEquals(arrangement.closed, [])
+})
+
+Deno.test("close and reopen: a fixed panel is remembered closed, a camera or plot just leaves; show and place reopen", () => {
+    const closed = closePanel(opened(), "map")
+    assertEquals(locate(closed, "map"), null)
+    assertEquals(closed.closed, ["map"])
+    // it stays closed across a reload's normalizing
+    assertEquals(locate(normalizeArrangement(closed, IDS), "map"), null)
+    const shownAgain = showPanel(closed, "map")
+    assertEquals([locate(shownAgain, "map")?.zone, shownAgain.closed], ["left", []])
+    const camera = closePanel(opened(), "camera:1")
+    assertEquals([camera.stage, camera.closed], [null, []])
+    // placed into an empty side: an uneven split, the side takes SPLIT_SHARE of the width
+    const empty = defaultArrangement(IDS)
+    const placed = placePanel(empty, "scene", { zone: "right", index: 0 }, 1440)
+    assertEquals([placed.right, placed.closed.includes("scene"), placed.rightWidth], [["scene"], false, Math.round(1440 * SPLIT_SHARE)])
+    // onto the main view: the camera there goes to its home side
+    const main = placePanel(empty, "map", { zone: "stage" }, 1440)
+    assertEquals([main.stage, main.left], ["map", ["camera:1"]])
 })
 
 Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropped, missing ones at home, sizes finite", () => {
     const saved = {
         stage: "map",
         left: ["map", "ghost", "scene", "scene"],
-        right: ["status"],
+        right: [],
         floating: [{ id: "settings", x: 100, y: 120, width: 10, height: NaN }, { id: "tf", x: 300, y: 300, width: 300, height: 200 }],
-        closed: ["status", "map"],
+        closed: ["camera:1", 7],
         collapsed: ["map", "nope"],
         leftWidth: Infinity,
         rightWidth: 10,
@@ -61,8 +95,8 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
     assertEquals(arrangement.stage, "map")
     assertEquals(arrangement.left, ["camera:1", "scene"])
     assertEquals(arrangement.floating.map((box) => box.id), ["tf"])
-    // there's no closed place (an old arrangement's closed list is ignored): status is in its rail, on the right
-    assert(!("closed" in arrangement) && arrangement.right.includes("status"))
+    // a camera is never "closed" (it leaves its list instead), junk is dropped
+    assertEquals(arrangement.closed, [])
     // settings (its box was broken) went home: the right rail
     assert(arrangement.right.includes("settings"))
     // the stage panel is never folded
@@ -74,22 +108,25 @@ Deno.test("a saved arrangement is made safe: each panel once, unknown ones dropp
     assertEquals(placed.sort(), [...IDS].sort())
     // garbage is the default
     assertEquals(normalizeArrangement("junk" as never, IDS), defaultArrangement(IDS))
+    // a closed panel is in no place
+    const closedTf = normalizeArrangement({ ...saved, closed: ["tf"] }, IDS)
+    assertEquals(locate(closedTf, "tf"), null)
 })
 
 Deno.test("an added camera starts at the top of the left rail; a removed one leaves no gap", () => {
-    const withTwo = normalizeArrangement(defaultArrangement(IDS), [...IDS, "camera:2"])
+    const withTwo = normalizeArrangement(opened(), [...IDS, "camera:2"])
     assertEquals(withTwo.left[0], "camera:2")
     const without = normalizeArrangement(withTwo, IDS)
     assertEquals(without.left, ["map", "scene"])
 })
 
 Deno.test("desktop: the rails and the main view share the space between the strip and the dock edge to edge, nothing overlaps", () => {
-    const layout = layoutWorkspace(defaultArrangement(IDS), desktop, shown)
+    const layout = layoutWorkspace(opened(), desktop, shown)
     const left = layout.rails.left!, right = layout.rails.right!
     assert(within(left, layout.area) && within(right, layout.area) && within(layout.stage, layout.area))
     assert(!overlap(left, layout.stage) && !overlap(right, layout.stage))
     assertEquals(layout.slots["camera:1"].rect, layout.stage)
-    const docked = ["map", "scene", "status", "settings", "tf"].map((id) => layout.slots[id].rect)
+    const docked = ["map", "scene", "settings", "tf"].map((id) => layout.slots[id].rect)
     for (const [index, rect] of docked.entries()) {
         assert(rect.height >= PANEL_HEAD)
         for (const other of docked.slice(index + 1)) {
@@ -99,7 +136,6 @@ Deno.test("desktop: the rails and the main view share the space between the stri
     // folded: just the header; the rest share the rail
     assertEquals(layout.slots.tf.rect.height, PANEL_HEAD)
     assert(layout.slots.tf.collapsed && !layout.slots.settings.collapsed)
-    assert(layout.slots.settings.rect.height > layout.slots.status.rect.height)
     // the stage is wider than both rails together
     assert(layout.stage.width > left.width + right.width)
     // no gaps: the rails touch the window's sides and the main view, the area is the whole space between strip and dock
@@ -110,7 +146,7 @@ Deno.test("desktop: the rails and the main view share the space between the stri
 })
 
 Deno.test("collapsing a rail panel gives its height to the others in its rail; expanding takes it back", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const before = layoutWorkspace(arrangement, desktop, shown)
     const rail = before.rails.left!
     // the 3D view collapsed: the map above it takes the rail but its header
@@ -126,23 +162,23 @@ Deno.test("collapsing a rail panel gives its height to the others in its rail; e
 })
 
 Deno.test("focus hides both rails: the main view takes the width, the rail panels stay mounted but hidden", () => {
-    const layout = layoutWorkspace(defaultArrangement(IDS), desktop, { drawer: null, hide: ["left", "right"] })
+    const layout = layoutWorkspace(opened(), desktop, { drawer: null, hide: ["left", "right"] })
     assertEquals(layout.stage, layout.area)
     assert(layout.slots.map.hidden && layout.slots.settings.hidden)
     assert(!layout.slots["camera:1"].hidden)
 })
 
 Deno.test("snapping a dragged header: near or over a rail it docks there (at the pointer's height), on the main view's middle it swaps, else it floats", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const layout = layoutWorkspace(arrangement, desktop, shown)
     const box = { x: 600, y: 300, width: 320, height: 240 }
-    // over the right rail, below status: second in the rail
-    const status = layout.slots.status.rect
-    const right = dropTarget(arrangement, desktop, shown, "map", { x: status.x + 40, y: status.y + status.height + 4 }, box)
+    // over the right rail, below settings: second in the rail
+    const settings = layout.slots.settings.rect
+    const right = dropTarget(arrangement, desktop, shown, "map", { x: settings.x + 40, y: settings.y + settings.height + 4 }, box)
     assertEquals([right.zone, "index" in right && right.index], ["right", 1])
     assert(within(right.preview, layout.rails.right!))
     // at the window's left edge, above everything: first in the left rail
-    const left = dropTarget(arrangement, desktop, shown, "settings", { x: 4, y: layout.area.y + 2 }, box)
+    const left = dropTarget(arrangement, desktop, shown, "tf", { x: 4, y: layout.area.y + 2 }, box)
     assertEquals([left.zone, "index" in left && left.index], ["left", 0])
     // the main view's middle: swap
     const middle = dropTarget(arrangement, desktop, shown, "scene", center(layout.stage), box)
@@ -160,7 +196,7 @@ Deno.test("snapping a dragged header: near or over a rail it docks there (at the
 })
 
 Deno.test("a hidden (empty) rail still takes a header dropped at its edge", () => {
-    const arrangement = { ...defaultArrangement(IDS), left: [], right: [...defaultArrangement(IDS).right, "map", "scene"] }
+    const arrangement = { ...opened(), left: [], right: [...opened().right, "map", "scene"] }
     const layout = layoutWorkspace(arrangement, desktop, shown)
     assertEquals(layout.rails.left, undefined)
     const target = dropTarget(arrangement, desktop, shown, "map", { x: 10, y: 400 }, { x: 0, y: 380, width: 320, height: 240 })
@@ -179,7 +215,7 @@ Deno.test("snapBox: each axis snaps to the nearest guide edge within the thresho
 })
 
 Deno.test("main view: a panel moved onto it swaps with the one there (which takes its old place)", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const swapped = movePanel(arrangement, "scene", { zone: "stage" })
     assertEquals(swapped.stage, "scene")
     assertEquals(swapped.left, ["map", "camera:1"])
@@ -193,7 +229,7 @@ Deno.test("main view: a panel moved onto it swaps with the one there (which take
 })
 
 Deno.test("the panel actions: collapse, pop out and dock back, show", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const layout = layoutWorkspace(arrangement, desktop, shown)
     // fold / unfold; the main view never folds
     assert(toggleCollapsed(arrangement, "map").collapsed.includes("map"))
@@ -214,7 +250,7 @@ Deno.test("the panel actions: collapse, pop out and dock back, show", () => {
 })
 
 Deno.test("splitters: the pair's share moves, their total height doesn't; rails stay within their limits", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const layout = layoutWorkspace(arrangement, desktop, shown)
     const before = layout.slots.map.rect.height + layout.slots.scene.rect.height
     const after = layoutWorkspace(resizeSplit(arrangement, "map", "scene", 80, layout), desktop, shown)
@@ -228,10 +264,10 @@ Deno.test("splitters: the pair's share moves, their total height doesn't; rails 
 })
 
 Deno.test("phone: the main view fills the screen; a rail is a drawer, its panels shown only while it's open", () => {
-    const arrangement = defaultArrangement(IDS)
+    const arrangement = opened()
     const closed = layoutWorkspace(arrangement, phone, shown)
     assertEquals(closed.slots["camera:1"].rect, { x: 0, y: 48, width: 390, height: 472 })
-    assert(["map", "scene", "status", "settings"].every((id) => closed.slots[id].hidden))
+    assert(["map", "scene", "settings"].every((id) => closed.slots[id].hidden))
     const left = layoutWorkspace(arrangement, phone, { drawer: "left", hide: [] })
     assert(left.drawer && left.drawer.x === 0 && left.drawer.width < phone.width)
     // it ends where the sticks start
@@ -250,7 +286,7 @@ Deno.test("phone: the main view fills the screen; a rail is a drawer, its panels
 Deno.test("the arrangement survives a reload (this viewer's localStorage), a broken entry falls back to the default", () => {
     const before = localStorage.getItem(WORKSPACE_KEY)
     try {
-        const moved = movePanel(defaultArrangement(IDS), "settings", { zone: "float", box: { x: 400, y: 200, width: 360, height: 420 } })
+        const moved = movePanel(opened(), "settings", { zone: "float", box: { x: 400, y: 200, width: 360, height: 420 } })
         saveArrangement(moved)
         assertEquals(loadArrangement(IDS), moved)
         // the shared store saves every change

@@ -2,9 +2,11 @@
 // the ones that apply where it is), offered in the palette too.
 import { assert, assertEquals } from "jsr:@std/assert@1"
 import { type Command, filterCommands, panelActions, panelCommands, panelTitle } from "../src/ui/commands.ts"
-import { defaultArrangement, FIXED_PANELS, minimizeStage, movePanel, toggleCollapsed } from "../src/ui/workspace.ts"
+import { FIXED_PANELS, minimizeStage, movePanel, normalizeArrangement, toggleCollapsed } from "../src/ui/workspace.ts"
 
 const IDS = ["camera:1", ...FIXED_PANELS]
+/** every panel open, each at home */
+const defaultArrangement = (ids: string[]) => normalizeArrangement({}, ids)
 const command = (id: string, label: string, extra: Partial<Command> = {}): Command => ({ id, label, group: "View", run: () => {}, ...extra })
 
 Deno.test("filter: every word must match (label, group, hint, keys, extra words), order kept; empty is everything", () => {
@@ -20,7 +22,7 @@ Deno.test("filter: every word must match (label, group, hint, keys, extra words)
 Deno.test("a panel's header actions, in a fixed order: collapse and make main view (not on the main view), pop out (on a phone, only a floating panel's close)", () => {
     const arrangement = movePanel(defaultArrangement(IDS), "tf", { zone: "float", box: { x: 400, y: 200, width: 300, height: 300 } })
     const actions = (id: string, mobile = false) => panelActions(arrangement, id, { mobile }).map((state) => state.action)
-    for (const id of ["map", "scene", "status", "settings", "tf"]) {
+    for (const id of ["map", "scene", "settings", "tf"]) {
         assertEquals(actions(id), ["collapse", "main", "popout"], id)
         assertEquals(actions(id, true), id === "tf" ? ["collapse", "main", "popout"] : ["collapse", "main"], id)
     }

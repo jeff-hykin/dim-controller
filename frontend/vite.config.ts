@@ -19,7 +19,10 @@ export default defineConfig({
     plugins: [esmFetch(dimosReact), react()],
     server: {
         proxy: {
-            "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true },
+            // Desktop tells which app a connection is from by its Referer: this page's, as if served at /apps/<name>/
+            "/zenoh-gateway": { target: desktop, ws: true, changeOrigin: true, headers: { referer: `${desktop}/apps/${app}/` } },
+            // dim-app asks Desktop where the gateway is (gateways/desktop/management/gateways/zenoh)
+            "/gateways": { target: desktop, ws: true, changeOrigin: true, headers: { referer: `${desktop}/apps/${app}/` } },
             "/api": { target: `${desktop}/apps/${app}`, changeOrigin: true },
         },
     },

@@ -13,6 +13,7 @@ import { PhoneCorners } from "./ui/PhoneCorners.tsx"
 import { ZoomDebug } from "./ui/ZoomDebug.tsx"
 import { CameraPanels, cameraLayout, useCameraActions } from "./ui/CameraPanels.tsx"
 import { MapPanel } from "./ui/MapPanel.tsx"
+import { PlotPanels, plotLayout, plotsOf } from "./ui/PlotPanel.tsx"
 import { DriveHud } from "./ui/DriveHud.tsx"
 import { useKeyboard } from "./ui/useKeyboard.ts"
 import { useArmKeys } from "./ui/useArmKeys.ts"
@@ -28,7 +29,7 @@ import { InfoPanels } from "./ui/InfoPanels.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 import { Overlays } from "./ui/Overlays.tsx"
 import { rectStyle, useWorkspace, type WorkspaceApi, WorkspaceContext, WorkspaceSurface } from "./ui/Workspace.tsx"
-import { ARMS_PANEL, cameraId, FIXED_PANELS } from "./ui/workspace.ts"
+import { ARMS_PANEL, cameraId, FIXED_PANELS, plotId } from "./ui/workspace.ts"
 import { armsPanelShown } from "./ui/ArmsPanel.tsx"
 import type { RunState } from "./core/runs.ts"
 import { openOverlay } from "./ui/overlay.ts"
@@ -65,7 +66,8 @@ export function App() {
     const runs = useStore(app?.runs.state ?? placeholderRuns)
     const manipulation = useStore(app?.manipulation.state ?? placeholderManipulation)
     const arms = app !== null && armsPanelShown(robot.type, runs, manipulation.available)
-    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : [])]
+    const plots = plotsOf(useStore(plotLayout))
+    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : []), ...plots.map((plot) => plotId(plot.id))]
     const cameraActions = useCameraActions(app)
     const api = useWorkspace(ids, mobile)
     // the profile changes with the robot type: keys follow it
@@ -85,6 +87,7 @@ export function App() {
                         <>
                             <ContainCrash what="Cameras"><CameraPanels app={app} /></ContainCrash>
                             <ContainCrash what="Map"><MapPanel app={app} /></ContainCrash>
+                            <PlotPanels app={app} />
                             <InfoPanels app={app} />
                         </>
                     )}

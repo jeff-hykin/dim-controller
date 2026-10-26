@@ -1,5 +1,5 @@
 // The page's one panel system: a main view (the stage) between a left and a right rail, plus panels floating over the
-// stage. Every panel (each camera, the map, the 3D view, status, network, settings, TF) sits in exactly one place: the
+// stage. Every panel (each camera and plot, the map, the 3D view, settings, TF) sits in exactly one place: the
 // stage, a rail (stacked top to bottom) or floating; any panel can go to any place, and a rail or floating panel folds
 // to its header (its rail's other panels take the height). Dragging a header snaps it
 // into a rail (near or over it), onto the stage (its middle: swap), or leaves it floating, its edges snapping to the
@@ -35,6 +35,8 @@ export interface Arrangement {
     weights: Record<string, number>
     /** where a panel last floated, so popping it out again puts it back there */
     floatMemory: Record<string, Rect>
+    /** the fixed panels closed with their × (a camera or a plot closed is gone from its list instead) */
+    closed: string[]
 }
 
 /** every panel's header height (styles.css .lv-panel > .panel-head) */
@@ -52,15 +54,21 @@ const MIN_BODY = 72
 const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; float: { width: number; height: number } }> = {
     map: { side: "left", weight: 1, float: { width: 340, height: 340 } },
     scene: { side: "left", weight: 1.15, float: { width: 420, height: 320 } },
-    status: { side: "right", weight: 0.75, float: { width: 320, height: 300 } },
     settings: { side: "right", weight: 1.5, float: { width: 360, height: 520 } },
     arms: { side: "right", weight: 1.5, float: { width: 360, height: 560 } },
     tf: { side: "right", collapsed: true, weight: 1, float: { width: 340, height: 420 } },
 }
 const CAMERA_HOME = { side: "left" as Side, weight: 1, float: { width: 480, height: 270 + PANEL_HEAD } }
+const PLOT_HOME = { side: "right" as Side, weight: 1, float: { width: 460, height: 280 } }
 export const isCamera = (id: string) => id.startsWith("camera:")
 export const cameraId = (n: number) => `camera:${n}`
-export const homeOf = (id: string) => HOMES[id] ?? CAMERA_HOME
+export const isPlot = (id: string) => id.startsWith("plot:")
+export const plotId = (n: number) => `plot:${n}`
+export const homeOf = (id: string) => HOMES[id] ?? (isPlot(id) ? PLOT_HOME : CAMERA_HOME)
+/** a camera or a plot: made and removed by its own list (lv.cameras, lv.plots), never "closed" */
+export const isDynamicPanel = (id: string) => isCamera(id) || isPlot(id)
+/** a side panel dropped into an empty side takes this share of the width (the main view keeps the rest) */
+export const SPLIT_SHARE = 0.3
 /** shown only while there are arms to control (ui/ArmsPanel.tsx) */
 export const ARMS_PANEL = "arms"
 /** the panels that always exist (cameras come and go: camera:<n>, and so do the arms) */
@@ -76,12 +84,18 @@ const clamp = (value: number, low: number, high: number) => Math.max(low, Math.m
 /**
  * A saved arrangement made safe for the panels there are now: each known panel exactly once (an unknown or repeated one
  * dropped), a panel it doesn't mention placed at home (the first camera on the stage when it's free), sizes finite.
+ * Nothing saved (a first visit) is every fixed panel closed: an empty main view that says how to add one.
  */
 export function normalizeArrangement(saved: Partial<Arrangement> | null | undefined, ids: string[]): Arrangement {
     const known = new Set(ids)
     const seen = new Set<string>()
+    const closed = new Set(
+        saved && typeof saved === "object"
+            ? (Array.isArray(saved.closed) ? saved.closed : []).filter((id): id is string => typeof id === "string" && !isDynamicPanel(id))
+            : ids.filter((id) => !isDynamicPanel(id)),
+    )
     const take = (id: unknown): id is string => {
-        if (typeof id !== "string" || !known.has(id) || seen.has(id)) {
+        if (typeof id !== "string" || !known.has(id) || seen.has(id) || closed.has(id)) {
             return false
         }
         seen.add(id)
@@ -96,7 +110,7 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
         .map((box) => ({ id: box.id, x: box.x, y: box.y, width: Math.max(FLOAT_MIN.width, box.width), height: Math.max(PANEL_HEAD, box.height) }))
     const collapsed = new Set(Array.isArray(saved?.collapsed) ? saved.collapsed.filter((id) => known.has(id)) : [])
     for (const id of ids) {
-        if (seen.has(id)) {
+        if (seen.has(id) || closed.has(id)) {
             continue
         }
         const home = homeOf(id)
@@ -143,6 +157,7 @@ export function normalizeArrangement(saved: Partial<Arrangement> | null | undefi
         rightWidth: finite(saved?.rightWidth) ? clamp(saved.rightWidth, RAIL_MIN, RAIL_MAX) : 340,
         weights,
         floatMemory,
+        closed: [...closed],
     }
 }
 
@@ -235,12 +250,39 @@ export function toggleCollapsed(arrangement: Arrangement, id: string): Arrangeme
     return arrangement.collapsed.includes(id) ? expand(arrangement, id) : { ...arrangement, collapsed: [...arrangement.collapsed, id] }
 }
 
-/** Unfolded where it is (somewhere new, e.g. a camera just added: at home). */
+/** Unfolded where it is (somewhere new, e.g. a camera just added, or a closed one: at home). */
 export function showPanel(arrangement: Arrangement, id: string): Arrangement {
-    let next = expand(arrangement, id)
+    let next = reopen(expand(arrangement, id), id)
     if (!locate(arrangement, id)) {
         const side = homeOf(id).side
         next = next.stage === null && isCamera(id) ? movePanel(next, id, { zone: "stage" }) : movePanel(next, id, { zone: side, index: next[side].length })
+    }
+    return next
+}
+
+const reopen = (arrangement: Arrangement, id: string): Arrangement =>
+    arrangement.closed.includes(id) ? { ...arrangement, closed: arrangement.closed.filter((other) => other !== id) } : arrangement
+
+/** The header's ×: the panel leaves the workspace (a fixed one is remembered as closed; showing it again reopens it). */
+export function closePanel(arrangement: Arrangement, id: string): Arrangement {
+    const next = without(arrangement, id)
+    return {
+        ...next,
+        previousStage: next.previousStage === id ? null : next.previousStage,
+        collapsed: next.collapsed.filter((other) => other !== id),
+        closed: isDynamicPanel(id) || next.closed.includes(id) ? next.closed : [...next.closed, id],
+    }
+}
+
+/**
+ * `id` opened at `to` (from the settings drawer or the agent): reopened if it was closed, unfolded, and moved there. Into
+ * an empty side it's a split view, uneven: the side takes SPLIT_SHARE of `areaWidth`, the main view the rest.
+ */
+export function placePanel(arrangement: Arrangement, id: string, to: Placement, areaWidth: number): Arrangement {
+    const emptySide = (to.zone === "left" || to.zone === "right") && !arrangement[to.zone].some((other) => other !== id)
+    let next = movePanel(expand(reopen(arrangement, id), id), id, to)
+    if (emptySide) {
+        next = resizeRail(next, to.zone as Side, areaWidth * SPLIT_SHARE)
     }
     return next
 }

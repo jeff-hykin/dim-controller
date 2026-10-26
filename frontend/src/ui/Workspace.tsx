@@ -3,7 +3,7 @@
 // draws what isn't a panel: the splitters, the rails' edges, the landing preview while a header is dragged, the empty
 // main view's hint and, on a phone, the drawer's backdrop.
 import { createContext, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useMemo, useState } from "react"
-import { Store, useStore } from "../core/store.ts"
+import { persistentStore, Store, useStore } from "../core/store.ts"
 import { type PanelAction } from "./commands.ts"
 import { PHONE_LANDSCAPE } from "./useMobile.ts"
 import { startHeaderDrag, startPointerDrag } from "./panelDrag.ts"
@@ -13,6 +13,7 @@ import {
     arrange,
     type Arrangement,
     clampFloat,
+    closePanel,
     type DropTarget,
     dropTarget,
     floatBoxFor,
@@ -21,6 +22,8 @@ import {
     locate,
     movePanel,
     normalizeArrangement,
+    placePanel,
+    type Placement,
     popOut,
     type Rect,
     resizeRail,
@@ -42,6 +45,10 @@ export interface WorkspaceApi {
     mobile: boolean
     ids: string[]
     act: (id: string, action: PanelAction | "show") => void
+    /** the header's ×: out of the workspace (a camera's or a plot's list drops it too, by its own close) */
+    close: (id: string) => void
+    /** opened at a place (the settings drawer's drop zones, the agent) */
+    place: (id: string, to: Placement) => void
     startDrag: (id: string, event: ReactPointerEvent, element: HTMLElement) => void
     toggleRail: (side: Side) => void
     toggleFocus: () => void
@@ -59,8 +66,39 @@ export function useWorkspaceApi(): WorkspaceApi {
 /** the landing preview while a header is dragged (its own store: a drag never re-renders the panels) */
 const dragPreview = new Store<{ target: DropTarget | null; stage: Rect | null }>({ target: null, stage: null })
 
-/** The workspace for these panels: `ids` (every camera panel and the fixed ones). */
+/**
+ * The arrangement as a backend setting too (lv.layout.desktop, lv.layout.phone): the agent reads and sets it (GET / PUT
+ * api/layout, POST api/layout/panel), every open page of the same kind follows, and a page opened later starts from it.
+ */
+export const layoutSettings = {
+    desktop: persistentStore<{ arrangement: Arrangement | null }>("lv.layout.desktop", { arrangement: null }),
+    phone: persistentStore<{ arrangement: Arrangement | null }>("lv.layout.phone", { arrangement: null }),
+}
+
+/** The page's arrangement and the backend's kept the same: the backend's wins when it has one (set by another page or the agent). */
+function useLayoutSync(mobile: boolean, ids: string[]) {
+    const setting = layoutSettings[mobile ? "phone" : "desktop"]
+    const remote = useStore(setting).arrangement
+    const { arrangement: local } = useStore(workspace)
+    const idsKey = ids.join("|")
+    useEffect(() => {
+        if (remote && typeof remote === "object") {
+            const next = normalizeArrangement(remote, ids)
+            if (JSON.stringify(next) !== JSON.stringify(normalizeArrangement(workspace.get().arrangement, ids))) {
+                workspace.set({ arrangement: next })
+            }
+        }
+    }, [remote, idsKey])
+    useEffect(() => {
+        if (JSON.stringify(local) !== JSON.stringify(setting.get().arrangement)) {
+            setting.set({ arrangement: local })
+        }
+    }, [local])
+}
+
+/** The workspace for these panels: `ids` (every camera and plot panel and the fixed ones). */
 export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
+    useLayoutSync(mobile, ids)
     const { arrangement: saved } = useStore(workspace)
     const idsKey = ids.join("|")
     const arrangement = useMemo(() => normalizeArrangement(saved, ids), [saved, idsKey])
@@ -139,6 +177,12 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
             },
         })
     }
+    const close = (id: string) => normalized((current) => closePanel(current, id))
+    const place = (id: string, to: Placement) => {
+        const next = placePanel(normalizeArrangement(workspace.get().arrangement, ids), id, to, frame.width)
+        arrange(() => next)
+        reveal(id, next)
+    }
     const toggleRail = (side: Side) => {
         const current = workspaceView.get()
         if (mobile) {
@@ -147,7 +191,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
             workspaceView.set({ ...current, hide: current.hide.includes(side) ? current.hide.filter((other) => other !== side) : [...current.hide, side] })
         }
     }
-    return { arrangement, layout, frame, view, mobile, ids, act, startDrag, toggleRail, toggleFocus }
+    return { arrangement, layout, frame, view, mobile, ids, act, close, place, startDrag, toggleRail, toggleFocus }
 }
 
 /** The window as the workspace sees it: above the bar (a phone: above the thumb sticks). */

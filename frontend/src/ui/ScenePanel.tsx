@@ -75,6 +75,7 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             icon="cube"
             className={`scene-slot ${off ? "off" : ""}`}
             testid="scene-panel"
+            keepMounted
             info={slot?.collapsed ? "collapsed · nothing subscribed" : app ? <SceneRate app={app} /> : undefined}
             tools={app && !off && (
                 <div className="scene-tools">

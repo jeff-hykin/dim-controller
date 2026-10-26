@@ -11,7 +11,8 @@ import { dockActions } from "./dockActions.ts"
 import { openOverlay } from "./overlay.ts"
 import { toggleRecording } from "./RecordControl.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
-import { cameraId, isCamera, resetArrangement } from "./workspace.ts"
+import { cameraId, isCamera, isPlot, resetArrangement } from "./workspace.ts"
+import { addPlot, removePlot } from "./PlotPanel.tsx"
 
 export interface CameraActions {
     addCamera: () => void
@@ -69,8 +70,11 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         for (const action of offered[id] ?? []) {
             commands.push({ id: `panel.${id}.${action.id}`, label: `${panelTitle(id)}: ${action.label}`, group: isCamera(id) ? "Cameras" : "View", hint: action.title, run: action.run })
         }
-        if (isCamera(id) && id !== cameraId(1)) {
+        if (isCamera(id)) {
             commands.push({ id: `panel.${id}.remove`, label: `${panelTitle(id)}: remove`, group: "Cameras", words: "close delete panel", run: () => cameras.removeCamera(id) })
+        }
+        if (isPlot(id)) {
+            commands.push({ id: `panel.${id}.remove`, label: `${panelTitle(id)}: close`, group: "Panels", words: "remove delete plot graph", run: () => removePlot(id) })
         }
     }
     commands.push(
@@ -79,6 +83,7 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
         { id: "layout.right", label: api.mobile ? "Open the right drawer" : api.view.hide.includes("right") ? "Show the right rail" : "Hide the right rail", group: "Layout", keys: ["]"], run: () => api.toggleRail("right") },
         ...(api.mobile ? [] : [{ id: "layout.focus", label: focused ? "Show both rails" : "Focus the main view (hide both rails)", group: "Layout" as const, keys: ["\\"], run: api.toggleFocus }]),
         { id: "camera.add", label: "Add a camera panel", group: "Cameras", words: "new video image", run: cameras.addCamera },
+        { id: "plot.add", label: "Add a plot", group: "Panels", words: "new graph chart number float time series", run: () => api.act(addPlot(), "show") },
         ...cameraTabs(connection.topics).map((tab): Command => ({
             id: `camera.topic.${tab.topic.key}`,
             label: `Camera: show ${tab.topic.name}`,

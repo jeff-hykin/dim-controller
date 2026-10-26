@@ -10,32 +10,43 @@ import { join } from "node:path"
 import process from "node:process"
 import type { Plugin } from "vite"
 
-const isUrl = (id: string) => /^https?:\/\//.test(id)
+/** the dev server serves a fetched module under this path (a bare https id would be left for the browser to fetch, uncompiled) */
+const DEV_PREFIX = "/@esm-fetch/"
+const isUrl = (id: string) => /^https?:\/\//.test(id) || id.startsWith(DEV_PREFIX)
+// (a browser folds the "//" of "https://" in a path to one slash: URL puts it back)
+const urlOf = (id: string) => id.startsWith(DEV_PREFIX) ? new URL(id.slice(DEV_PREFIX.length)).href : id
 
 export function esmFetch(aliases: Record<string, string>): Plugin {
     const cacheDir = process.env.ESM_CACHE ?? join(process.cwd(), "node_modules", ".esm-cache")
     const offline = !!process.env.ESM_OFFLINE
     const fileFor = (url: string) => join(cacheDir, createHash("sha256").update(url).digest("hex") + ".js")
+    let serving = false
+    const idFor = (url: string) => serving ? DEV_PREFIX + url : url
     return {
         name: "esm-fetch",
         enforce: "pre",
+        configResolved(config) {
+            serving = config.command === "serve"
+        },
         resolveId(id, importer) {
             if (id in aliases) {
-                return aliases[id]
+                return idFor(aliases[id])
             }
             if (isUrl(id)) {
-                return id
+                return idFor(urlOf(id))
             }
             // inside a fetched module: its absolute and relative imports are on its host
-            if (importer && isUrl(importer) && (id.startsWith("/") || id.startsWith("."))) {
-                return new URL(id, importer).href
+            // (not Vite's own /@vite, /@react-refresh)
+            if (importer && isUrl(importer) && ((id.startsWith("/") && !id.startsWith("/@")) || id.startsWith("."))) {
+                return idFor(new URL(id, urlOf(importer)).href)
             }
             return null
         },
-        async load(id) {
-            if (!isUrl(id)) {
+        async load(rawId) {
+            if (!isUrl(rawId)) {
                 return null
             }
+            const id = urlOf(rawId)
             const file = fileFor(id)
             if (existsSync(file)) {
                 return readFileSync(file, "utf8")

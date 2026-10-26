@@ -54,39 +54,56 @@ export interface CameraLayout {
 }
 
 /** the camera panels (a backend setting, so the agent can see which camera is shown) */
-export const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [{ id: 1, key: "", overlay: "" }] })
+export const cameraLayout = persistentStore<CameraLayout>("lv.cameras", { panels: [] })
 
 /** a lidar / point cloud: what makes the 3D view worth the screen */
 export const isCloudTopic = (topic: Topic) => topic.type === "sensor_msgs.PointCloud2" || /lidar/i.test(topic.name)
 
-/** The camera panels as saved, made safe: at least camera 1, unique ids. */
+/** The camera panels as saved, made safe: unique positive ids (none at all is fine: every camera closed). */
 export function cameraPanels(layout: Partial<CameraLayout> | null | undefined): PanelState[] {
     const seen = new Set<number>()
     const panels = (Array.isArray(layout?.panels) ? layout.panels : []).filter((panel) => panel && Number.isInteger(panel.id) && panel.id > 0 && !seen.has(panel.id) && seen.add(panel.id))
         .map((panel) => ({ id: panel.id, key: typeof panel.key === "string" ? panel.key : "", picked: panel.picked, overlay: typeof panel.overlay === "string" ? panel.overlay : "", depth: panel.depth }))
-    return seen.has(1) ? panels : [{ id: 1, key: "", overlay: "" }, ...panels]
+    return panels
 }
 
 const updatePanel = (id: number, patch: Partial<PanelState>) => cameraLayout.update({ panels: cameraPanels(cameraLayout.get()).map((panel) => panel.id === id ? { ...panel, ...patch } : panel) })
 
-/** Adding a camera panel, pointing the main one at a topic, and removing an added one (camera 1 always stays). */
+/** A new camera panel on the first image topic no camera shows (else the profile's preferred one, else `key`); its workspace id. */
+export function addCameraPanel(topics: Topic[], preferred: string[], key?: string): string {
+    const panels = cameraPanels(cameraLayout.get())
+    const used = new Set(panels.map((panel) => panel.key))
+    const next = key ?? (topics.filter(isImage).find((topic) => !used.has(topic.key)) ?? pickPreferred(preferred, topics))?.key ?? ""
+    const id = Math.max(0, ...panels.map((panel) => panel.id)) + 1
+    cameraLayout.update({ panels: [...panels, { id, key: next, overlay: "" }] })
+    return cameraId(id)
+}
+
+/** A camera panel gone (its × or the palette); the workspace forgets it with it. */
+export function removeCameraPanel(panelId: string) {
+    if (!isCamera(panelId)) {
+        return
+    }
+    const id = Number(panelId.split(":")[1])
+    cameraLayout.update({ panels: cameraPanels(cameraLayout.get()).filter((panel) => panel.id !== id) })
+}
+
+/** Adding a camera panel, pointing the main one at a topic (or a new panel's, with none), and removing one. */
 export function useCameraActions(app: ViewerApp | null): CameraActions {
     return {
-        addCamera: () => {
-            const panels = cameraPanels(cameraLayout.get())
-            const topics = app?.connection.status.get().topics ?? []
-            const used = new Set(panels.map((panel) => panel.key))
-            const next = topics.filter(isImage).find((topic) => !used.has(topic.key)) ?? (app ? pickPreferred(app.profile.cameras.preferred, topics) : null)
-            const id = Math.max(0, ...panels.map((panel) => panel.id)) + 1
-            cameraLayout.update({ panels: [...panels, { id, key: next?.key ?? "", overlay: "" }] })
-        },
+        addCamera: () => addCameraPanel(app?.connection.status.get().topics ?? [], app?.profile.cameras.preferred ?? []),
         showTopic: (key: string) => {
             const stage = workspace.get().arrangement.stage
-            const id = stage && isCamera(stage) ? Number(stage.split(":")[1]) : 1
+            const panels = cameraPanels(cameraLayout.get())
+            const id = stage && isCamera(stage) ? Number(stage.split(":")[1]) : panels[0]?.id
+            if (id === undefined) {
+                addCameraPanel([], [], key)
+                return
+            }
             updatePanel(id, { key, picked: key })
         },
         removeCamera: (panelId: string) => {
-            if (!isCamera(panelId) || panelId === cameraId(1)) {
+            if (!isCamera(panelId)) {
                 return
             }
             const id = Number(panelId.split(":")[1])
@@ -480,6 +497,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             icon="camera"
             className="camera-video"
             testid="camera-panel"
+            onClose={() => removeCameraPanel(cameraId(panel.id))}
             info={info || (topic ? "…" : "")}
             bodyClassName={fill ? "camera-body fill" : "camera-body"}
             tools={

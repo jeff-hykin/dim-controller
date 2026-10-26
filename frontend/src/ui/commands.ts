@@ -2,7 +2,7 @@
 // panel's own actions (the ones its header has), the layout, the view, recording, settings and the robot
 // profile's buttons. The filter (multi-word, every word must match) and the per-panel commands are pure and unit tested
 // (test/commands.test.ts).
-import { type Arrangement, isCamera, locate } from "./workspace.ts"
+import { type Arrangement, isCamera, isPlot, locate } from "./workspace.ts"
 
 export type CommandGroup = "Drive" | "Panels" | "Layout" | "View" | "Cameras" | "Record" | "Robot" | "Settings" | "Help"
 
@@ -90,6 +90,9 @@ export function panelTitle(id: string): string {
     if (isCamera(id)) {
         const n = Number(id.split(":")[1])
         return n > 1 ? `Camera ${n}` : "Camera"
+    }
+    if (isPlot(id)) {
+        return `Plot ${id.split(":")[1]}`
     }
     return ({ map: "Map", scene: "3D view", status: "Status", settings: "Settings", arms: "Arms", tf: "Transforms (TF)" } as Record<string, string>)[id] ?? id
 }
