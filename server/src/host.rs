@@ -2,7 +2,7 @@
 //! (Linux: one small file read; macOS: one kernel call), so serving it costs nothing. The page's CPU chip polls it.
 //! It also says whether that machine is a Steam Deck or runs SteamOS (the page's Steam Deck banner), and its network:
 //! the IP it reaches the network from and its WiFi signal (the Network modal; Linux: /proc/net/wireless, macOS:
-//! system_profiler, asked at most every WIFI_SECS).
+//! system_profiler), read in the background every WIFI_SECS.
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +25,13 @@ struct Sample {
 static CPU: Mutex<Option<Sample>> = Mutex::new(None);
 
 pub fn spawn() {
+    tokio::spawn(async move {
+        loop {
+            let reading = wifi_now().await;
+            *WIFI.lock().unwrap() = reading;
+            tokio::time::sleep(Duration::from_secs(WIFI_SECS)).await;
+        }
+    });
     tokio::spawn(async move {
         let mut previous = cpu_times();
         loop {
@@ -123,8 +130,9 @@ async fn wifi_now() -> Option<(String, f64)> {
         return parse_proc_wireless(&tokio::fs::read_to_string("/proc/net/wireless").await.ok()?);
     }
     if cfg!(target_os = "macos") {
+        // system_profiler can take several seconds: this runs in the background, never under a request
         let output = tokio::time::timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(30),
             tokio::process::Command::new("system_profiler").args(["SPAirPortDataType", "-json"]).kill_on_drop(true).output(),
         )
         .await
@@ -135,19 +143,8 @@ async fn wifi_now() -> Option<(String, f64)> {
     None
 }
 
-/// The WiFi reading, asked again once it's WIFI_SECS old.
-async fn wifi() -> Option<(String, f64)> {
-    static CACHE: tokio::sync::Mutex<Option<(std::time::Instant, Option<(String, f64)>)>> = tokio::sync::Mutex::const_new(None);
-    let mut cache = CACHE.lock().await;
-    if let Some((at, reading)) = cache.as_ref() {
-        if at.elapsed() < Duration::from_secs(WIFI_SECS) {
-            return reading.clone();
-        }
-    }
-    let reading = wifi_now().await;
-    *cache = Some((std::time::Instant::now(), reading.clone()));
-    reading
-}
+/// the latest WiFi reading, refreshed every WIFI_SECS in the background (spawn)
+static WIFI: Mutex<Option<(String, f64)>> = Mutex::new(None);
 
 /// The address this machine reaches the network from (the route to a public address; a UDP connect sends nothing).
 fn local_ip() -> Option<String> {
@@ -166,7 +163,7 @@ pub async fn get() -> Response {
         "steamDeck": steam_deck,
         "steamOs": steam_os,
         "ip": local_ip(),
-        "wifi": wifi().await.map(|(interface, dbm)| json!({ "interface": interface, "signalDbm": dbm })),
+        "wifi": WIFI.lock().unwrap().clone().map(|(interface, dbm)| json!({ "interface": interface, "signalDbm": dbm })),
     }))
     .into_response()
 }

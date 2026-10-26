@@ -110,8 +110,8 @@ export function ArmPanel({ app }: { app: ViewerApp }) {
                                 </div>
                             ))}
                         </div>
-                        <Field inline label="Linear"><Stepper label="End effector linear speed" min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
-                        <Field inline label="Angular"><Stepper label="End effector angular speed" min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
+                        <Field inline label="Moving speed"><Stepper label="End effector moving speed" min={0.005} max={0.25} step={0.005} value={settings.linear} format={(speed) => `${(speed * 100).toFixed(1)} cm/s`} onChange={(linear) => arm.settings.update({ linear })} /></Field>
+                        <Field inline label="Turning speed"><Stepper label="End effector turning speed" min={0.05} max={1.5} step={0.05} value={settings.angular} format={(speed) => `${speed.toFixed(2)} rad/s`} onChange={(angular) => arm.settings.update({ angular })} /></Field>
                     </>
                 )
                 : <p className="hint">What's running has no <code>ee_twist_command</code> input (an arm teleop blueprint has one: keyboard-teleop-*, coordinator-teleop-*).</p>}
