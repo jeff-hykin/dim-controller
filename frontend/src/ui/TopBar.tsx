@@ -1,4 +1,4 @@
-// The page's one bar, across the top (desktop): STOP on the left, the gamepad beside it (a click remaps it) and,
+// The page's one bar, along the bottom (desktop): STOP on the left, the gamepad beside it (a click remaps it) and,
 // disengaged, why and Reconnect; the link's chip in the middle (it opens the Network modal); on the right the chips
 // that only show when they matter (the lease, TF trouble, a busy CPU), Record, the battery and the Settings button, whose number counts the streams a
 // never-used kind of panel could show (ui/panelCatalog.ts). A panel's own buttons are in the panel, never here. A phone
@@ -21,8 +21,8 @@ export function TopBar({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const halt = useStore(app.drive.state).halt
     const stop = () => (arm ? app.arm.stop() : app.drive.stop())
     return (
-        <header className="top-bar" data-testid="top-bar">
-            <div className="top-bar-side left">
+        <header className="main-bar" data-testid="main-bar">
+            <div className="main-bar-side left">
                 <Button className="top-stop" data-testid="stop-button" title="Stop now (Space, always)" onPointerDown={stop} onClick={stop}>
                     <span>STOP</span>
                     <Kbd className="lv-kbd">Space</Kbd>
@@ -30,8 +30,8 @@ export function TopBar({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 <GamepadChip />
                 {halt && !arm && <DisengagedNotice app={app} halt={halt} />}
             </div>
-            <div className="top-bar-middle"><LinkChip app={app} /></div>
-            <div className="top-bar-side right">
+            <div className="main-bar-middle"><LinkChip app={app} /></div>
+            <div className="main-bar-side right">
                 <StatusChips app={app} api={api} battery={false} gamepad={false} />
                 <RecordControl app={app} />
                 <BatteryChip />

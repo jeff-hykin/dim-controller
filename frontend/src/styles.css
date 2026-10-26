@@ -70,7 +70,7 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
 /* recording sits in the bar (a phone: its top-right corner): the Record button and "…" (ui/RecordControl.tsx) */
-.top-bar .record-control, .phone-corners .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
+.main-bar .record-control, .phone-corners .record-control { display: flex; align-items: center; gap: 4px; padding: 0; background: none; border: 0; box-shadow: none; backdrop-filter: none;
     /* recording is red in every skin: Desktop's --close-red, else a fixed red (Portal's --danger is amber, and a record button should read as one) */
     --record: var(--close-red, #ef5350); }
 .record-toggle { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -1049,20 +1049,26 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .plot-inline { display: inline-flex; align-items: center; gap: 3px; font: 11px var(--sans); color: var(--muted-fg); }
 .plot-inline .dr-input-wrap, .plot-inline .dr-number { width: 64px; }
 
-/* ── the top bar (ui/TopBar.tsx): STOP left, the link in the middle, chips, Record and Settings right ── */
-.app.desktop { --lv-top-h: 48px; }
-.top-bar { position: absolute; left: 0; right: 0; top: 0; z-index: 30; height: var(--lv-top-h); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-    padding: 0 8px; background: var(--backdrop, var(--lv-bar)); backdrop-filter: var(--blur, none); border-bottom: 1px solid var(--border-strong); }
-.top-bar-side { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.top-bar-side.right { justify-content: flex-end; }
-.top-bar-middle { display: flex; justify-content: center; }
-.top-bar .record-control { position: static; }
-.app.desktop .record-options { top: calc(var(--lv-top-h) + 8px); bottom: auto; max-height: calc(100vh - var(--lv-top-h) - 24px - var(--dim-inset-bottom)); }
-.app .top-bar .dr-btn.top-stop { display: inline-flex; align-items: center; gap: 10px; height: 36px; padding: 0 20px; flex: none; font: 800 15px var(--sans); letter-spacing: 0.12em;
+/* ── the bar (ui/TopBar.tsx), along the bottom: STOP left, the link in the middle, chips, Record and Settings right; slim,
+   its buttons borderless until hovered ── */
+.app.desktop { --lv-bar-h: 44px; }
+:root { --lv-panel-gap: 6px; } /* read by the workspace (ui/Workspace.tsx useFrame) from <html>; a phone has none */
+.main-bar { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; height: var(--lv-bar-h); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+    padding: 0 6px; background: var(--backdrop, var(--lv-bar)); backdrop-filter: var(--blur, none); }
+.main-bar-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.main-bar-side.right { justify-content: flex-end; }
+.main-bar-middle { display: flex; justify-content: center; }
+.main-bar .record-control { position: static; }
+.main-bar .dr-btn:not(.top-stop), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
+.main-bar .record-split, .main-bar .record-control .record-split > .record-more { border-color: transparent; }
+.main-bar .dr-btn:not(.top-stop):hover, .main-bar .bar-button:hover { background: var(--hover); }
+.main-bar .top-settings { margin-left: 9px; }
+.main-bar .top-settings::before { content: ""; position: absolute; left: -7px; top: 6px; bottom: 6px; border-left: 1px solid var(--border); }
+.app .main-bar .dr-btn.top-stop { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 16px; flex: none; font: 800 14px var(--sans); letter-spacing: 0.12em;
     color: var(--primary-fg); background: var(--lv-stop); border-color: var(--lv-stop); }
-.app .top-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
+.app .main-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
 .top-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
-.top-bar .drive-halt { display: flex; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--warn); }
+.main-bar .drive-halt { display: flex; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--warn); }
 .top-settings { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .count-badge { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     background: var(--primary); color: var(--primary-fg); font: 700 10.5px var(--mono); border: 2px solid var(--card); border-radius: var(--radius-pill, 9px); pointer-events: none; }
@@ -1108,11 +1114,11 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .ws-empty-card { all: unset; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; text-align: center; color: var(--muted-fg); font: 12.5px var(--sans); }
 .ws-empty-card b { font: 600 22px var(--sans); color: var(--fg); }
 .ws-empty-card:hover b { color: var(--primary); }
-.ws-empty-arrow { position: absolute; right: 48px; top: 6px; width: min(520px, 45%); height: min(330px, 45%); pointer-events: none; }
+.ws-empty-arrow { position: absolute; right: 48px; bottom: 6px; width: min(520px, 45%); height: min(330px, 45%); pointer-events: none; }
 .ws-empty-arrow path { stroke: var(--primary); stroke-width: 3; fill: none; stroke-dasharray: 8 7; }
 .ws-empty-arrow marker path { fill: var(--primary); stroke: none; }
 /* the top bar's battery keeps one width whatever it reads ("9%" to "100%", or volts) */
-.top-bar .bar-battery { min-width: 78px; box-sizing: border-box; justify-content: center; font-variant-numeric: tabular-nums; }
+.main-bar .bar-battery { min-width: 78px; box-sizing: border-box; justify-content: center; font-variant-numeric: tabular-nums; }
 /* the gamepad modal */
 .gamepad-modal { display: flex; flex-direction: column; gap: 8px; }
 .pad-held { display: flex; flex-wrap: wrap; gap: 4px; min-height: 28px; align-items: center; }
@@ -1204,3 +1210,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-fold > .dr-disclosure__summary::before { content: "›"; display: inline-block; width: 10px; color: var(--muted-fg); font-size: 15px; transition: transform 120ms; }
 .set-fold[open] > .dr-disclosure__summary::before { content: "›"; transform: rotate(90deg); }
 .set-fold > .dr-disclosure__summary:hover { color: var(--primary); }
+.app-settings .set-fold:not([open]) > .dr-disclosure__summary { margin-bottom: 0; }
+.app-settings .set-fold:not([open]) + .set-fold { margin-top: -10px; }
+
+/* ── desktop panels as cards: the workspace leaves --lv-panel-gap between them (ui/workspace.ts layoutWorkspace), each docked
+   panel gets a hairline frame and rounded corners instead of the shared seam; in-panel buttons go borderless until hovered ── */
+.app.desktop .lv-panel.zone-stage, .app.desktop .lv-panel.zone-left, .app.desktop .lv-panel.zone-right { border-width: 1px; border-color: var(--border); border-radius: var(--radius-lg); }
+.app.desktop .lv-panel.zone-left > .panel-head, .app.desktop .lv-panel.zone-right > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent); }
+.app.desktop .lv-panel > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent); }
+.panel-tools .dr-btn:not(.dr-btn--primary), .camera-tools .dr-btn:not(.dr-btn--primary) { border-color: transparent; background: transparent; box-shadow: none; }
+.panel-tools .dr-btn:not(.dr-btn--primary):hover, .camera-tools .dr-btn:not(.dr-btn--primary):hover { background: var(--hover); }

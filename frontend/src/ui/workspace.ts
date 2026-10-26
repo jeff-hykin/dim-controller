@@ -346,9 +346,11 @@ export interface Frame {
     height: number
     /** where the panels start (the window's top: nothing across it) */
     top: number
-    /** where the action dock (or, on a phone, Desktop's dock) starts */
+    /** where the bar (or, on a phone, Desktop's dock) starts */
     bottom: number
     mobile: boolean
+    /** desktop: the space between docked panels (and around them), so each reads as its own card */
+    gap?: number
 }
 
 /** This page's view state (not saved): the phone drawer that's open, and the rails hidden for now (both: focus). */
@@ -400,8 +402,13 @@ function stack(arrangement: Arrangement, ids: string[], box: Rect): Record<strin
 export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: View = SHOWN): WorkspaceLayout {
     const { width } = frame
     const slots: Record<string, Slot> = {}
+    const half = frame.mobile ? 0 : (frame.gap ?? 0) / 2
     const place = (id: string, rect: Rect, zone: Zone, hidden = false) => {
-        slots[id] = { rect: round(rect), zone, collapsed: zone !== "stage" && arrangement.collapsed.includes(id), hidden }
+        // docked panels give up half the gap on every side: a full gap between neighbours, half at the window's edges
+        // (a folded one keeps its header's full height)
+        const collapsed = zone !== "stage" && arrangement.collapsed.includes(id)
+        const inset = half && zone !== "float" && !hidden ? { x: rect.x + half, y: rect.y + half, width: rect.width - 2 * half, height: collapsed ? rect.height : rect.height - 2 * half } : rect
+        slots[id] = { rect: round(inset), zone, collapsed, hidden }
     }
     if (frame.mobile) {
         // the stage fills the screen above the thumb sticks; the rails are drawers over it (never over

@@ -1,4 +1,4 @@
-// The page: one bar across the top (ui/TopBar.tsx: STOP, the link, the chips that matter, Record, Settings) over the
+// The page: one bar along the bottom (ui/TopBar.tsx: STOP, the link, the chips that matter, Record, Settings) over the
 // workspace (a main view between a left and a right rail, panels that can float over it; ui/workspace.ts). Settings
 // opens the drawer that adds panels (ui/SettingsDrawer.tsx); held drive keys show over the main view's bottom.
 // Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
@@ -109,7 +109,7 @@ export function App() {
 const placeholderRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const placeholderRuns = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
 
-/** Nothing in the main view: "Add a panel", and an arrow up to the Settings button that adds one (a phone: its panel list). */
+/** Nothing in the main view: "Add a panel", and an arrow down to the Settings button that adds one (a phone: its panel list). */
 function EmptyStage({ mobile }: { mobile: boolean }) {
     if (mobile) {
         return (
@@ -125,9 +125,9 @@ function EmptyStage({ mobile }: { mobile: boolean }) {
                 <b>Add a panel</b>
                 <span>Camera, 3D view, map or plot: they're under Settings.</span>
             </button>
-            <svg className="ws-empty-arrow" viewBox="0 0 520 330" preserveAspectRatio="xMaxYMin meet" aria-hidden="true">
+            <svg className="ws-empty-arrow" viewBox="0 0 520 330" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
                 <defs><marker id="ws-arrow-head" markerWidth="12" markerHeight="12" refX="7" refY="6" orient="auto"><path d="M0 0L12 6 0 12z" /></marker></defs>
-                <path d="M40 320 C 220 300, 420 230, 470 30" markerEnd="url(#ws-arrow-head)" />
+                <path d="M40 10 C 220 30, 420 100, 470 300" markerEnd="url(#ws-arrow-head)" />
             </svg>
         </div>
     )

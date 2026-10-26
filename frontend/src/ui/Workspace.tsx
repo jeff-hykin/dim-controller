@@ -203,7 +203,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     return { arrangement, layout, frame, view, mobile, ids, act, close, place, startDrag, toggleRail, toggleFocus }
 }
 
-/** The window as the workspace sees it: above the bar (a phone: above the thumb sticks). */
+/** The window as the workspace sees it: above the bar along the bottom (a phone: above the thumb sticks). */
 function useFrame(mobile: boolean, underBar: boolean): Frame {
     const [, setTick] = useState(0)
     useEffect(() => {
@@ -215,7 +215,7 @@ function useFrame(mobile: boolean, underBar: boolean): Frame {
         const bars = new ResizeObserver(again)
         const watched = new Set<Element>()
         const watch = () => {
-            for (const element of document.querySelectorAll(".top-bar, .drive-hud.mobile, .phone-corners")) {
+            for (const element of document.querySelectorAll(".main-bar, .drive-hud.mobile, .phone-corners")) {
                 if (!watched.has(element)) {
                     watched.add(element)
                     bars.observe(element)
@@ -244,10 +244,11 @@ function useFrame(mobile: boolean, underBar: boolean): Frame {
     return {
         width: innerWidth,
         height,
-        // the panels start under the top bar (a phone: below its corner buttons)
-        top: (mobile ? document.querySelector(".phone-corners") : document.querySelector(".top-bar"))?.getBoundingClientRect().bottom ?? 0,
-        bottom: dock ?? height - px("--dim-inset-bottom", 0),
+        // a phone: the panels start below its corner buttons; desktop: at the top, down to the bar along the bottom
+        top: mobile ? document.querySelector(".phone-corners")?.getBoundingClientRect().bottom ?? 0 : 0,
+        bottom: dock ?? (!mobile && !underBar ? document.querySelector(".main-bar")?.getBoundingClientRect().top : undefined) ?? height - px("--dim-inset-bottom", 0),
         mobile,
+        gap: px("--lv-panel-gap", 0),
     }
 }
 
