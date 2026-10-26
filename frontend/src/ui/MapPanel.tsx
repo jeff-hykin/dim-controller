@@ -328,7 +328,7 @@ function token(name: string, fallback: string): Rgba {
 
 function themePalette(): Palette {
     const background = token("--scene-bg, var(--bg)", "#05070d")
-    const fg = token("--fg", "#ece8f0"), muted = token("--muted-fg", "#8e8898"), primary = token("--primary", "#7cc8ec")
+    const fg = token("--fg", "#e6eaf2"), muted = token("--muted-fg", "#848b9b"), primary = token("--primary", "#7cc8ec")
     const opaque = (color: Rgba): Rgba => [color[0], color[1], color[2], 255]
     const base = opaque(background)
     const clear: Rgba = [0, 0, 0, 0]
