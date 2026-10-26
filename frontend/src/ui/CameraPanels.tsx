@@ -539,9 +539,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
                         <Icon name={fill ? "fill" : "fit"} size={15} />
                         <span className="icon-label">{fill ? "Fill" : "Fit"}</span>
                     </Button>
-                    <Button className="dr-btn--icon icon-button camera-undistort labeled" pressed={undistort} title={undistortTitle} onClick={toggleUndistort}>
+                    <Button className="dr-btn--icon icon-button camera-undistort" pressed={undistort} title={undistortTitle} aria-label="Undistort" onClick={toggleUndistort}>
                         <Icon name="undistort" size={15} />
-                        <span className="icon-label">Undistort</span>
                     </Button>
                     {topic && (
                         <div className={`camera-quality panel-chrome ${qualityOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
