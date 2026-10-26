@@ -46,7 +46,7 @@
                         outputHashMode = "recursive";
                         outputHashAlgo = "sha256";
                         outputHash = {
-                            aarch64-darwin = "sha256-7pBtJpxnSLBT/SDgaHYzFj8TizogNVMTC8tcceJDe30=";
+                            aarch64-darwin = "";
                             x86_64-darwin = "";
                             x86_64-linux = "sha256-jE4I4eaFjDNOk94eEjVCPeY6XokOuk/OWyLJttFF0P4=";
                             aarch64-linux = "";
