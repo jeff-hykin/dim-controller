@@ -1006,7 +1006,7 @@
     "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.10/src/vendor/dim-app/vendor/zenoh-gateway/vendor/fzstd.js": "4ccc069de1a9a7641d7083ce87efce765e2a43a1457757c5743d45f0f54b914a",
     "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.10/src/vendor/dim-app/vendor/zenoh-gateway/zenoh_gateway.js": "33c9f08b52ea5c3a63aa120242973772ce8e783ee6b23b4d8f844adc717a5c13",
     "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.10/src/vendor/dim-app/zenoh.js": "ec3c3f77a95b8021765e2827cb51db4b5c6a2a9961c6bd00d579e6c5750968df",
-    "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.10/src/vendor/lcm_schemas.js": "baa989691a821e48eaa2789bdd3706b28a95977e872ac4a22b311e15f6cb331e",
+    "https://raw.githubusercontent.com/jeff-hykin/dimos-react/v0.3.10/src/vendor/lcm_schemas.js": "baa989691a821e48eaa2789bdd3706b28a95977e872ac4a22b311e15f6cb331e"
   },
   "workspace": {
     "dependencies": [

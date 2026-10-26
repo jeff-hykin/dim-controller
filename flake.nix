@@ -46,7 +46,7 @@
                         outputHashMode = "recursive";
                         outputHashAlgo = "sha256";
                         outputHash = {
-                            aarch64-darwin = "";
+                            aarch64-darwin = "sha256-7pBtJpxnSLBT/SDgaHYzFj8TizogNVMTC8tcceJDe30=";
                             x86_64-darwin = "";
                             x86_64-linux = "sha256-jE4I4eaFjDNOk94eEjVCPeY6XokOuk/OWyLJttFF0P4=";
                             aarch64-linux = "";
@@ -71,7 +71,7 @@
                         dontFixup = true;
                         outputHashMode = "recursive";
                         outputHashAlgo = "sha256";
-                        outputHash = "sha256-+rdwbEr5Qk6LkdCD928iQh8dMqTYhZIId4WuQStcBkY=";
+                        outputHash = "sha256-e4nOq6ujIcccm2GrryRMWFvc1k7ULtE88VsPNF1R/pw=";
                     };
 
                     # the page: React + Vite against those modules and that dimos-react cache, offline
