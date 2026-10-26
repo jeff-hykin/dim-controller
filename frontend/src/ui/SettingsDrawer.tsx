@@ -156,7 +156,7 @@ export function SettingsDrawer({ app, api }: { app: ViewerApp; api: WorkspaceApi
     return (
         <>
             <div className="drawer-scrim" data-testid="drawer-scrim" style={rectStyle(api.layout.area)} onClick={closeDrawer} />
-            <aside className="settings-drawer left" data-testid="panel-drawer" style={{ ...rectStyle(api.layout.area), width: 280 }} aria-label="Add a panel">
+            <aside className="settings-drawer left" data-testid="panel-drawer" style={{ ...rectStyle(api.layout.area), width: 320 }} aria-label="Add a panel">
                 <h3 className="drawer-head">Click or drag a panel</h3>
                 <div className="panel-thumbs">
                     {PANEL_KINDS.map(({ kind, title, icon }) => {
