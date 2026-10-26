@@ -2,8 +2,8 @@
 import { Icon as LibIcon } from "dimos-react"
 
 const OWN_ICON_PATHS: Record<string, string> = {
-    // a window lifted off the one under it (pop out: float)
-    float: "M9 9h12v11H9z M15 5H3v11h3",
+    // pop out (float): a box with an arrow leaving it
+    float: "M18 14v6H4V6h6 M14 4h6v6 M20 4l-9 9",
     // a frame with a picture filling its middle (make this the main view)
     main: "M3 4h18v16H3z M7 8h10v8H7z",
     // a frame with a rail down its left side (dock into a rail)
