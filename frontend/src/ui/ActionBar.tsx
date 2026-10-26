@@ -1,6 +1,6 @@
 // The action bar (core/actionButtons.ts): this machine's buttons along the bottom of the main view, scrolling sideways;
 // a click runs the button's shell command and shows how it went. Edit adds a button (label + command) or removes one
-// for good. With no buttons, or hidden with its ‹, it's a single › at the edge.
+// for good. Folded by default (and with no buttons, or hidden with its ‹): a single › at the edge.
 import { useEffect, useState } from "react"
 import { Button, Card, TextInput } from "dimos-react"
 import { useStore } from "../core/store.ts"
@@ -9,11 +9,12 @@ import { Icon } from "./icons.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 
 const HIDDEN_KEY = "lv.actionBar.hidden"
+/** folded until this viewer opens it (Jeff 10-26: folded by default) */
 const readHidden = () => {
     try {
-        return localStorage.getItem(HIDDEN_KEY) === "1"
+        return localStorage.getItem(HIDDEN_KEY) !== "0"
     } catch {
-        return false
+        return true
     }
 }
 
@@ -45,7 +46,7 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
     const hide = (value: boolean) => {
         setHidden(value)
         try {
-            localStorage.setItem(HIDDEN_KEY, value ? "1" : "")
+            localStorage.setItem(HIDDEN_KEY, value ? "1" : "0")
         } catch {
             // no storage: hidden for this page only
         }
@@ -78,7 +79,7 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
     return (
         <div className="action-bar" style={place} data-testid="action-bar">
             <Button className="dr-btn--icon action-bar-toggle" title="Hide the action buttons" aria-label="Hide the action bar" onClick={() => {
-                hide(buttons.length > 0)
+                hide(true)
                 setOpened(false)
                 setEditing(false)
                 setAdding(false)
