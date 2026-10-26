@@ -1125,7 +1125,27 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .drive-hint .key.arrow { border-color: var(--primary); color: var(--primary); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent); }
 .drive-hint .key.shift.wide { width: auto; padding: 0 14px; gap: 6px; font: 600 11.5px var(--sans); }
 .drive-hint .key.shift .dim { color: var(--muted-fg); font-weight: 400; }
-.scene-waiting { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
+.scene-waiting { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; padding: 40px 12px 12px; box-sizing: border-box; overflow: hidden; }
+/* the joint tabs take the 3D view's right side: the hint centres in what's left */
+.scene-slot:has(.joint-side) .scene-waiting { right: min(340px, 45%); }
+.drive-hint { max-width: min(320px, 100%); }
+/* a narrow or short view: smaller keys, then only the keys and what it's waiting for */
+@container (max-width: 380px) {
+    .drive-hint .key { width: 26px; height: 26px; font-size: 11px; }
+    .drive-hint .key.shift.wide { padding: 0 10px; }
+    .drive-hint { gap: 6px; font-size: 11px; }
+}
+@container (max-width: 260px) {
+    .drive-hint p:not(:has(b)) { display: none; }
+}
+/* a short view (a stacked side panel): the keys and what it's waiting for, then only the waiting */
+.scene-slot > .panel-content, .camera-video > .panel-content { container: hint-area / size; }
+@container hint-area (max-height: 300px) {
+    .drive-hint p:not(:has(b)) { display: none; }
+}
+@container hint-area (max-height: 190px) {
+    .drive-hint .drive-hint-keys { display: none; }
+}
 /* joint control in the 3D view: Plan / Execute across its top, the tabs down its right side */
 .joint-control-toggle { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .joint-control-toggle[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
@@ -1136,3 +1156,5 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* Settings: the keyboard shortcuts, first and full width */
 .keyboard-shortcuts-button { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start; margin: 4px 0 8px; }
 .keyboard-shortcuts-button .lv-kbd { margin-left: auto; }
+/* the first-run notice over the main view says it instead */
+.app:has(.stage-message) .zone-stage .drive-hint { visibility: hidden; }
