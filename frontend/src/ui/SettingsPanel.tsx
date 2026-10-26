@@ -1,5 +1,5 @@
-// Settings: driving (the wheeled base's controls, always; no format picker):
-// the keyboard shortcuts, driving and turning speed, and the rest under "Advanced" sections. A panel's own settings are
+// Settings: driving (the wheeled base's controls, always; no format picker), grouped like a phone's settings
+// (ui/SettingsGroup.tsx): speeds and the keyboard shortcuts, then folded "Advanced" groups. A panel's own settings are
 // on its cog: the 3D view's (SceneSettings), a camera's (CameraSettings), the map's (MapPanel.tsx), a plot's.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -12,7 +12,8 @@ import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
-import { DrivePanel } from "./DrivePanel.tsx"
+import { DriveKeyboardFold, DrivePanel, DriveProfileFold } from "./DrivePanel.tsx"
+import { SettingsFold, SettingsLink } from "./SettingsGroup.tsx"
 import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
@@ -25,24 +26,28 @@ import { Stepper } from "./Stepper.tsx"
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
     return (
-        <div className="settings-panel">
+        <div className="settings-panel app-settings">
             {robot.type !== "arm" && (
-                <section className="settings-section" data-section="drive">
-                    <Heading level={3}>Driving</Heading>
+                <>
                     <DrivePanel app={app} />
-                    <Disclosure title="Advanced gamepad" defaultOpen={false} persistKey="lv.settings.advanced.gamepad">
+                    <h4 className="set-group-title set-advanced-title">Advanced</h4>
+                    <DriveKeyboardFold app={app} />
+                    <SettingsFold title="Gamepad" persistKey="lv.settings.advanced.gamepad" note="Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again).">
                         <GamepadSettingsFields />
                         <RemapButton />
+                    </SettingsFold>
+                    <SettingsFold title="Joystick topic" persistKey="lv.settings.advanced.joy" note={<>The raw gamepad, drive keys and thumb sticks as <code>{JOY_TOPIC}</code> ({JOY_TYPE.replace(".", "/")}), at most {JOY_HZ}/s; nothing while idle. It drives nothing: it's for recordings.</>}>
                         <JoySettingsFields />
-                    </Disclosure>
-                    <Disclosure title="Advanced link safety" defaultOpen={false} persistKey="lv.settings.advanced.link">
-                        <Field inline label="Max latency (ms)" title="Over this (or when the link drops), driving disengages until you press Reconnect.">
+                    </SettingsFold>
+                    <SettingsFold title="Link safety" persistKey="lv.settings.advanced.link" note="Over this latency, or when the link drops, driving stops until you press Reconnect.">
+                        <Field inline className="set-row" label="Max latency">
                             <MaxLatencyInput app={app} />
                         </Field>
-                    </Disclosure>
-                </section>
+                    </SettingsFold>
+                    <DriveProfileFold app={app} />
+                </>
             )}
-            <p className="hint">Camera, 3D view, map and plot settings are on each panel's cog.</p>
+            <p className="set-footer">Camera, 3D view, map and plot settings are on each panel's cog.</p>
         </div>
     )
 }
@@ -93,44 +98,37 @@ export function CameraSettings({ app }: { app: ViewerApp }) {
     )
 }
 
-/** Settings → Drive → Gamepad: its dead zone (drift) and inverted forward / back */
+/** Settings → Advanced → Gamepad: its dead zone (drift) and inverted forward / back */
 function GamepadSettingsFields() {
     const settings = useStore(gamepadSettings)
     return (
-        <div className="field-block gamepad-settings" data-testid="gamepad-settings">
-            <span className="field-label">Gamepad</span>
-            <Field inline label="Dead zone" title="how far a stick moves before it drives (raise it for a drifting stick)">
+        <>
+            <Field inline className="set-row" label="Dead zone" title="how far a stick moves before it drives (raise it for a drifting stick)" data-testid="gamepad-settings">
                 <Stepper label="Dead zone" value={settings.deadZone} min={0.05} max={0.4} step={0.01} onChange={(deadZone) => gamepadSettings.update({ deadZone })} format={(value) => `${Math.round(value * 100)}%`} />
             </Field>
-            <Field inline label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
-            <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>
-        </div>
+            <Field inline className="set-row" label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
+        </>
     )
 }
 
-/** Settings → Advanced gamepad: the remapping (the same modal as the gamepad chip's). */
+/** Settings → Advanced → Gamepad: the remapping (the same modal as the gamepad chip's). */
 function RemapButton() {
     const [open, setOpen] = useState(false)
     return (
         <>
-            <Button size="sm" onClick={() => setOpen(true)}>Remap the gamepad…</Button>
+            <SettingsLink label="Remap buttons" icon="gamepad" onClick={() => setOpen(true)} />
             <GamepadModal open={open} onClose={() => setOpen(false)} />
         </>
     )
 }
 
-/** Settings → Drive → Joy: the raw input (pad, keys, thumb sticks) as sensor_msgs/Joy, on or off */
+/** Settings → Advanced → Joystick topic: the raw input (pad, keys, thumb sticks) as sensor_msgs/Joy, on or off */
 function JoySettingsFields() {
     const settings = useStore(joySettings)
     return (
-        <div className="field-block joy-settings" data-testid="joy-settings">
-            <Field inline label="Publish Joy" title="the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy (drives nothing; for recordings and Joy readers)">
-                <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
-            </Field>
-            <p className="hint" data-testid="joy-topic">
-                Topic <code>{JOY_TOPIC}</code> ({JOY_TYPE.replace(".", "/")}), on each change, at most {JOY_HZ}/s; nothing while idle.
-            </p>
-        </div>
+        <Field inline className="set-row" label="Publish" title="the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy (drives nothing; for recordings and Joy readers)" data-testid="joy-settings">
+            <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
+        </Field>
     )
 }
 
@@ -144,6 +142,7 @@ function MaxLatencyInput({ app }: { app: ViewerApp }) {
             data-testid="max-latency"
             min={1}
             step={100}
+            unit="ms"
             value={saved}
             onChange={(value) => app.settings.update({ maxLatencyMs: Math.round(value) })}
         />

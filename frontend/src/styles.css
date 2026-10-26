@@ -1166,3 +1166,41 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .keyboard-shortcuts-button .lv-kbd { margin-left: auto; }
 /* the first-run notice over the main view says it instead */
 .app:has(.stage-message) .zone-stage .drive-hint { visibility: hidden; }
+
+/* ── Settings (ui/SettingsPanel.tsx, ui/SettingsGroup.tsx): grouped like a phone's settings: a quiet heading, rows in one
+   rounded card (label left, control right, hairlines between), a note under the card; folded groups open under a title ── */
+.app-settings { display: flex; flex-direction: column; gap: 18px; padding-top: 4px; }
+.app-settings .set-group { margin: 0; }
+.set-group-title { margin: 0 0 6px 12px; font: 600 11px var(--sans); color: var(--muted-fg); letter-spacing: 0.02em; text-transform: none; }
+.set-advanced-title { margin: 6px 0 -10px 12px; }
+.set-card { border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--fg) 3%, var(--card)); overflow: hidden; }
+.set-note { margin: 6px 12px 0; color: var(--muted-fg); font-size: 11.5px; line-height: 1.45; }
+.set-note code { font: 11px var(--mono); color: var(--fg); }
+.set-note .lv-kbd { font-size: 10px; padding: 0 4px; }
+.set-footer { margin: 0 12px; color: var(--muted-fg); font-size: 11.5px; }
+.set-dim { color: var(--muted-fg); }
+.app-settings .set-row { box-sizing: border-box; min-height: 44px; padding: 7px 8px 7px 12px; margin: 0; gap: 10px; }
+.app-settings .set-card > * + * { border-top: 1px solid var(--border); }
+.app-settings .set-row.dr-field--inline > .dr-field-label { width: auto; flex: 1; font-size: 13px; color: var(--fg); }
+.app-settings .set-row.dr-field--inline > .dr-field-control { flex: none; justify-content: flex-end; }
+.app-settings .set-row .speed-stepper { gap: 2px; }
+.app-settings .set-row .speed-stepper .speed-value { min-width: 86px; }
+.app-settings .set-row .dr-input-wrap.number { width: 96px; }
+/* a row that opens something */
+.set-link { display: flex; align-items: center; width: 100%; border: 0; background: none; color: var(--fg); font: 13px var(--sans); text-align: left; cursor: pointer; }
+.set-link:hover { background: var(--hover); }
+.set-link:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--primary); }
+.set-link svg { color: var(--muted-fg); flex: none; }
+.set-link-label { flex: 1; }
+.set-chevron { color: var(--muted-fg); font-size: 18px; line-height: 1; padding: 0 4px 0 2px; }
+/* the output topic: Auto / Custom on its line, the list below in the same box either way (no jump) */
+.set-row-stack { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-right: 8px; }
+.set-row-line { display: flex; align-items: center; gap: 10px; }
+.set-row-line > .dr-field-label { flex: 1; font-size: 13px; color: var(--fg); }
+.app-settings .drive-topics { box-sizing: border-box; width: 100%; min-height: 72px; margin: 0; padding: 8px 10px; font: 12px/18px var(--mono); border-radius: 6px; resize: vertical; }
+.drive-topics-auto { border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 60%, transparent); color: var(--muted-fg); }
+/* a folded group's title: a row of its own, the chevron turning */
+.set-fold > .dr-disclosure__summary { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; padding: 2px 12px; font: 600 12px var(--sans); color: var(--fg); letter-spacing: 0; text-transform: none; }
+.set-fold > .dr-disclosure__summary::before { content: "›"; display: inline-block; width: 10px; color: var(--muted-fg); font-size: 15px; transition: transform 120ms; }
+.set-fold[open] > .dr-disclosure__summary::before { content: "›"; transform: rotate(90deg); }
+.set-fold > .dr-disclosure__summary:hover { color: var(--primary); }

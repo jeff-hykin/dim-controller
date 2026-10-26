@@ -1,11 +1,11 @@
-// Drive settings: the keyboard shortcuts, driving and turning speed, then folded away: the output topic (auto or a
-// list) and up / down speed, and a profile's extra controls. A joint is jogged from the 3D view's joint control.
+// Drive settings: driving and turning speed and the keyboard shortcuts, then folded away (Advanced): the output topic
+// (auto or a list) and up / down speed, and a profile's extra controls. A joint is jogged from the 3D view's joint control.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
-import { Button, Checkbox, Disclosure, Field, Kbd, TextArea } from "dimos-react"
-import { Icon } from "./icons.tsx"
+import { Field, Kbd, Segmented, TextArea } from "dimos-react"
 import { openOverlay } from "./overlay.ts"
 import { useEffect, useState } from "react"
+import { SettingsGroup, SettingsFold, SettingsLink } from "./SettingsGroup.tsx"
 
 import { Stepper } from "./Stepper.tsx"
 
@@ -16,55 +16,72 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
     const state = useStore(drive.state)
     const settings = useStore(drive.settings)
-    const values = useStore(drive.controlValues)
+    return (
+        <>
+            <SettingsGroup title="Driving" data-section="drive" note={<>Hold <Kbd className="lv-kbd">Shift</Kbd> to go fast (×{app.profile.drive.boost.linear} driving, ×{app.profile.drive.boost.angular} turning). <Kbd className="lv-kbd">Space</Kbd> stops.</>}>
+                <Field inline className="set-row" label="Driving speed"><SpeedStepper label="Driving speed" max={3} unit="m/s" value={settings.linear} onChange={(linear) => drive.settings.update({ linear })} /></Field>
+                <Field inline className="set-row" label="Turning speed"><SpeedStepper label="Turning speed" max={3} unit="rad/s" value={settings.angular} onChange={(angular) => drive.settings.update({ angular })} /></Field>
+                <SettingsLink label="Keyboard shortcuts" icon="keyboard" data-testid="keyboard-shortcuts" title="Every key and gamepad control (?)" trailing={<Kbd className="lv-kbd">?</Kbd>} onClick={() => openOverlay("help")} />
+            </SettingsGroup>
+            {state.error && <p className="problem">{state.error}</p>}
+        </>
+    )
+}
+
+/** Advanced → Keyboard: where the keys send velocity (auto, or a list) and the up / down speed */
+export function DriveKeyboardFold({ app }: { app: ViewerApp }) {
+    const drive = app.drive
+    const state = useStore(drive.state)
+    const settings = useStore(drive.settings)
     useStore(app.connection.status)
     const candidates = drive.candidates()
     const usesVertical = Object.values(app.profile.drive.keys).some((action) => "axis" in action && action.axis === "vertical")
+    const auto = !(settings.topics?.length)
+    const resolved = state.topic ? state.topic.split(", ") : []
+    const note = auto
+        ? "Auto: each running blueprint's velocity input, else /cmd_vel and /tele_cmd_vel."
+        : <>One topic per line; add TwistStamped after a name for a stamped one.{candidates.length > 0 ? <> Seen: {candidates.join(", ")}.</> : null}</>
     return (
-        <div className="drive-panel">
-            <Button className="keyboard-shortcuts-button" data-testid="keyboard-shortcuts" title="Every key and gamepad control (?)" onClick={() => openOverlay("help")}>
-                <Icon name="keyboard" size={15} />Keyboard shortcuts<Kbd className="lv-kbd">?</Kbd>
-            </Button>
-            <Field inline label="Driving speed"><SpeedStepper label="Driving speed" max={3} unit="m/s" value={settings.linear} onChange={(linear) => drive.settings.update({ linear })} /></Field>
-            <Field inline label="Turning speed"><SpeedStepper label="Turning speed" max={3} unit="rad/s" value={settings.angular} onChange={(angular) => drive.settings.update({ angular })} /></Field>
-            <p className="hint">Hold Shift to go fast (×{app.profile.drive.boost.linear} driving, ×{app.profile.drive.boost.angular} turning) · Space stops.</p>
-            <Disclosure title="Advanced keyboard controls" defaultOpen={false} persistKey="lv.settings.advanced.keys">
-                <Field
-                    inline={!settings.topics?.length}
-                    className={settings.topics?.length ? "drive-topics-field editing" : "drive-topics-field"}
-                    label="Output topic"
-                    title="Where the keys (and sticks) send velocity. Auto: each running blueprint's cmd_vel entry point (one per module that takes velocity commands, never a mux's own output), else /cmd_vel and /tele_cmd_vel. One topic per line; add TwistStamped after a name for a stamped one."
-                >
-                    <Checkbox
-                        label="auto"
-                        value={!(settings.topics?.length)}
-                        onChange={(auto) => drive.settings.update({ topics: auto ? [] : drive.autoTopics().map((topic) => topic.topic) })}
+        <SettingsFold title="Keyboard" persistKey="lv.settings.advanced.keys" note={note}>
+            <div className="set-row set-row-stack drive-topics-field" title="Where the keys (and sticks) send velocity.">
+                <div className="set-row-line">
+                    <span className="dr-field-label">Output topic</span>
+                    <Segmented
+                        size="sm"
+                        label="Output topic"
+                        items={[["auto", "Auto"], ["custom", "Custom"]]}
+                        value={auto ? "auto" : "custom"}
+                        onChange={(mode) => drive.settings.update({ topics: mode === "auto" ? [] : drive.autoTopics().map((topic) => topic.topic) })}
                     />
-                    {settings.topics?.length ? <TopicsEditor topics={settings.topics} onChange={(topics) => drive.settings.update({ topics })} /> : null}
-                    <div className="hint" data-testid="drive-topics-resolved">→ {state.topic || "nothing"}</div>
-                </Field>
-                {candidates.length > 0 && settings.topics?.length
-                    ? <p className="hint">Seen: {candidates.join(", ")}</p>
-                    : null}
-                {usesVertical && <Field inline label="Up / down speed"><SpeedStepper label="Up / down speed" max={2} unit="m/s" value={settings.vertical} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}
-            </Disclosure>
-            {app.profile.controls.length > 0 && (
-                <Disclosure title={`Advanced ${app.profile.name} controls`} defaultOpen={false} persistKey="lv.settings.advanced.profile">
-                    <section className="controls">
-                        {app.profile.controls.map((control) =>
-                            control.kind === "slider"
-                                ? (
-                                    <Field inline key={control.id} label={control.label} title={`${control.type} on ${control.topic}`}>
-                                        <Stepper label={control.label} min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
-                                    </Field>
-                                )
-                                : <Button key={control.id} size="sm" onClick={() => drive.pressButton(control.id)}>{control.label}</Button>
-                        )}
-                    </section>
-                </Disclosure>
+                </div>
+                {auto
+                    ? <div className="drive-topics drive-topics-auto" data-testid="drive-topics-resolved">{resolved.length ? resolved.map((topic) => <div key={topic}>{topic}</div>) : <span className="set-dim">nothing yet</span>}</div>
+                    : <TopicsEditor topics={settings.topics!} onChange={(topics) => drive.settings.update({ topics })} />}
+            </div>
+            {usesVertical && <Field inline className="set-row" label="Up / down speed"><SpeedStepper label="Up / down speed" max={2} unit="m/s" value={settings.vertical} onChange={(vertical) => drive.settings.update({ vertical })} /></Field>}
+        </SettingsFold>
+    )
+}
+
+/** Advanced → a profile's extra controls (sliders and buttons) */
+export function DriveProfileFold({ app }: { app: ViewerApp }) {
+    const drive = app.drive
+    const values = useStore(drive.controlValues)
+    if (app.profile.controls.length === 0) {
+        return null
+    }
+    return (
+        <SettingsFold title={`${app.profile.name} controls`} persistKey="lv.settings.advanced.profile">
+            {app.profile.controls.map((control) =>
+                control.kind === "slider"
+                    ? (
+                        <Field inline className="set-row" key={control.id} label={control.label} title={`${control.type} on ${control.topic}`}>
+                            <Stepper label={control.label} min={control.min} max={control.max} step={control.step} value={values[control.id] ?? control.initial} format={(value) => `${value.toFixed(2)}${control.unit ? ` ${control.unit}` : ""}`} onChange={(value) => drive.setControl(control.id, value)} />
+                        </Field>
+                    )
+                    : <SettingsLink key={control.id} label={control.label} onClick={() => drive.pressButton(control.id)} />
             )}
-            {state.error && <p className="problem">{state.error}</p>}
-        </div>
+        </SettingsFold>
     )
 }
 
@@ -78,7 +95,7 @@ function TopicsEditor({ topics, onChange }: { topics: string[]; onChange: (topic
             data-testid="drive-topics"
             className="drive-topics"
             mono
-            rows={Math.max(2, topics.length + 1)}
+            rows={Math.max(3, topics.length + 1)}
             value={text}
             onChange={setText}
             onBlur={() => onChange(text.split("\n").map((line) => line.trim()).filter(Boolean))}
