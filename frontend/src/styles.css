@@ -1117,10 +1117,13 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .pad-assign { min-width: 120px; }
 .gamepad-modal-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
 /* the controls taught in an empty camera or 3D view (ui/KeyOverlay.tsx DriveHint) */
-.drive-hint { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 320px; text-align: center; color: var(--muted-fg); font: 12px/1.45 var(--sans); }
+/* what it waits for sits in the middle; the keys and how to drive sit along the bottom */
+.drive-hint { position: relative; align-self: stretch; flex: 1; width: 100%; min-height: 0; text-align: center; color: var(--muted-fg); font: 12px/1.45 var(--sans); }
+.drive-hint .drive-hint-waiting { position: absolute; top: 50%; left: 12px; right: 12px; transform: translateY(-50%); font-size: 15px; }
+.drive-hint-controls { position: absolute; left: 12px; right: 12px; bottom: 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.drive-hint-controls > p { max-width: 320px; }
 .drive-hint p { margin: 0; }
 .drive-hint b { color: var(--fg); font-weight: 600; }
-.drive-hint .drive-hint-waiting { margin-bottom: 18px; font-size: 15px; }
 .drive-hint-keys { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .drive-hint .key { width: 34px; height: 34px; font-size: 12px; background: var(--input-bg, var(--card)); }
 .drive-hint .key.arrow { border-color: var(--primary); color: var(--primary); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent); }
@@ -1129,24 +1132,23 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .scene-waiting { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; padding: 40px 12px 12px; box-sizing: border-box; overflow: hidden; }
 /* the joint tabs take the 3D view's right side: the hint centres in what's left */
 .scene-slot:has(.joint-side) .scene-waiting { right: min(340px, 45%); }
-.drive-hint { max-width: min(320px, 100%); }
 /* a narrow or short view: smaller keys, then only the keys and what it's waiting for */
 @container (max-width: 380px) {
     .drive-hint .key { width: 26px; height: 26px; font-size: 11px; }
     .drive-hint .key.shift.wide { padding: 0 10px; }
-    .drive-hint { gap: 6px; font-size: 11px; }
-    .drive-hint .drive-hint-waiting { margin-bottom: 8px; font-size: 13px; }
+    .drive-hint { font-size: 11px; }
+    .drive-hint-controls { gap: 6px; bottom: 14px; }
+    .drive-hint .drive-hint-waiting { font-size: 13px; }
 }
 @container (max-width: 260px) {
     .drive-hint p:not(:has(b)) { display: none; }
 }
 /* a short view (a stacked side panel): the keys and what it's waiting for, then only the waiting */
 .scene-slot > .panel-content, .camera-video > .panel-content { container: hint-area / size; }
-@container hint-area (max-height: 300px) {
+@container hint-area (max-height: 380px) {
     .drive-hint p:not(:has(b)) { display: none; }
-    .drive-hint .drive-hint-waiting { margin-bottom: 6px; }
 }
-@container hint-area (max-height: 190px) {
+@container hint-area (max-height: 280px) {
     .drive-hint .drive-hint-keys { display: none; }
 }
 /* joint control in the 3D view: Plan / Execute across its top, the tabs down its right side */

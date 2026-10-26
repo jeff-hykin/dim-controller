@@ -72,14 +72,16 @@ export function DriveHint({ app, waiting }: { app: ViewerApp; waiting: string })
     return (
         <div className="drive-hint" data-testid="drive-hint">
             <p className="drive-hint-waiting"><b>{waiting}</b></p>
-            <div className="drive-hint-keys">
-                <div className="drive-key-rows">
-                    <div>{side(1)}{cell("forward", 1, true)}{side(-1)}</div>
-                    <div>{cell("turn", 1, true)}{cell("forward", -1, true)}{cell("turn", -1, true)}</div>
+            <div className="drive-hint-controls">
+                <div className="drive-hint-keys">
+                    <div className="drive-key-rows">
+                        <div>{side(1)}{cell("forward", 1, true)}{side(-1)}</div>
+                        <div>{cell("turn", 1, true)}{cell("forward", -1, true)}{cell("turn", -1, true)}</div>
+                    </div>
+                    <span className="key shift wide">⇧ Shift <span className="dim">= go fast</span></span>
                 </div>
-                <span className="key shift wide">⇧ Shift <span className="dim">= go fast</span></span>
+                <p>Click the view, then {pair("forward")} to drive, {pair("turn")} to turn{strafe ? `, ${pair("strafe")} to strafe` : vertical ? `, ${pair("vertical")} for up / down` : ""}. Space stops.</p>
             </div>
-            <p>Click the view, then {pair("forward")} to drive, {pair("turn")} to turn{strafe ? `, ${pair("strafe")} to strafe` : vertical ? `, ${pair("vertical")} for up / down` : ""}. Space stops.</p>
         </div>
     )
 }
