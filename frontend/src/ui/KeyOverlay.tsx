@@ -58,7 +58,7 @@ export function DriveHint({ app, waiting }: { app: ViewerApp; waiting: string })
     const { mobile } = useWorkspaceApi()
     // a phone drives with its thumb sticks: no keys to teach
     if (app.profile.type === "arm" || mobile) {
-        return <div className="drive-hint"><p><b>{waiting}</b></p></div>
+        return <div className="drive-hint"><p className="drive-hint-waiting"><b>{waiting}</b></p></div>
     }
     const keys = app.profile.drive.keys
     const { strafe, vertical } = profileAxes(app.profile)
@@ -71,6 +71,7 @@ export function DriveHint({ app, waiting }: { app: ViewerApp; waiting: string })
     const pair = (axis: Axis) => [keyFor(axis, 1), keyFor(axis, -1)].filter(Boolean).join(" / ")
     return (
         <div className="drive-hint" data-testid="drive-hint">
+            <p className="drive-hint-waiting"><b>{waiting}</b></p>
             <div className="drive-hint-keys">
                 <div className="drive-key-rows">
                     <div>{side(1)}{cell("forward", 1, true)}{side(-1)}</div>
@@ -78,7 +79,6 @@ export function DriveHint({ app, waiting }: { app: ViewerApp; waiting: string })
                 </div>
                 <span className="key shift wide">⇧ Shift <span className="dim">= go fast</span></span>
             </div>
-            <p><b>{waiting}</b></p>
             <p>Click the view, then {pair("forward")} to drive, {pair("turn")} to turn{strafe ? `, ${pair("strafe")} to strafe` : vertical ? `, ${pair("vertical")} for up / down` : ""}. Space stops.</p>
         </div>
     )
