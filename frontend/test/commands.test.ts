@@ -19,12 +19,12 @@ Deno.test("filter: every word must match (label, group, hint, keys, extra words)
     assertEquals(filterCommands(all, "  layout  ").map((c) => c.id), ["c"])
 })
 
-Deno.test("a panel's header actions, in a fixed order: collapse (not on the main view), pop out (on a phone, only a floating panel's close); no make-main or minimize", () => {
+Deno.test("a panel's header actions, in a fixed order: pop out (on a phone, only a floating panel's close); no make-main or minimize", () => {
     const arrangement = movePanel(defaultArrangement(IDS), "tf", { zone: "float", box: { x: 400, y: 200, width: 300, height: 300 } })
     const actions = (id: string, mobile = false) => panelActions(arrangement, id, { mobile }).map((state) => state.action)
     for (const id of ["map", "scene", "settings", "tf"]) {
-        assertEquals(actions(id), ["collapse", "popout"], id)
-        assertEquals(actions(id, true), id === "tf" ? ["collapse", "popout"] : ["collapse"], id)
+        assertEquals(actions(id), ["popout"], id)
+        assertEquals(actions(id, true), id === "tf" ? ["popout"] : [], id)
     }
     // the main view: nothing to collapse or swap
     assertEquals(actions("camera:1"), ["popout"])
@@ -34,7 +34,6 @@ Deno.test("a panel's header actions, in a fixed order: collapse (not on the main
 Deno.test("what each action says depends on where the panel is", () => {
     const arrangement = toggleCollapsed(movePanel(defaultArrangement(IDS), "tf", { zone: "float", box: { x: 400, y: 200, width: 300, height: 300 } }), "map")
     const states = (id: string) => Object.fromEntries(panelActions(arrangement, id, { mobile: false }).map((state) => [state.action, state.label]))
-    assert(/Expand/.test(states("map").collapse) && /Collapse/.test(states("scene").collapse))
     assert(/float/i.test(states("map").popout) && /Dock/.test(states("tf").popout))
 })
 
@@ -48,7 +47,7 @@ Deno.test("the palette has a show command and each of the header's actions for e
             one.run()
         }
     }
-    assertEquals(acted.filter((entry) => entry.startsWith("map.")), ["map.show", "map.collapse", "map.popout", "map.main"])
+    assertEquals(acted.filter((entry) => entry.startsWith("map.")), ["map.show", "map.popout", "map.collapse", "map.main"])
     assertEquals(acted.filter((entry) => entry.startsWith("camera:1.")), ["camera:1.show", "camera:1.popout"])
     assertEquals(panelTitle("camera:2"), "Camera 2")
     assertEquals(panelTitle("scene"), "3D view")

@@ -53,10 +53,8 @@ export function panelActions(arrangement: Arrangement, id: string, options: { mo
         return []
     }
     const states: PanelActionState[] = []
-    // no "make main" / "minimize" buttons (Jeff 10-26): the main view is picked by dragging a header onto it or from the settings drawer
-    if (zone !== "stage") {
-        states.push({ action: "collapse", label: arrangement.collapsed.includes(id) ? "Expand" : "Collapse (stops its stream)" })
-    }
+    // no make-main, minimize or collapse buttons (Jeff 10-26): a click on the header folds it; the main view is
+    // picked by dragging a header onto it or from the settings drawer (the palette has both)
     // a phone floats panels from the panel list, so its only pop-out button is the floating panel's close
     if (!options.mobile) {
         states.push({ action: "popout", label: zone === "float" ? "Dock into the nearest rail" : "Pop out: float over the main view" })
@@ -80,8 +78,9 @@ export function panelCommands(arrangement: Arrangement, id: string, title: strin
     for (const state of panelActions(arrangement, id, options)) {
         commands.push({ id: `panel.${id}.${state.action}`, label: `${title}: ${state.label}`, group: "Panels", words: `panel ${state.action} maximize minimize main float dock collapse fold`, run: () => act(state.action) })
     }
-    // no header button for it any more, but the palette still makes a panel the main view
+    // no header buttons for these any more, but the palette still folds a panel and makes it the main view
     if (zone && zone !== "stage") {
+        commands.push({ id: `panel.${id}.collapse`, label: `${title}: ${arrangement.collapsed.includes(id) ? "expand" : "collapse (stops its stream)"}`, group: "Panels", words: "panel fold collapse expand", run: () => act("collapse") })
         commands.push({ id: `panel.${id}.main`, label: `${title}: make it the main view`, group: "Panels", words: "panel maximize main swap", run: () => act("main") })
     }
     return commands
