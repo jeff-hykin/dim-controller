@@ -1191,7 +1191,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-note { margin: 6px 4px 0 14px; color: color-mix(in srgb, var(--muted-fg) 85%, transparent); font: 400 11px/1.45 var(--sans); }
 .set-note code { font: 10.5px var(--mono); color: var(--muted-fg); }
 .set-note .lv-kbd { font-size: 10px; padding: 0 4px; }
-.set-footer { margin: 4px 0 0; padding: 12px 2px 0; border-top: 1px solid var(--border-strong); color: var(--muted-fg); font-size: 11px; }
 .set-dim { color: var(--muted-fg); }
 .app-settings .set-row { box-sizing: border-box; min-height: 44px; padding: 7px 8px 7px 12px; margin: 0; gap: 10px; }
 .app-settings .set-card > * + * { border-top: 1px solid var(--border); }

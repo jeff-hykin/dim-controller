@@ -47,7 +47,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <DriveProfileFold app={app} />
                 </>
             )}
-            <p className="set-footer">Camera, 3D view, map and plot settings are on each panel's cog.</p>
         </div>
     )
 }
