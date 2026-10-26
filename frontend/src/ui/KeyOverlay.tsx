@@ -6,6 +6,7 @@ import { profileAxes } from "../core/gamepad.ts"
 import type { Axis } from "../profile/types.ts"
 import { ArmHud } from "./ArmHud.tsx"
 import type { Rect } from "./workspace.ts"
+import { useWorkspaceApi } from "./Workspace.tsx"
 
 export function KeyOverlay({ app, stage }: { app: ViewerApp; stage: Rect }) {
     const state = useStore(app.drive.state)
@@ -54,8 +55,10 @@ export function DriveKeyGrid({ app, lit }: { app: ViewerApp; lit: boolean }) {
  * picked out like arrow keys, a wide Shift "= go fast", and what each does for this format. */
 export function DriveHint({ app, waiting }: { app: ViewerApp; waiting: string }) {
     useStore(app.robot)
-    if (app.profile.type === "arm") {
-        return null
+    const { mobile } = useWorkspaceApi()
+    // a phone drives with its thumb sticks: no keys to teach
+    if (app.profile.type === "arm" || mobile) {
+        return <div className="drive-hint"><p><b>{waiting}</b></p></div>
     }
     const keys = app.profile.drive.keys
     const { strafe, vertical } = profileAxes(app.profile)
