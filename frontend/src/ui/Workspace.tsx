@@ -118,8 +118,8 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
         }
     }, [arrangement, saved])
     const view = useStore(workspaceView)
-    // focus (desktop): the main view runs to the window's true bottom, under the bar, which goes see-through over it
-    const frame = useFrame(mobile, !mobile && view.hide.length === 2)
+    // focus (desktop) hides the rails; the main view still ends at the bar (it's opaque: nothing of the view hides under it)
+    const frame = useFrame(mobile)
     const layout = layoutWorkspace(arrangement, frame, view)
 
     const normalized = (change: (current: Arrangement) => Arrangement) => arrange((current) => change(normalizeArrangement(current, ids)))
@@ -204,7 +204,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
 }
 
 /** The window as the workspace sees it: above the bar along the bottom (a phone: above the thumb sticks). */
-function useFrame(mobile: boolean, underBar: boolean): Frame {
+function useFrame(mobile: boolean): Frame {
     const [, setTick] = useState(0)
     useEffect(() => {
         const again = () => setTick((tick) => tick + 1)
@@ -246,7 +246,7 @@ function useFrame(mobile: boolean, underBar: boolean): Frame {
         height,
         // a phone: the panels start below its corner buttons; desktop: at the top, down to the bar along the bottom
         top: mobile ? document.querySelector(".phone-corners")?.getBoundingClientRect().bottom ?? 0 : 0,
-        bottom: dock ?? (!mobile && !underBar ? document.querySelector(".main-bar")?.getBoundingClientRect().top : undefined) ?? height - px("--dim-inset-bottom", 0),
+        bottom: dock ?? (!mobile ? document.querySelector(".main-bar")?.getBoundingClientRect().top : undefined) ?? height - px("--dim-inset-bottom", 0),
         mobile,
         gap: px("--lv-panel-gap", 0),
     }

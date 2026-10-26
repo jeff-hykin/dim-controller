@@ -1231,8 +1231,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app.desktop .lv-panel > .panel-head::before { top: min(var(--radius-lg, 0px), 6px); bottom: min(var(--radius-lg, 0px), 6px); }
 .app.desktop .panel-head .panel-action.dr-btn--icon.icon-button, .app.desktop .panel-head .panel-cog.dr-btn--icon.icon-button { width: 22px; height: 22px; }
 .panel-title + .panel-cog { margin-left: 2px; }
-/* − / + steppers: tinted with the accent so they read as buttons */
-.speed-stepper > .dr-btn.dr-btn--icon { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: color-mix(in srgb, var(--primary) 12%, transparent); font-weight: 700; }
-.speed-stepper > .dr-btn.dr-btn--icon:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 24%, transparent); border-color: var(--primary); }
-.speed-stepper > .dr-btn.dr-btn--icon:active:not(:disabled) { background: color-mix(in srgb, var(--primary) 34%, transparent); }
+/* − / + steppers: tinted with the second accent (purple) so they read as buttons */
+.speed-stepper > .dr-btn.dr-btn--icon { color: var(--accent-alt, #b89cf0); border-color: color-mix(in srgb, var(--accent-alt, #b89cf0) 45%, transparent); background: color-mix(in srgb, var(--accent-alt, #b89cf0) 12%, transparent); font-weight: 700; }
+.speed-stepper > .dr-btn.dr-btn--icon:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-alt, #b89cf0) 24%, transparent); border-color: var(--accent-alt, #b89cf0); }
+.speed-stepper > .dr-btn.dr-btn--icon:active:not(:disabled) { background: color-mix(in srgb, var(--accent-alt, #b89cf0) 34%, transparent); }
 .speed-stepper > .dr-btn.dr-btn--icon:disabled { color: var(--muted-fg); border-color: var(--border); background: transparent; }
