@@ -162,8 +162,8 @@ html[data-corners="sharp"] .panel-head::before { top: 0; bottom: 0; } /* sharp c
 .panel-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
 @media (hover: none) { .panel-actions { opacity: 1; } }
 .panel-info + .panel-actions { margin-left: 0; }
-.panel-action.dr-btn--icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
-.panel-action.dr-btn--icon.icon-button:hover:not(:disabled) { color: var(--fg); background: var(--hover); border-color: var(--border); }
+.panel-action.dr-btn--icon.icon-button, .panel-cog.dr-btn--icon.icon-button { width: 26px; height: 26px; border-color: transparent; background: transparent; color: var(--muted-fg); }
+.panel-action.dr-btn--icon.icon-button:hover:not(:disabled), .panel-cog.dr-btn--icon.icon-button:hover:not(:disabled) { color: var(--fg); background: var(--hover); border-color: var(--border); }
 .has-issues > .panel-head .panel-info { color: var(--warn); }
 /* the tools row lies over the top of the body (it shows on hover, so the body keeps its full height) */
 .panel-tools { position: absolute; top: 34px; left: 0; right: 0; z-index: 4; display: flex; align-items: center; min-height: 32px; padding: 0 6px; gap: 6px; overflow-x: auto; scrollbar-width: none;
@@ -1008,7 +1008,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .g2g-warning { font-size: 12px; color: var(--warn); max-width: 40ch; }
 
 /* ── a panel's × (left end of the header) and cog (right end), and the cog's popover ── */
-.panel-close.dr-btn--icon.icon-button { width: 22px; height: 22px; margin-left: -6px; border-color: transparent; background: transparent; color: var(--muted-fg); flex: none; }
+.panel-close.dr-btn--icon.icon-button { width: 22px; height: 22px; border-color: transparent; background: transparent; color: var(--muted-fg); flex: none; }
 .panel-close.dr-btn--icon.icon-button:hover:not(:disabled) { color: var(--danger); background: var(--hover); border-color: var(--border); }
 .panel-settings-pop { position: fixed; z-index: 45; overflow-y: auto; box-shadow: var(--shadow-lg); }
 
@@ -1223,3 +1223,17 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app.desktop .lv-panel > .panel-head, .app.desktop .lv-panel.zone-left > .panel-head, .app.desktop .lv-panel.zone-right > .panel-head { box-shadow: none; }
 .panel-tools .dr-btn:not(.dr-btn--primary), .camera-tools .dr-btn:not(.dr-btn--primary) { border-color: transparent; background: transparent; box-shadow: none; }
 .panel-tools .dr-btn:not(.dr-btn--primary):hover, .camera-tools .dr-btn:not(.dr-btn--primary):hover { background: var(--hover); }
+
+/* ── desktop panel headers as an inset chip: 4 px inside the card with its own smaller rounding, so its corners never fight
+   the card's (Desktop's rounded corners); 4 + 26 + 4 keeps PANEL_HEAD's 34 px. Title, its cog, then pop out and × right ── */
+.app.desktop .lv-panel > .panel-head, .app.desktop .lv-panel.zone-left > .panel-head, .app.desktop .lv-panel.zone-right > .panel-head {
+    height: 26px; margin: 4px; padding: 0 2px 0 10px; gap: 4px; border: 1px solid var(--border-strong); border-radius: max(calc(var(--radius-lg, 0px) - 4px), 0px); box-shadow: none; }
+.app.desktop .lv-panel.collapsed > .panel-head { border-bottom: 1px solid var(--border-strong); }
+.app.desktop .lv-panel > .panel-head::before { top: min(var(--radius-lg, 0px), 6px); bottom: min(var(--radius-lg, 0px), 6px); }
+.app.desktop .panel-head .panel-action.dr-btn--icon.icon-button, .app.desktop .panel-head .panel-cog.dr-btn--icon.icon-button { width: 22px; height: 22px; }
+.panel-title + .panel-cog { margin-left: 2px; }
+/* − / + steppers: tinted with the accent so they read as buttons */
+.speed-stepper > .dr-btn.dr-btn--icon { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: color-mix(in srgb, var(--primary) 12%, transparent); font-weight: 700; }
+.speed-stepper > .dr-btn.dr-btn--icon:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 24%, transparent); border-color: var(--primary); }
+.speed-stepper > .dr-btn.dr-btn--icon:active:not(:disabled) { background: color-mix(in srgb, var(--primary) 34%, transparent); }
+.speed-stepper > .dr-btn.dr-btn--icon:disabled { color: var(--muted-fg); border-color: var(--border); background: transparent; }

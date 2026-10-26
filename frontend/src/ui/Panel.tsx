@@ -1,5 +1,5 @@
-// Every panel's frame, the same everywhere: a header (its icon and title, a live note, then its buttons in the same
-// place on every panel: collapse / expand, make it the main view, pop out / dock; shown while the panel is hovered, and
+// Every panel's frame, the same everywhere: a header (its title and its settings cog, a live note, then its buttons in
+// the same place on every panel: pop out / dock, then × last; shown while the panel is hovered, and
 // always on a touch screen), an optional row of the panel's own tools over the top of its body (like its other in-panel
 // buttons, .panel-chrome: shown while the panel is hovered, on touch for a few seconds after a tap), and its body. The workspace (ui/Workspace.tsx)
 // gives it its box; dragging the header moves it (rails, main view, floating; ui/workspace.ts snaps it), a double-click
@@ -129,12 +129,12 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                 onDoubleClick={(event) => onStage && !fromControl(event.target) && api.toggleFocus()}
                 title={api.mobile ? undefined : "Drag to move: into a rail, onto the main view's middle, or anywhere to float"}
             >
-                {!api.mobile && (
-                    <Button className="dr-btn--icon icon-button panel-close" title="Close this panel (Settings adds it again)" aria-label={`Close ${title}`} data-testid="panel-close" onClick={() => (onClose ? onClose() : api.close(id))}>
-                        <Icon name="close" size={13} />
+                <span className="panel-title"><span>{title}</span></span>
+                {settings && (
+                    <Button ref={cog} className="dr-btn--icon icon-button panel-cog" data-for={id} pressed={settingsOpen} title={`${title} settings`} aria-label={`${title} settings`} data-testid="panel-settings" onClick={() => setSettingsOpen(!settingsOpen)}>
+                        <Icon name="settings" size={14} />
                     </Button>
                 )}
-                <span className="panel-title"><Icon name={icon} size={14} /><span>{title}</span></span>
                 {info !== undefined && <span className="panel-info">{info}</span>}
                 <span className="panel-actions" role="toolbar" aria-label={`${title} panel`}>
                     {states.map((state) => (
@@ -149,9 +149,9 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                             <Icon name={ACTION_ICONS[state.action]({ collapsed: slot.collapsed, floating, zone: slot.zone, home: homeOf(id).side, mobile: api.mobile })} size={14} />
                         </Button>
                     ))}
-                    {settings && (
-                        <Button ref={cog} className="dr-btn--icon icon-button panel-action panel-cog" data-for={id} pressed={settingsOpen} title={`${title} settings`} aria-label={`${title} settings`} data-testid="panel-settings" onClick={() => setSettingsOpen(!settingsOpen)}>
-                            <Icon name="settings" size={14} />
+                    {!api.mobile && (
+                        <Button className="dr-btn--icon icon-button panel-close" title="Close this panel (Settings adds it again)" aria-label={`Close ${title}`} data-testid="panel-close" onClick={() => (onClose ? onClose() : api.close(id))}>
+                            <Icon name="close" size={13} />
                         </Button>
                     )}
                 </span>
