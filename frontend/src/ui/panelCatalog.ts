@@ -1,4 +1,4 @@
-// The kinds of panel the settings drawer offers (Camera, 3D view, 2D map, Plot, Settings), which streams each could
+// The kinds of panel the settings drawer offers (Camera, 3D view, 2D map, Plot, Transforms, Settings), which streams each could
 // show that no open panel shows (a thumbnail's count), and the Settings button's count: those streams, but only for
 // kinds never used on this device. Pure: test/panelCatalog.test.ts.
 import { isImage } from "../core/cameraChoice.ts"
@@ -6,17 +6,18 @@ import { SCALAR_TYPES } from "../core/plot.ts"
 import type { Topic } from "../core/transport.ts"
 import { isCamera, isPlot } from "./workspace.ts"
 
-export type PanelKind = "camera" | "scene" | "map" | "plot" | "settings"
+export type PanelKind = "camera" | "scene" | "map" | "plot" | "tf" | "settings"
 
 export const PANEL_KINDS: { kind: PanelKind; title: string; icon: string; about: string }[] = [
     { kind: "camera", title: "Camera", icon: "camera", about: "a camera or depth stream" },
     { kind: "scene", title: "3D view", icon: "cube", about: "lidar, TF, the robot, markers" },
     { kind: "map", title: "2D Map", icon: "map", about: "costmap or lidar from above" },
     { kind: "plot", title: "Plot", icon: "plot", about: "numbers over time" },
+    { kind: "tf", title: "Transforms", icon: "tree", about: "the TF tree, the fixed frame, TF problems" },
     { kind: "settings", title: "Settings", icon: "settings", about: "these settings, as a panel" },
 ]
 
-/** the kind a workspace panel is (null: TF, the arms) */
+/** the kind a workspace panel is (null: none of these) */
 export function kindOf(id: string): PanelKind | null {
     if (isCamera(id)) {
         return "camera"
@@ -24,7 +25,7 @@ export function kindOf(id: string): PanelKind | null {
     if (isPlot(id)) {
         return "plot"
     }
-    return id === "scene" || id === "map" || id === "settings" ? id : null
+    return id === "scene" || id === "map" || id === "settings" || id === "tf" ? id : null
 }
 
 export interface Shown {

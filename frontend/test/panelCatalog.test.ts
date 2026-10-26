@@ -16,7 +16,7 @@ const topics = [
 const none = { open: new Set<never>(), cameraKeys: new Set<string>(), plottedKeys: new Set<string>() }
 
 Deno.test("kindOf: each panel's kind", () => {
-    assertEquals(["camera:3", "plot:1", "scene", "map", "settings", "tf"].map(kindOf), ["camera", "plot", "scene", "map", "settings", null])
+    assertEquals(["camera:3", "plot:1", "scene", "map", "settings", "tf"].map(kindOf), ["camera", "plot", "scene", "map", "settings", "tf"])
 })
 
 Deno.test("unshownStreams: images no camera shows, clouds and maps while their panel is closed, one-number topics no plot reads", () => {
@@ -33,5 +33,5 @@ Deno.test("unshownStreams: images no camera shows, clouds and maps while their p
 Deno.test("settingsBadge: only kinds never used count", () => {
     assertEquals(settingsBadge(topics, none, new Set()), 5)
     assertEquals(settingsBadge(topics, none, new Set(["camera"])), 3)
-    assertEquals(settingsBadge(topics, none, new Set(["camera", "scene", "map", "plot", "settings"])), 0)
+    assertEquals(settingsBadge(topics, none, new Set(["camera", "scene", "map", "plot", "tf", "settings"])), 0)
 })
