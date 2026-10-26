@@ -1133,15 +1133,15 @@ mod tests {
             .unwrap()
             .map(|message| message.unwrap())
             .filter(|message| message.channel.topic.starts_with("/file_info"))
-            .map(|message| format!("{} {}", message.channel.topic, asks::mesh_file_uri(&message.data).unwrap()))
+            .map(|message| format!("{} {}", message.channel.topic, asks::file_uri(&message.data).unwrap()))
             .collect();
         meshes.sort();
         assert_eq!(meshes, vec!["/file_info package://r/a.stl", "/file_info package://r/b.stl", "/file_info/r package://r/c.stl"]);
         robot.close().await.unwrap();
     }
 
-    /// A recording of the whole bus: the URDF a robot sends only when asked (an empty /file_request), each of its files
-    /// answered late, all in the file though stop comes as soon as the URDF does; an unticked topic left out.
+    /// A recording of the whole bus: the URDF a robot sends only when asked (`*.urdf` on /render_file_request), each of
+    /// its files answered late, all in the file though stop comes as soon as the URDF does; an unticked topic left out.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_whole_bus_recording_holds_the_urdf_and_its_files_but_not_unticked_topics() {
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
@@ -1149,37 +1149,38 @@ mod tests {
         config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
         config.insert_json5("scouting/multicast/enabled", "false").unwrap();
         let robot = zenoh::open(config).await.unwrap();
-        let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="package://r/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="package://r/b.stl"/></geometry></visual></link></robot>"#;
+        let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="/robot/a.stl"/></geometry></visual></link><link name="b"><visual><geometry><mesh filename="/robot/b.stl"/></geometry></visual></link></robot>"#;
+        let file = |uri: &str, data: &[u8]| {
+            let mut file = 0f64.to_le_bytes().to_vec();
+            file.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+            file.extend_from_slice(uri.as_bytes());
+            file.extend_from_slice(data);
+            file
+        };
+        let heard_urdf = Arc::new(AtomicU64::new(0));
+        let heard = heard_urdf.clone();
         let answers = robot.clone();
         let _manager = robot
-            .declare_subscriber("dimos/file_request/std_msgs.String")
+            .declare_subscriber("dimos/render_file_request/std_msgs.String")
             .callback(move |sample| {
                 let bytes = sample.payload().to_bytes();
                 let mut reader = crate::msgs::Reader::new(&bytes);
                 reader.expect_fingerprint(&crate::msgs::STRING_FINGERPRINT).unwrap();
                 let uri = reader.string().unwrap();
                 let answers = answers.clone();
+                let reply = if uri.ends_with(".urdf") {
+                    heard.fetch_add(1, Ordering::Relaxed);
+                    file(&uri, urdf.as_bytes())
+                } else {
+                    file(&uri, b"solid x")
+                };
+                let late = !uri.ends_with(".urdf");
                 tokio::spawn(async move {
-                    if uri.is_empty() {
-                        answers.put("dimos/robot_description/std_msgs.String", asks::encode_string(urdf)).await.unwrap();
-                        return;
+                    if late {
+                        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(700)).await;
-                    let mut mesh = 0f64.to_le_bytes().to_vec();
-                    mesh.extend_from_slice(&(uri.len() as u32).to_le_bytes());
-                    mesh.extend_from_slice(uri.as_bytes());
-                    mesh.extend_from_slice(b"solid x");
-                    answers.put("dimos/file_info/files.MeshFile", mesh).await.unwrap();
+                    answers.put("dimos/file_info/files.File", reply).await.unwrap();
                 });
-            })
-            .await
-            .unwrap();
-        let heard_urdf = Arc::new(AtomicU64::new(0));
-        let heard = heard_urdf.clone();
-        let _watch = robot
-            .declare_subscriber("dimos/robot_description/std_msgs.String")
-            .callback(move |_| {
-                heard.fetch_add(1, Ordering::Relaxed);
             })
             .await
             .unwrap();
@@ -1206,17 +1207,16 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{body}");
         let bytes = std::fs::read(dir.join("bus.mcap")).unwrap();
         let mut topics = BTreeSet::new();
-        let mut meshes = Vec::new();
+        let mut files = BTreeSet::new();
         for message in mcap::MessageStream::new(&bytes).unwrap() {
             let message = message.unwrap();
             topics.insert(message.channel.topic.clone());
             if message.channel.topic == "/file_info" {
-                meshes.push(asks::mesh_file_uri(&message.data).unwrap());
+                files.insert(asks::file_uri(&message.data).unwrap());
             }
         }
-        meshes.sort();
-        assert_eq!(meshes, vec!["package://r/a.stl", "package://r/b.stl"]);
-        assert!(topics.contains("/robot_description") && topics.contains("/heard"), "{topics:?}");
+        assert_eq!(files.into_iter().collect::<Vec<_>>(), vec!["*.urdf", "/robot/a.stl", "/robot/b.stl"]);
+        assert!(topics.contains("/heard"), "{topics:?}");
         assert!(!topics.contains("/noise"), "{topics:?}");
         robot.close().await.unwrap();
     }

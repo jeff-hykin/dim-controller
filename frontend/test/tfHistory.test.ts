@@ -6,7 +6,7 @@ import type * as THREE from "three"
 import { TfTree } from "dimos-react/three"
 import { TfHistory } from "../src/core/tfHistory.ts"
 import { LayerManager } from "../src/core/layers/manager.ts"
-import { FILE_INFO, ROBOT_DESCRIPTION } from "../src/core/urdfSource.ts"
+import { FILE_INFO, LEGACY_FILE_INFO, ROBOT_DESCRIPTION } from "../src/core/urdfSource.ts"
 import { cloudQualities } from "../src/core/cloudQuality.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, SubscribeOptions, Topic } from "../src/core/transport.ts"
@@ -94,7 +94,7 @@ function cloudScene(tf: TfTree, history: TfHistory, mode: "latest" | "accumulate
         status,
         subscribe(key: string, options: SubscribeOptions, onMessage: (message: unknown) => void) {
             // the layer manager's watch for the URDF isn't the lidar's
-            if (key !== FILE_INFO && key !== ROBOT_DESCRIPTION) {
+            if (![FILE_INFO, LEGACY_FILE_INFO, ROBOT_DESCRIPTION].includes(key)) {
                 subscriptions.push({ options, deliver: onMessage })
             }
             return () => {}

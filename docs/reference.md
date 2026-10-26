@@ -40,12 +40,13 @@ to the fixed frame is not drawn; the layer list says why.
 | `tf2_msgs.TFMessage` | frame axes, names and parent links |
 | `sensor_msgs.Image`, `CompressedImage` | camera panels; optionally projected into 3D (frustum + picture, from `CameraInfo`) |
 | `vision_msgs.Detection2DArray`, `Detection2D`, `BoundingBox2DArray` | boxes over a camera panel |
-| `std_msgs.String` on `/robot_description` | the robot's own model from its URDF (below) |
+| `files.File` on `/file_info` (or `std_msgs.String` on `/robot_description`) | the robot's own model from its URDF (below) |
 
 **Robot model (URDF).** When a blueprint runs dimos's `UrdfManager`, the robot is drawn from its URDF, for any robot:
-`/robot_description` carries the XML (re-sent every 5 s), each mesh is asked for once by its `package://` name on
-`/file_request` and arrives on `/file_info` (`files.MeshFile`: the file's bytes, matched by name; STL, OBJ, DAE
-and PLY), a few at a time, so the model fills in. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
+the URDF is asked for as `*.urdf` on `/render_file_request`, then each mesh by the name the URDF gives it, and each
+arrives on `/file_info` (`files.File`: the file's bytes, matched by name; STL, OBJ, DAE and PLY), a few at a time, so
+the model fills in. An older dimos (`/robot_description` carrying the XML, meshes asked for on `/file_request`, replies
+typed `files.MeshFile`, the same bytes) works too. Each link sits at its TF frame (UrdfManager puts every joint on TF), its
 visuals at their URDF origins. The layer ("Robot model (URDF)") turns on by itself, has opacity and visual / collision /
 both, and replaces the robot type's stand-in model while it's drawn ([layers/robotModel.tsx](../frontend/src/layers/robotModel.tsx),
 [core/urdfSource.ts](../frontend/src/core/urdfSource.ts)).
@@ -53,7 +54,7 @@ both, and replaces the robot type's stand-in model while it's drawn ([layers/rob
 - **Cached by hash.** A mesh named `package://<pkg>/<path>?hash=<sha256>` is kept in IndexedDB (the 200 used most
   recently, keyed by the name without its query) and used with no request while its hash is the URDF's; otherwise it's
   asked for as `<name as the URDF gives it>&have=<the cached copy's hash>` (no `&have=` with nothing cached). The
-  publisher answers unless `have` is current, its MeshFile's uri carrying the current `?hash=`, which is what gets
+  publisher answers unless `have` is current, its reply's uri carrying the current `?hash=`, which is what gets
   cached. A name without `?hash=` is asked for on every load and never cached ([core/meshCache.ts](../frontend/src/core/meshCache.ts)).
 - **Gaussian splats.** A visual whose mesh is a splat file (`.spz`, `.splat`, `.ksplat`, `.sog`, or a `.ply` with
   `f_dc_0`/`scale_0` properties) arrives the same way and is drawn with [Spark](https://sparkjs.dev) at the link's pose,

@@ -1,7 +1,9 @@
-//! What a recording needs that dimos only sends when asked: the robot's meshes (UrdfManager answers each `package://`
-//! name on /file_request with the file on /file_info) and a simulated world (a SceneData module answers
-//! /scene_data_request on /scene_data). A recording of /robot_description or /scene_info also records the answer stream, and
-//! this asks for what the announcement names, so the file can draw the robot and the world with no robot around.
+//! What a recording needs that dimos only sends when asked: the robot's URDF and meshes (UrdfManager answers `*.urdf` on
+//! /render_file_request with its URDF and each name the URDF gives with that file, on /file_info; an older dimos announces the
+//! URDF on /robot_description and answers names on /file_request) and a simulated world (a SceneData module answers
+//! /scene_data_request on /scene_data). A recording of /robot_description, /render_file_request or /scene_info also records
+//! the answer stream, and this asks for what the URDF or the announcement names, so the file can draw the robot and the
+//! world with no robot around.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,12 +18,18 @@ const MESHES_IN_FLIGHT: usize = 2;
 const MESH_RETRY: Duration = Duration::from_secs(30);
 const MESH_ATTEMPTS: u32 = 3;
 const SCENE_ASK_EVERY: Duration = Duration::from_secs(2);
+const URDF_ASK_EVERY: Duration = Duration::from_secs(2);
 const TICK: Duration = Duration::from_millis(250);
 /// how long a stopping recording waits for what it asked for: as long as a mesh is asked for before it's given up on
 pub const SETTLE_LIMIT: Duration = Duration::from_secs(MESH_RETRY.as_secs() * MESH_ATTEMPTS as u64);
 
-/// an empty /file_request has the robot's UrdfManager send /robot_description now
+/// an empty /file_request has an older UrdfManager send /robot_description now
 const URDF_NOW_KEY: &str = "dimos/file_request/std_msgs.String";
+/// UrdfManager answers any *.urdf asked for here with its URDF
+const URDF_REQUEST_KEY: &str = "dimos/render_file_request/std_msgs.String";
+const URDF_REQUEST: &str = "*.urdf";
+/// /file_info's types: files.File, or files.MeshFile (the same bytes) from an older dimos
+const FILE_TYPES: [&str; 2] = ["files.File", "files.MeshFile"];
 
 /// `dimos/<ns>/<name>/<type>` → `dimos/<ns>/<sibling>`, for a key whose topic ends in `name`.
 fn sibling(key: &str, name: &str, type_name: &str, sibling: &str) -> Option<String> {
@@ -29,24 +37,21 @@ fn sibling(key: &str, name: &str, type_name: &str, sibling: &str) -> Option<Stri
     prefix.ends_with('/').then(|| format!("{prefix}{sibling}"))
 }
 
-/// The answer streams a recorded key brings along (/robot_description → /file_info and /file_info/**, /scene_info → /scene_data).
+/// The answer streams a recorded key brings along (/robot_description and /render_file_request → /file_info and
+/// /file_info/**, /scene_info → /scene_data).
 pub fn answer_keys(key: &str) -> Vec<String> {
+    let files = FILE_TYPES.map(|file_type| format!("file_info/**/{file_type}"));
     [
-        sibling(
-            key,
-            "robot_description",
-            "std_msgs.String",
-            "file_info/**/files.MeshFile",
-        ),
-        sibling(
-            key,
-            "scene_info",
-            "std_msgs.String",
-            "scene_data/std_msgs.String",
-        ),
+        ("robot_description", files.to_vec()),
+        ("render_file_request", files.to_vec()),
+        ("scene_info", vec!["scene_data/std_msgs.String".to_string()]),
     ]
     .into_iter()
-    .flatten()
+    .flat_map(|(name, answers)| {
+        answers
+            .into_iter()
+            .filter_map(move |answer| sibling(key, name, "std_msgs.String", &answer))
+    })
     .collect()
 }
 
@@ -88,16 +93,38 @@ pub fn mesh_uris(urdf: &str) -> BTreeSet<String> {
     uris
 }
 
-/// files.MeshFile's uri: `<f64 ts><u32 uri length LE><uri><file bytes>` (dimos/msgs/files/MeshFile.py).
-pub fn mesh_file_uri(payload: &[u8]) -> Option<String> {
+/// files.File's uri and bytes: `<f64 ts><u32 uri length LE><uri><file bytes>` (dimos/msgs/files/File.py).
+pub fn decode_file(payload: &[u8]) -> Option<(String, &[u8])> {
     let length = u32::from_le_bytes(payload.get(8..12)?.try_into().ok()?) as usize;
-    Some(String::from_utf8_lossy(payload.get(12..12 + length)?).into_owned())
+    let uri = String::from_utf8_lossy(payload.get(12..12 + length)?).into_owned();
+    Some((uri, &payload[12 + length..]))
+}
+
+pub fn file_uri(payload: &[u8]) -> Option<String> {
+    decode_file(payload).map(|(uri, _)| uri)
+}
+
+/// `dimos/<ns>/file_info/<chunks>/files.File` → `dimos/<ns>/render_file_request/std_msgs.String`, for a /file_info reply.
+fn file_request_key(key: &str) -> Option<String> {
+    let file_type = key.rsplit('/').next()?;
+    if !FILE_TYPES.contains(&file_type) {
+        return None;
+    }
+    let at = key.find("/file_info/")?;
+    Some(format!(
+        "{}/render_file_request/std_msgs.String",
+        &key[..at]
+    ))
 }
 
 #[derive(Default)]
 struct Meshes {
-    /// where to ask (the /file_request beside the /robot_description heard)
+    /// where to ask (the /file_request beside the /robot_description heard, or the /render_file_request beside the
+    /// /file_info the URDF came on)
     request_key: String,
+    /// a URDF has come (until then it's asked for every URDF_ASK_EVERY)
+    urdf_heard: bool,
+    urdf_asked: Option<Instant>,
     wanted: BTreeSet<String>,
     got: HashSet<String>,
     /// uri → (last asked, times asked)
@@ -173,11 +200,21 @@ impl Asks {
             if let Some(urdf) = decode_string(payload) {
                 let meshes = &mut wanted.meshes;
                 meshes.request_key = request_key;
+                meshes.urdf_heard = true;
                 meshes.wanted.extend(mesh_uris(&urdf));
             }
-        } else if key.ends_with("/files.MeshFile") && key.contains("/file_info/") {
-            if let Some(uri) = mesh_file_uri(payload) {
-                wanted.meshes.got.insert(uri);
+        } else if let Some(request_key) = file_request_key(key) {
+            if let Some((uri, data)) = decode_file(payload) {
+                let meshes = &mut wanted.meshes;
+                if uri.ends_with(".urdf") {
+                    meshes.request_key = request_key;
+                    meshes.urdf_heard = true;
+                    meshes
+                        .wanted
+                        .extend(mesh_uris(&String::from_utf8_lossy(data)));
+                } else {
+                    meshes.got.insert(uri);
+                }
             }
         } else if let Some(request_key) = sibling(
             key,
@@ -196,6 +233,14 @@ impl Asks {
         let mut wanted = self.wanted.lock().unwrap();
         let mut out = Vec::new();
         let meshes = &mut wanted.meshes;
+        if !meshes.urdf_heard
+            && meshes
+                .urdf_asked
+                .is_none_or(|when| now.duration_since(when) >= URDF_ASK_EVERY)
+        {
+            meshes.urdf_asked = Some(now);
+            out.push((URDF_REQUEST_KEY.to_string(), encode_string(URDF_REQUEST)));
+        }
         let in_flight = meshes
             .asked
             .iter()
@@ -241,7 +286,17 @@ mod tests {
     fn announcements_bring_their_answer_streams() {
         assert_eq!(
             answer_keys("dimos/robot_description/std_msgs.String"),
-            vec!["dimos/file_info/**/files.MeshFile"]
+            vec![
+                "dimos/file_info/**/files.File",
+                "dimos/file_info/**/files.MeshFile"
+            ]
+        );
+        assert_eq!(
+            answer_keys("dimos/r1/render_file_request/std_msgs.String"),
+            vec![
+                "dimos/r1/file_info/**/files.File",
+                "dimos/r1/file_info/**/files.MeshFile"
+            ]
         );
         assert_eq!(
             answer_keys("dimos/r1/scene_info/std_msgs.String"),
@@ -260,6 +315,39 @@ mod tests {
             mesh_uris(urdf).into_iter().collect::<Vec<_>>(),
             vec!["package://r/a.STL", "package://r/b.obj"]
         );
+    }
+
+    #[test]
+    fn a_urdf_on_file_info_has_its_meshes_asked_for_beside_it() {
+        let file = |uri: &str, data: &str| {
+            let mut file = 0f64.to_le_bytes().to_vec();
+            file.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+            file.extend_from_slice(uri.as_bytes());
+            file.extend_from_slice(data.as_bytes());
+            file
+        };
+        let asks = Asks::default();
+        let now = Instant::now();
+        assert_eq!(
+            asks.due(now),
+            vec![(URDF_REQUEST_KEY.to_string(), encode_string(URDF_REQUEST))]
+        );
+        assert!(asks.due(now).is_empty());
+        let urdf = r#"<robot name="r"><link name="a"><visual><geometry><mesh filename="/r/a.stl"/></geometry></visual></link></robot>"#;
+        asks.heard("dimos/r1/file_info/files.File", &file("*.urdf", urdf));
+        assert_eq!(
+            asks.due(now + URDF_ASK_EVERY),
+            vec![(
+                "dimos/r1/render_file_request/std_msgs.String".to_string(),
+                encode_string("/r/a.stl")
+            )]
+        );
+        assert!(!asks.settled(now));
+        asks.heard(
+            "dimos/r1/file_info/files.File",
+            &file("/r/a.stl", "solid x"),
+        );
+        assert!(asks.settled(now));
     }
 
     #[test]

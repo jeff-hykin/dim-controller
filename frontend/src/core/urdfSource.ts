@@ -23,7 +23,9 @@ const LEGACY_FILE_REQUEST = dimosKey("/file_request", "std_msgs.String")
 /** what a request for the URDF names: UrdfManager answers any *.urdf with its URDF, named as asked */
 const URDF_REQUEST = "*.urdf"
 /** /file_info and anything under it (/file_info/**): zenoh's `**` also matches no chunks */
-export const FILE_INFO = dimosKey("/file_info/**", "files.MeshFile")
+export const FILE_INFO = dimosKey("/file_info/**", "files.File")
+/** the same bytes under the older dimos's type name */
+export const LEGACY_FILE_INFO = dimosKey("/file_info/**", "files.MeshFile")
 /** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
  * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
 const MESHES_IN_FLIGHT = 2
@@ -89,7 +91,9 @@ export class UrdfSource {
         if (this.#users++ === 0) {
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onRobotDescription(message.bytes)))
-            this.#stops.push(this.connection.subscribe(FILE_INFO, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
+            for (const key of [FILE_INFO, LEGACY_FILE_INFO]) {
+                this.#stops.push(this.connection.subscribe(key, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
+            }
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
             let state = this.connection.status.get().state
             this.#stops.push(this.connection.status.subscribe(() => {
