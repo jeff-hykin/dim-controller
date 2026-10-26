@@ -110,7 +110,7 @@ export class ViewerApp {
     constructor(host: HTMLElement) {
         const first = this.#resolve()
         this.#profile = profileFor(first.type)
-        this.robot = new Store({ type: first.type, auto: !chosenType(this.settings.get().profile), reason: first.reason })
+        this.robot = new Store({ type: first.type, auto: true, reason: first.reason })
         this.connection = new Connection(this.profile.drive.deadmanMs)
         this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow() })
         // a drag pans (Shift+drag orbits: OrbitControls turns a modified pan into an orbit); a right-drag orbits
@@ -200,21 +200,15 @@ export class ViewerApp {
         return this.#profile
     }
 
+    /** Always the wheeled base's controls (Jeff 10-26: no format picker; drones come later). The auto-detection
+     * (core/robotType.ts resolveType) stays for when more formats return. */
     #resolve(): ResolvedType {
-        const chosen = chosenType(this.settings.get().profile)
-        if (chosen) {
-            return { type: chosen, reason: "picked in Settings" }
-        }
-        return resolveType({
-            robots: this.#robots,
-            blueprints: this.runs.state.get().blueprints,
-            topics: this.connection?.status.get().topics.map((topic) => topic.name) ?? [],
-        })
+        return { type: "wheeled", reason: "the wheeled base controls" }
     }
 
     #updateRobot() {
         const resolved = this.#resolve()
-        const auto = !chosenType(this.settings.get().profile)
+        const auto = true
         const current = this.robot.get()
         if (current.type !== resolved.type || current.reason !== resolved.reason || current.auto !== auto) {
             this.robot.set({ type: resolved.type, auto, reason: resolved.reason })

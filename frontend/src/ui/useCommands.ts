@@ -106,14 +106,6 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
             words: "mcap capture",
             run: () => void toggleRecording(app).catch(() => {}),
         },
-        ...[{ type: "", name: "Auto" }, ...profiles].map((profile): Command => ({
-            id: `robot.type.${profile.type || "auto"}`,
-            label: `Controller format: ${profile.name}`,
-            group: "Robot",
-            hint: (view.profile || "") === profile.type ? "current" : undefined,
-            words: "robot type profile keys model controls",
-            run: () => app.settings.update({ profile: profile.type }),
-        })),
         { id: "help.keys", label: "Keyboard shortcuts", group: "Help", keys: ["?"], words: "help keys bindings", run: () => openOverlay("help") },
     )
     return commands

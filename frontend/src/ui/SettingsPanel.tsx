@@ -1,4 +1,4 @@
-// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (not for an arm):
+// Settings: driving (the wheeled base's controls, always; no format picker):
 // the keyboard shortcuts, driving and turning speed, and the rest under "Advanced" sections. A panel's own settings are
 // on its cog: the 3D view's (SceneSettings), a camera's (CameraSettings), the map's (MapPanel.tsx), a plot's.
 import type { ViewerApp } from "../core/app.ts"
@@ -24,25 +24,8 @@ import { Stepper } from "./Stepper.tsx"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
-    const current = profiles.find((profile) => profile.type === robot.type)
     return (
         <div className="settings-panel">
-            <div className="field-block robot-type" data-testid="robot-type">
-                <span className="field-label">Controller format</span>
-                <div className="robot-type-row">
-                    <RobotIcon type={robot.type} size={40} />
-                    <Select
-                        aria-label="Controller format"
-                        value={robot.auto ? "" : robot.type}
-                        options={[["", `Auto: ${current?.name ?? robot.type}`], ...profiles.map((profile) => [profile.type, profile.name] as [string, string])]}
-                        // every open viewer switches with it (app.ts), no reload
-                        onChange={(profile: string) => (app.settings.update({ profile }), profile === "arm" && armShading())}
-                    />
-                </div>
-                <p className="hint" data-testid="robot-type-reason">
-                    {robot.auto ? `Auto: picked from the blueprint (${robot.reason}).` : "Picked here; Auto picks from the blueprint."} How you control it: the keys, speeds and the model in the view.
-                </p>
-            </div>
             {robot.type !== "arm" && (
                 <section className="settings-section" data-section="drive">
                     <Heading level={3}>Driving</Heading>
