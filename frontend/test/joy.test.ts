@@ -129,3 +129,17 @@ Deno.test("turned off mid-hold: the rest goes out at once, then nothing; turned 
     assertEquals(puts.at(-1)!.axes[0], 0.5)
     joy.dispose()
 })
+
+Deno.test("the topic is the setting's (blank = /joystick); changing it opens a publisher there", async () => {
+    const { connection, puts, opened } = fakeBridge()
+    const settings = new Store<JoySettings>({ enabled: true, topic: "/pad_raw" })
+    const joy = new JoyPublisher(connection, settings)
+    joy.sample("gamepad", padJoy(pad([1, 0, 0, 0])))
+    assertEquals(puts.at(-1)!.key, "dimos/pad_raw/sensor_msgs.Joy")
+    settings.set({ enabled: true, topic: " " })
+    await wait(1000 / JOY_HZ + 30)
+    joy.sample("gamepad", padJoy(pad([0.5, 0, 0, 0])))
+    assertEquals(puts.at(-1)!.key, "dimos/joystick/sensor_msgs.Joy")
+    assertEquals(opened, ["dimos/pad_raw/sensor_msgs.Joy", "dimos/joystick/sensor_msgs.Joy"])
+    joy.dispose()
+})

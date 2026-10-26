@@ -1188,9 +1188,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-group-title { margin: 0 0 8px; padding: 0 2px; font: 700 10.5px var(--sans); color: color-mix(in srgb, var(--fg) 88%, transparent); letter-spacing: 0.09em; text-transform: uppercase; }
 .set-advanced-title { margin: 6px 0 -6px; padding-top: 14px; border-top: 1px solid var(--border-strong); }
 .set-card { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: color-mix(in srgb, var(--fg) 4%, var(--card)); overflow: hidden; }
-.set-note { margin: 6px 4px 0 14px; color: color-mix(in srgb, var(--muted-fg) 85%, transparent); font: 400 11px/1.45 var(--sans); }
-.set-note code { font: 10.5px var(--mono); color: var(--muted-fg); }
-.set-note .lv-kbd { font-size: 10px; padding: 0 4px; }
 .set-dim { color: var(--muted-fg); }
 .app-settings .set-row { box-sizing: border-box; min-height: 44px; padding: 7px 8px 7px 12px; margin: 0; gap: 10px; }
 .app-settings .set-card > * + * { border-top: 1px solid var(--border); }
@@ -1204,7 +1201,10 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-link:hover { background: var(--hover); }
 .set-link:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--primary); }
 .set-link svg { color: var(--muted-fg); flex: none; }
-.set-link-label { flex: 1; }
+.set-link-label { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+/* a row's own note, under its label and control (a Field's hint looks the same) */
+.app-settings .set-row-note, .app-settings .set-row > .dr-field-hint { color: color-mix(in srgb, var(--muted-fg) 85%, transparent); font: 400 11px/1.45 var(--sans); }
+.set-row-note code { font: 10.5px var(--mono); color: var(--muted-fg); }
 .set-chevron { color: var(--muted-fg); font-size: 18px; line-height: 1; padding: 0 4px 0 2px; }
 /* the output topic: Auto / Custom on its line, the list below in the same box either way (no jump) */
 .set-row-stack { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-right: 8px; }
@@ -1212,16 +1212,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-row-line > .dr-field-label { flex: 1; font-size: 13px; color: var(--fg); }
 .app-settings .drive-topics { box-sizing: border-box; width: 100%; min-height: 72px; margin: 0; padding: 8px 10px; font: 12px/18px var(--mono); border-radius: 6px; resize: vertical; }
 .drive-topics-auto { border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 60%, transparent); color: var(--muted-fg); }
-/* a folded group's title: a full-width row like the card rows (chevron on the right, turning); open, its card hangs from it */
-.app .app-settings .set-fold > summary.dr-disclosure__summary { display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; margin: 0; padding: 0 12px;
-    font: 500 13px var(--sans); color: var(--fg); letter-spacing: 0; text-transform: none;
-    border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: color-mix(in srgb, var(--fg) 4%, var(--card)); }
-.set-fold > .dr-disclosure__summary::before, .set-fold[open] > .dr-disclosure__summary::before { content: none; }
-.set-fold > .dr-disclosure__summary::after { content: "›"; margin-left: auto; color: var(--muted-fg); font-size: 17px; transition: transform 120ms; }
-.set-fold[open] > .dr-disclosure__summary::after { transform: rotate(90deg); }
-.set-fold > .dr-disclosure__summary:hover { background: var(--hover); }
-.set-fold[open] > .dr-disclosure__summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.set-fold[open] > .set-card { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+/* a folded group: a dimos-react card Disclosure (title row, chevron on the right; open, its card inside the same box) */
+.app .app-settings .set-fold > summary.dr-disclosure__summary { font: 500 13px var(--sans); }
+.set-fold > .set-card { border: 0; border-radius: 0; background: none; }
 .app-settings .set-fold + .set-fold { margin-top: -8px; }
 
 /* ── desktop panels as cards: the workspace leaves --lv-panel-gap between them (ui/workspace.ts layoutWorkspace), each docked

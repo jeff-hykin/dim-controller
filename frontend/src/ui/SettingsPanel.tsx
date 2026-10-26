@@ -6,7 +6,7 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Button, Disclosure, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { Button, Disclosure, Field, Heading, NumberInput, Select, TextInput, Toggle } from "dimos-react"
 import { useState } from "react"
 import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
@@ -32,15 +32,15 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <DrivePanel app={app} />
                     <h4 className="set-group-title set-advanced-title">Advanced</h4>
                     <DriveKeyboardFold app={app} />
-                    <SettingsFold title="Gamepad" persistKey="lv.settings.advanced.gamepad" note="Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again).">
+                    <SettingsFold title="Gamepad" persistKey="lv.settings.advanced.gamepad">
                         <GamepadSettingsFields />
                         <RemapButton />
                     </SettingsFold>
-                    <SettingsFold title="Joystick topic" persistKey="lv.settings.advanced.joy" note={<>The raw gamepad, drive keys and thumb sticks as <code>{JOY_TOPIC}</code> ({JOY_TYPE.replace(".", "/")}), at most {JOY_HZ}/s; nothing while idle. It drives nothing: it's for recordings.</>}>
+                    <SettingsFold title="Joystick topic" persistKey="lv.settings.advanced.joy">
                         <JoySettingsFields />
                     </SettingsFold>
-                    <SettingsFold title="Link safety" persistKey="lv.settings.advanced.link" note="Over this latency, or when the link drops, driving stops until you press Reconnect.">
-                        <Field inline className="set-row" label="Max latency">
+                    <SettingsFold title="Link safety" persistKey="lv.settings.advanced.link">
+                        <Field inline className="set-row" label="Max latency" hint="Over this latency, or when the link drops, driving stops until you press Reconnect.">
                             <MaxLatencyInput app={app} />
                         </Field>
                     </SettingsFold>
@@ -90,7 +90,7 @@ export function CameraSettings({ app }: { app: ViewerApp }) {
     return (
         <div className="settings-panel camera-settings">
             <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
-                <Slider min={0} max={300} step={5} value={view.cameraHiddenGraceS ?? 60} format={(seconds: number) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS: number) => app.settings.update({ cameraHiddenGraceS })} />
+                <Stepper label="Keep when hidden" min={0} max={300} step={15} value={view.cameraHiddenGraceS ?? 60} format={(seconds) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS) => app.settings.update({ cameraHiddenGraceS })} />
             </Field>
             <p className="hint">Latency vs quality, fit / fill and undistort are on the camera itself.</p>
         </div>
@@ -115,7 +115,7 @@ function RemapButton() {
     const [open, setOpen] = useState(false)
     return (
         <>
-            <SettingsLink label="Remap buttons" icon="gamepad" onClick={() => setOpen(true)} />
+            <SettingsLink label="Remap buttons" icon="gamepad" note="Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again)." onClick={() => setOpen(true)} />
             <GamepadModal open={open} onClose={() => setOpen(false)} />
         </>
     )
@@ -125,9 +125,14 @@ function RemapButton() {
 function JoySettingsFields() {
     const settings = useStore(joySettings)
     return (
-        <Field inline className="set-row" label="Publish" title="the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy (drives nothing; for recordings and Joy readers)" data-testid="joy-settings">
-            <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
-        </Field>
+        <>
+            <Field inline className="set-row" label="Publish" hint={`The raw gamepad, drive keys and thumb sticks as ${JOY_TYPE.replace(".", "/")}, at most ${JOY_HZ}/s; nothing while idle. It drives nothing: it's for recordings.`} data-testid="joy-settings">
+                <Toggle value={settings.enabled} onChange={(enabled: any) => joySettings.update({ enabled })} />
+            </Field>
+            <Field inline className="set-row" label="Topic">
+                <TextInput mono size="sm" data-testid="joy-topic" aria-label="Joystick topic" placeholder={JOY_TOPIC} value={settings.topic ?? ""} onCommit={(topic) => joySettings.update({ topic: topic.trim() || undefined })} />
+            </Field>
+        </>
     )
 }
 

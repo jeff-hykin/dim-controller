@@ -14,7 +14,7 @@ import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { HIDDEN_GRACE_MS, setHiddenGraceMs, VideoSources } from "./video.ts"
 import { Drive } from "./drive.ts"
-import { JOY_TOPIC, JOY_TYPE, JoyPublisher } from "./joy.ts"
+import { JOY_TYPE, JoyPublisher, joySettings, joyTopic } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
 import { jointControlState } from "./jointControl.ts"
@@ -125,9 +125,10 @@ export class ViewerApp {
         this.drive = new Drive(this.connection, this.profile)
         this.joy = new JoyPublisher(this.connection)
         // the lease also keeps the drive topics (and the gamepad's) to this viewer
-        const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(JOY_TOPIC, JOY_TYPE)])
+        const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(joyTopic(), JOY_TYPE)])
         leasePublish()
         this.drive.state.subscribe(leasePublish)
+        joySettings.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => jointControlState.get().enabled && (this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true))
         this.manipulation.watch()

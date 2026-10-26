@@ -1,4 +1,4 @@
-// The operator's raw input as sensor_msgs/Joy on /joystick (dimos's stream name: the web cockpit's Teleop(joystick=...)
+// The operator's raw input as sensor_msgs/Joy on /joystick, or the topic Settings names (dimos's stream name: the web cockpit's Teleop(joystick=...)
 // and KeyboardTeleop both publish `joystick: Joy`). It drives nothing; it's there for recordings and for a module that
 // wants the actual input. Each source has its own layout (a message tells them apart by its lengths):
 //   gamepad   axes: the Gamepad API's raw axes (3 decimals, y down +), then LT's and RT's analog travel 0..1 (Go2 Ctrl's
@@ -26,10 +26,14 @@ export interface JoySample {
 }
 
 export interface JoySettings {
-    /** publish the raw input on JOY_TOPIC */
+    /** publish the raw input on joyTopic() */
     enabled: boolean
+    /** the topic it goes out on; blank = JOY_TOPIC */
+    topic?: string
 }
 export const joySettings = persistentStore<JoySettings>("lv.joy", { enabled: true })
+/** the topic the raw input goes out on (Settings → Advanced → Joystick topic) */
+export const joyTopic = (settings: JoySettings = joySettings.get()) => settings.topic?.trim() || JOY_TOPIC
 
 /** KeyboardTeleop's Joy.buttons order (dimos/robot/unitree/keyboard_teleop.py) */
 export const KEYBOARD_JOY_BUTTONS = ["w", "a", "s", "d", "q", "e", "shift", "ctrl", "space"] as const
@@ -86,6 +90,7 @@ export class JoyPublisher {
     #sources = new Map<JoySource, SourceState>()
     #publisher: Publisher | null = null
     #client: unknown = null
+    #topic = ""
     #unsubscribe: () => void
 
     constructor(readonly connection: Connection, readonly settings: Store<JoySettings> = joySettings, readonly hz = JOY_HZ, readonly now = () => Date.now()) {
@@ -178,7 +183,7 @@ export class JoyPublisher {
             return
         }
         const now = this.now()
-        this.connection.command(dimosKey(JOY_TOPIC, JOY_TYPE))
+        this.connection.command(dimosKey(joyTopic(this.settings.get()), JOY_TYPE))
         try {
             publisher.put(encode(JOY_TYPE, { header: { stamp: { sec: Math.floor(now / 1000), nsec: (now % 1000) * 1_000_000 }, frame_id: "" }, axes: sample.axes, buttons: sample.buttons }))
             this.published.set({ count: this.published.get().count + 1, last: sample })
@@ -194,11 +199,12 @@ export class JoyPublisher {
         if (!client || client.state === "lost") {
             return null
         }
-        if (this.#publisher && (this.#client !== client || ["tripped", "closed", "rejected"].includes(this.#publisher.state))) {
+        if (this.#publisher && (this.#client !== client || this.#topic !== joyTopic(this.settings.get()) || ["tripped", "closed", "rejected"].includes(this.#publisher.state))) {
             this.#close()
         }
         if (!this.#publisher) {
-            this.#publisher = client.publisher(dimosKey(JOY_TOPIC, JOY_TYPE), { priority: Priority.INTERACTIVE_HIGH, delivery: "reliable" })
+            this.#topic = joyTopic(this.settings.get())
+            this.#publisher = client.publisher(dimosKey(this.#topic, JOY_TYPE), { priority: Priority.INTERACTIVE_HIGH, delivery: "reliable" })
             this.#client = client
         }
         return this.#publisher
