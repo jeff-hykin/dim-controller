@@ -146,8 +146,12 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
     border-bottom: 1px solid var(--border-strong); } /* a step lighter than the body over a skin's backdrop (Research: frosted photo) */
 .lv-panel.collapsed > .panel-head { border-bottom: 0; }
 /* each header's sides: an accent bar on the left, a strong line on the right, so neighbouring headers read as separate */
-.panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent), inset -1px 0 0 var(--border-strong); }
-.lv-panel.zone-left > .panel-head, .lv-panel.zone-right > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent), inset -1px 0 0 var(--border-strong), inset 0 1px 0 var(--border-strong); }
+.panel-head { position: relative; box-shadow: inset -1px 0 0 var(--border-strong); }
+/* the accent: full height with square corners, a short rounded mark clear of the curve when Desktop rounds them */
+.panel-head::before { content: ""; position: absolute; left: 0; top: min(var(--radius-lg, 0px), 9px); bottom: min(var(--radius-lg, 0px), 9px); width: 3px; pointer-events: none;
+    background: color-mix(in srgb, var(--primary) 70%, transparent); border-radius: 0 min(var(--radius-lg, 0px), 2px) min(var(--radius-lg, 0px), 2px) 0; }
+html[data-corners="sharp"] .panel-head::before { top: 0; bottom: 0; } /* sharp corners in a rounded skin: the full bar */
+.lv-panel.zone-left > .panel-head, .lv-panel.zone-right > .panel-head { box-shadow: inset -1px 0 0 var(--border-strong), inset 0 1px 0 var(--border-strong); }
 .mobile .panel-head { cursor: default; }
 .panel-title { display: inline-flex; align-items: center; gap: 6px; flex: none; font: 600 12px var(--sans); color: var(--fg); white-space: nowrap; }
 .panel-title svg { color: var(--muted-fg); }
@@ -1050,22 +1054,23 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .plot-inline .dr-input-wrap, .plot-inline .dr-number { width: 64px; }
 
 /* ── the bar (ui/TopBar.tsx), along the bottom: STOP left, the link in the middle, chips, Record and Settings right; slim,
-   its buttons borderless until hovered ── */
+   its buttons borderless until hovered (Record and Settings keep a frame). It runs down over Desktop's bottom inset too,
+   its contents centred in all of it (else they sit high in what reads as one bar) ── */
 .app.desktop { --lv-bar-h: 44px; }
 :root { --lv-panel-gap: 6px; } /* read by the workspace (ui/Workspace.tsx useFrame) from <html>; a phone has none */
-.main-bar { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; height: var(--lv-bar-h); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+.main-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(var(--lv-bar-h) + var(--dim-inset-bottom, 0px)); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
     padding: 0 6px; backdrop-filter: var(--blur, none); border-top: 1px solid var(--border-strong);
     background: linear-gradient(color-mix(in srgb, var(--fg) 7%, transparent), color-mix(in srgb, var(--fg) 7%, transparent)), var(--backdrop, var(--lv-bar)); } /* the panel headers' gray */
 .main-bar-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .main-bar-side.right { justify-content: flex-end; }
 .main-bar-middle { display: flex; justify-content: center; }
 .main-bar .record-control { position: static; }
-.main-bar .dr-btn:not(.top-stop), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
-.main-bar .record-split, .main-bar .record-control .record-split > .record-more { border-color: transparent; }
+.main-bar .dr-btn:not(.top-stop):not(.top-settings):not(.record-split > *), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
+.main-bar .record-control .record-split > .dr-btn { background: transparent; }
+.main-bar .top-settings { background: transparent; border-color: var(--border-strong); }
 .main-bar .bar-chip.bar-link { background: transparent; } /* framed, over the bar's gray */
 .main-bar .dr-btn:not(.top-stop):hover, .main-bar .bar-button:hover { background: var(--hover); }
-.main-bar .top-settings { margin-left: 9px; }
-.main-bar .top-settings::before { content: ""; position: absolute; left: -7px; top: 6px; bottom: 6px; border-left: 1px solid var(--border); }
+.main-bar .top-settings { margin-left: 4px; }
 .app .main-bar .dr-btn.top-stop { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 16px; flex: none; font: 800 14px var(--sans); letter-spacing: 0.12em;
     color: var(--primary-fg); background: var(--lv-stop); border-color: var(--lv-stop); }
 .app .main-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
@@ -1177,15 +1182,16 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 
 /* ── Settings (ui/SettingsPanel.tsx, ui/SettingsGroup.tsx): grouped like a phone's settings: a quiet heading, rows in one
    rounded card (label left, control right, hairlines between), a note under the card; folded groups open under a title ── */
-.app-settings { display: flex; flex-direction: column; gap: 18px; padding-top: 4px; }
+.app-settings { display: flex; flex-direction: column; gap: 14px; padding-top: 2px; }
 .app-settings .set-group { margin: 0; }
-.set-group-title { margin: 0 0 6px 12px; font: 600 11px var(--sans); color: var(--muted-fg); letter-spacing: 0.02em; text-transform: none; }
-.set-advanced-title { margin: 6px 0 -10px 12px; }
-.set-card { border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--fg) 3%, var(--card)); overflow: hidden; }
-.set-note { margin: 6px 12px 0; color: var(--muted-fg); font-size: 11.5px; line-height: 1.45; }
-.set-note code { font: 11px var(--mono); color: var(--fg); }
+/* section headings: uppercase, bright, with a rule across the panel above them; notes stay small, muted, sentence case */
+.set-group-title { margin: 0 0 8px; padding: 0 2px; font: 700 10.5px var(--sans); color: color-mix(in srgb, var(--fg) 88%, transparent); letter-spacing: 0.09em; text-transform: uppercase; }
+.set-advanced-title { margin: 6px 0 -6px; padding-top: 14px; border-top: 1px solid var(--border-strong); }
+.set-card { border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: color-mix(in srgb, var(--fg) 4%, var(--card)); overflow: hidden; }
+.set-note { margin: 6px 4px 0 14px; color: color-mix(in srgb, var(--muted-fg) 85%, transparent); font: 400 11px/1.45 var(--sans); }
+.set-note code { font: 10.5px var(--mono); color: var(--muted-fg); }
 .set-note .lv-kbd { font-size: 10px; padding: 0 4px; }
-.set-footer { margin: 0 12px; color: var(--muted-fg); font-size: 11.5px; }
+.set-footer { margin: 4px 0 0; padding: 12px 2px 0; border-top: 1px solid var(--border-strong); color: var(--muted-fg); font-size: 11px; }
 .set-dim { color: var(--muted-fg); }
 .app-settings .set-row { box-sizing: border-box; min-height: 44px; padding: 7px 8px 7px 12px; margin: 0; gap: 10px; }
 .app-settings .set-card > * + * { border-top: 1px solid var(--border); }
@@ -1207,18 +1213,21 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .set-row-line > .dr-field-label { flex: 1; font-size: 13px; color: var(--fg); }
 .app-settings .drive-topics { box-sizing: border-box; width: 100%; min-height: 72px; margin: 0; padding: 8px 10px; font: 12px/18px var(--mono); border-radius: 6px; resize: vertical; }
 .drive-topics-auto { border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 60%, transparent); color: var(--muted-fg); }
-/* a folded group's title: a row of its own, the chevron turning */
-.set-fold > .dr-disclosure__summary { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; padding: 2px 12px; font: 600 12px var(--sans); color: var(--fg); letter-spacing: 0; text-transform: none; }
-.set-fold > .dr-disclosure__summary::before { content: "›"; display: inline-block; width: 10px; color: var(--muted-fg); font-size: 15px; transition: transform 120ms; }
-.set-fold[open] > .dr-disclosure__summary::before { content: "›"; transform: rotate(90deg); }
-.set-fold > .dr-disclosure__summary:hover { color: var(--primary); }
-.app-settings .set-fold:not([open]) > .dr-disclosure__summary { margin-bottom: 0; }
-.app-settings .set-fold:not([open]) + .set-fold { margin-top: -10px; }
+/* a folded group's title: a full-width row like the card rows (chevron on the right, turning); open, its card hangs from it */
+.app .app-settings .set-fold > summary.dr-disclosure__summary { display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; margin: 0; padding: 0 12px;
+    font: 500 13px var(--sans); color: var(--fg); letter-spacing: 0; text-transform: none;
+    border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); background: color-mix(in srgb, var(--fg) 4%, var(--card)); }
+.set-fold > .dr-disclosure__summary::before, .set-fold[open] > .dr-disclosure__summary::before { content: none; }
+.set-fold > .dr-disclosure__summary::after { content: "›"; margin-left: auto; color: var(--muted-fg); font-size: 17px; transition: transform 120ms; }
+.set-fold[open] > .dr-disclosure__summary::after { transform: rotate(90deg); }
+.set-fold > .dr-disclosure__summary:hover { background: var(--hover); }
+.set-fold[open] > .dr-disclosure__summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.set-fold[open] > .set-card { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+.app-settings .set-fold + .set-fold { margin-top: -8px; }
 
 /* ── desktop panels as cards: the workspace leaves --lv-panel-gap between them (ui/workspace.ts layoutWorkspace), each docked
    panel gets a hairline frame and rounded corners instead of the shared seam; in-panel buttons go borderless until hovered ── */
 .app.desktop .lv-panel.zone-stage, .app.desktop .lv-panel.zone-left, .app.desktop .lv-panel.zone-right { border-width: 1px; border-color: var(--border); border-radius: var(--radius-lg); }
-.app.desktop .lv-panel.zone-left > .panel-head, .app.desktop .lv-panel.zone-right > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent); }
-.app.desktop .lv-panel > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent); }
+.app.desktop .lv-panel > .panel-head, .app.desktop .lv-panel.zone-left > .panel-head, .app.desktop .lv-panel.zone-right > .panel-head { box-shadow: none; }
 .panel-tools .dr-btn:not(.dr-btn--primary), .camera-tools .dr-btn:not(.dr-btn--primary) { border-color: transparent; background: transparent; box-shadow: none; }
 .panel-tools .dr-btn:not(.dr-btn--primary):hover, .camera-tools .dr-btn:not(.dr-btn--primary):hover { background: var(--hover); }

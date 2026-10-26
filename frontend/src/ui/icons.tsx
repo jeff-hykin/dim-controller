@@ -2,6 +2,8 @@
 import { Icon as LibIcon } from "dimos-react"
 
 const OWN_ICON_PATHS: Record<string, string> = {
+    // the gear: eight even teeth around the hole (dimos-react's is lopsided)
+    settings: "M10.32 5 L10.5 2.52 L13.5 2.52 L13.68 5 L15.76 5.86 L17.64 4.23 L19.77 6.36 L18.14 8.24 L19 10.32 L21.48 10.5 L21.48 13.5 L19 13.68 L18.14 15.76 L19.77 17.64 L17.64 19.77 L15.76 18.14 L13.68 19 L13.5 21.48 L10.5 21.48 L10.32 19 L8.24 18.14 L6.36 19.77 L4.23 17.64 L5.86 15.76 L5 13.68 L2.52 13.5 L2.52 10.5 L5 10.32 L5.86 8.24 L4.23 6.36 L6.36 4.23 L8.24 5.86Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
     // pop out (float): a box with an arrow leaving it
     float: "M18 14v6H4V6h6 M14 4h6v6 M20 4l-9 9",
     // a frame with a picture filling its middle (make this the main view)
