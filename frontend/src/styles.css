@@ -135,7 +135,6 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
 .lv-panel.zone-left, .lv-panel.zone-right { z-index: 3; }
 .lv-panel.zone-left { border-right-width: 1px; }
 .lv-panel.zone-right { border-left-width: 1px; }
-.lv-panel.zone-left > .panel-head, .lv-panel.zone-right > .panel-head { box-shadow: inset 0 1px 0 var(--border); }
 .lv-panel.zone-float { z-index: 6; border-width: 1px; border-color: var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 .lv-panel.hidden { visibility: hidden; pointer-events: none; }
 .lv-panel.collapsed > .panel-content { display: none; }
@@ -146,6 +145,9 @@ body.panel-dragging, body.panel-dragging * { cursor: grabbing !important; user-s
     background: linear-gradient(color-mix(in srgb, var(--fg) 13%, transparent), color-mix(in srgb, var(--fg) 13%, transparent)), var(--backdrop, var(--card));
     border-bottom: 1px solid var(--border-strong); } /* a step lighter than the body over a skin's backdrop (Research: frosted photo) */
 .lv-panel.collapsed > .panel-head { border-bottom: 0; }
+/* each header's sides: an accent bar on the left, a strong line on the right, so neighbouring headers read as separate */
+.panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent), inset -1px 0 0 var(--border-strong); }
+.lv-panel.zone-left > .panel-head, .lv-panel.zone-right > .panel-head { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 70%, transparent), inset -1px 0 0 var(--border-strong), inset 0 1px 0 var(--border-strong); }
 .mobile .panel-head { cursor: default; }
 .panel-title { display: inline-flex; align-items: center; gap: 6px; flex: none; font: 600 12px var(--sans); color: var(--fg); white-space: nowrap; }
 .panel-title svg { color: var(--muted-fg); }
@@ -956,6 +958,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* a chip with nothing wrong (the link, the battery): low contrast, so a problem chip stands out */
 .bar-chip.quiet, .corner-chips .bar-chip.quiet { color: var(--muted-fg); border-color: transparent; background: color-mix(in srgb, var(--card) 45%, transparent); box-shadow: none; }
 .bar-chip.quiet .bar-dot { background: var(--muted-fg); box-shadow: none; }
+.bar-chip.bar-link.quiet { border-color: var(--border-strong); } /* the link chip keeps its frame when all's well */
 .bar-battery.quiet { --battery: var(--muted-fg); }
 /* a phone: the panel list on the left, Record, the palette and the drawer on the right */
 .phone-corners > .record-control { margin-left: auto; }
