@@ -919,6 +919,82 @@ provides:
                         schema:
                             type: string
                         description: 'the snapshot''s name, as GET api/snapshots lists it'
+        /api/layout:
+            get:
+                description: >-
+                    The page's layout: desktop and phone (each kind of page's arrangement: stage = the main view's
+                    panel, left / right = the side panels top to bottom, floating = boxes {id, x, y, width, height}
+                    in px, collapsed = folded to their header, closed = fixed panels closed, leftWidth / rightWidth
+                    px, weights = shares of a side's height; null before a page of that kind saved one), cameras
+                    (the camera panels: {id, key = the image topic's zenoh key}), plots (each plot's settings and
+                    series {key, field}) and fixedPanels (map, scene = the 3D view, settings, tf). Panel ids: map,
+                    scene, settings, tf, camera:<id>, plot:<id>. Returns {desktop, phone, cameras, plots,
+                    fixedPanels}.
+                x-when: you need to know which panels the user has open and where
+            put:
+                description: >-
+                    Set any part of the layout, as GET api/layout returns it: desktop / phone (an arrangement),
+                    cameras (the camera panels), plots. Parts left out stay. Every open page applies it at once (an
+                    id it doesn't know is dropped, a panel the arrangement leaves out goes to its home side).
+                    Returns the layout.
+                x-when: you want to set the whole panel layout (e.g. restore a saved one)
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    cameras:
+                                        description: 'camera panels [{id, key}]'
+                                        type: array
+                                    desktop:
+                                        description: the desktop arrangement
+                                        type: object
+                                    phone:
+                                        description: the phone arrangement
+                                        type: object
+                                    plots:
+                                        description: 'plots [{id, series: [{id, key, field, color}], historyS, ...}]'
+                                        type: array
+                                type: object
+        /api/layout/panel:
+            post:
+                description: >-
+                    Open, move or close one panel on every open page: panel = an id (map, scene = the 3D view,
+                    settings, tf, camera:<id>, plot:<id>) or camera / plot for a new one (topic: a new camera's
+                    image topic key; series: a new plot's [{key, field}], field default data); to = main (the main
+                    view; the one there moves to the left side), left, right (a side, at index, default the end),
+                    float (box {x, y, width, height} px) or closed; device = desktop (default) or phone. Returns
+                    {panel (its id), layout}; 404 for an unknown panel, 400 for a bad to.
+                x-when: 'you want to open, move or close one panel (camera, 3D view, map, plot, settings)'
+                requestBody:
+                    content:
+                        application/json:
+                            schema:
+                                properties:
+                                    box:
+                                        description: 'floating box {x, y, width, height} px'
+                                        type: object
+                                    device:
+                                        description: desktop (default) or phone
+                                        type: string
+                                    index:
+                                        description: 'position in a side, from the top'
+                                        type: number
+                                    panel:
+                                        description: 'map, scene, settings, tf, camera:<id>, plot:<id>, or camera / plot (new)'
+                                        type: string
+                                    series:
+                                        description: 'a new plot''s numbers [{key, field}]'
+                                        type: array
+                                    to:
+                                        description: 'main (default), left, right, float, closed'
+                                        type: string
+                                    topic:
+                                        description: 'a new camera''s image topic key, e.g. dimos/color_image/sensor_msgs.Image'
+                                        type: string
+                                required:
+                                    - panel
+                                type: object
 nix:
     cache:
         aarch64-linux:

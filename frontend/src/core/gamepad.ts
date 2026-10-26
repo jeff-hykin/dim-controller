@@ -13,6 +13,7 @@
 // LT + RT (the arm's stop) and A work.
 import { GamepadDriver as SharedDriver, type GamepadStatus, noPad, padAxes as sharedPadAxes, type PadLike } from "dimos-react"
 import { persistentStore, Store } from "./store.ts"
+import type { PadMapping } from "./padMapping.ts"
 import type { Axes, RobotProfile } from "../profile/types.ts"
 
 export { noPad, readPad } from "dimos-react"
@@ -23,6 +24,8 @@ export interface GamepadSettings {
     deadZone: number
     /** up on the left stick backs up */
     invertY: boolean
+    /** the remapping (core/padMapping.ts; absent: the standard layout) */
+    mapping?: Partial<PadMapping>
 }
 
 export const GAMEPAD_DEFAULTS: GamepadSettings = { deadZone: 0.15, invertY: false }

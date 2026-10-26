@@ -1,6 +1,6 @@
 // The joint control (a profile's `joint`; core/baseJoint.ts): the picked joint and its position, a select to pick
 // another, and ▲ / ▼ held to jog it. Phone: a chip and two hold buttons between the sticks; desktop: the R/F keys
-// lighting up in the dock, and the drive panel's section with the speed and the topic. With no joint state it says so.
+// and the 3D view's joint control section with the speed and the topic. With no joint state it says so.
 import { useEffect, useRef } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { jogPicked, movableJoints, pickJoint } from "../core/baseJoint.ts"
@@ -103,20 +103,6 @@ export function JointHud({ app }: { app: ViewerApp }) {
 const jointKeys = (app: ViewerApp) => [1, -1].map((sign) => keyName(Object.entries(app.profile.drive.keys).find(([, action]) => "joint" in action && Math.sign(action.joint) === sign)?.[0] ?? ""))
 
 /** Desktop dock: the joint keys lit while jogging, and the chip. */
-export function JointDock({ app }: { app: ViewerApp }) {
-    const joint = useJoint(app)
-    const [up, down] = jointKeys(app)
-    return (
-        <div className={`dock-joint ${joint.jogging ? "moving" : ""}`} data-testid="joint-dock">
-            <div className="keys" aria-label="joint keys">
-                <div><span className={`key ${joint.jogging > 0 ? "down" : ""}`} title="hold: joint ▲ +">{up}</span></div>
-                <div><span className={`key ${joint.jogging < 0 ? "down" : ""}`} title="hold: joint ▼ −">{down}</span></div>
-            </div>
-            <JointPicker app={app} joint={joint} />
-        </div>
-    )
-}
-
 /** The drive panel's section: pick, ▲ / ▼, the speed (the arm's joint speed: one setting) and where targets go. */
 export function JointSection({ app }: { app: ViewerApp }) {
     const joint = useJoint(app)

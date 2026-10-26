@@ -2,7 +2,7 @@
 // this window, and the one set of panel actions the headers, the palette and the keyboard share. <WorkspaceSurface>
 // draws what isn't a panel: the splitters, the rails' edges, the landing preview while a header is dragged, the empty
 // main view's hint and, on a phone, the drawer's backdrop.
-import { createContext, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { persistentStore, Store, useStore } from "../core/store.ts"
 import { type PanelAction } from "./commands.ts"
 import { PHONE_LANDSCAPE } from "./useMobile.ts"
@@ -75,22 +75,31 @@ export const layoutSettings = {
     phone: persistentStore<{ arrangement: Arrangement | null }>("lv.layout.phone", { arrangement: null }),
 }
 
-/** The page's arrangement and the backend's kept the same: the backend's wins when it has one (set by another page or the agent). */
+/** The page's arrangement and the backend's kept the same: a change from elsewhere (another page, the agent) is taken,
+ * this page's own changes are sent; only a remote change is applied (never a stale remote over a newer local edit). */
 function useLayoutSync(mobile: boolean, ids: string[]) {
     const setting = layoutSettings[mobile ? "phone" : "desktop"]
     const remote = useStore(setting).arrangement
     const { arrangement: local } = useStore(workspace)
-    const idsKey = ids.join("|")
+    // what this page last sent: its echo isn't a change from elsewhere
+    const sent = useRef<string | null>(null)
+    const idsRef = useRef(ids)
+    idsRef.current = ids
     useEffect(() => {
-        if (remote && typeof remote === "object") {
-            const next = normalizeArrangement(remote, ids)
-            if (JSON.stringify(next) !== JSON.stringify(normalizeArrangement(workspace.get().arrangement, ids))) {
-                workspace.set({ arrangement: next })
-            }
+        const text = JSON.stringify(remote)
+        if (!remote || typeof remote !== "object" || text === sent.current) {
+            return
         }
-    }, [remote, idsKey])
+        sent.current = text
+        const next = normalizeArrangement(remote, idsRef.current)
+        if (JSON.stringify(next) !== JSON.stringify(normalizeArrangement(workspace.get().arrangement, idsRef.current))) {
+            workspace.set({ arrangement: next })
+        }
+    }, [remote])
     useEffect(() => {
-        if (JSON.stringify(local) !== JSON.stringify(setting.get().arrangement)) {
+        const text = JSON.stringify(local)
+        if (text !== sent.current && text !== JSON.stringify(setting.get().arrangement)) {
+            sent.current = text
             setting.set({ arrangement: local })
         }
     }, [local])
@@ -206,7 +215,7 @@ function useFrame(mobile: boolean, underBar: boolean): Frame {
         const bars = new ResizeObserver(again)
         const watched = new Set<Element>()
         const watch = () => {
-            for (const element of document.querySelectorAll(".action-dock, .drive-hud.mobile, .phone-corners")) {
+            for (const element of document.querySelectorAll(".top-bar, .drive-hud.mobile, .phone-corners")) {
                 if (!watched.has(element)) {
                     watched.add(element)
                     bars.observe(element)
@@ -231,12 +240,12 @@ function useFrame(mobile: boolean, underBar: boolean): Frame {
     // desktop: above the action dock; a phone: above the thumb sticks, so the main view is never under a thumb, except
     // on its side, where the sticks lie over a full-screen main view (a game pad's look)
     const underSticks = mobile && matchMedia(PHONE_LANDSCAPE).matches
-    const dock = underSticks || underBar ? undefined : document.querySelector(mobile ? ".drive-hud.mobile" : ".action-dock")?.getBoundingClientRect().top
+    const dock = mobile && !underSticks ? document.querySelector(".drive-hud.mobile")?.getBoundingClientRect().top : undefined
     return {
         width: innerWidth,
         height,
-        // nothing across the top: the panels start at the window's top edge (a phone: below its corner buttons)
-        top: mobile ? document.querySelector(".phone-corners")?.getBoundingClientRect().bottom ?? 0 : 0,
+        // the panels start under the top bar (a phone: below its corner buttons)
+        top: (mobile ? document.querySelector(".phone-corners") : document.querySelector(".top-bar"))?.getBoundingClientRect().bottom ?? 0,
         bottom: dock ?? height - px("--dim-inset-bottom", 0),
         mobile,
     }

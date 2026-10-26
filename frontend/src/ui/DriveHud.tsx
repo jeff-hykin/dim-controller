@@ -1,5 +1,5 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
-// in the action dock (ui/ActionDock.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
+// over the main view while held (ui/KeyOverlay.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost, and above STOP
 // a profile's joint control (ui/JointControl.tsx). Both show the agent's commands (POST api/drive), dry runs included.
 import { disengagedShort, disengagedText } from "./barStatus.ts"
@@ -17,7 +17,7 @@ import { popoverPosition } from "./panelDrag.ts"
 import { JointHud } from "./JointControl.tsx"
 
 /** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
-function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     return (
         <div className="drive-halt" role="alert" data-testid="drive-halt">
             {/* the short form keeps the dock narrow; the full reason is the tooltip, and the button says what to do */}

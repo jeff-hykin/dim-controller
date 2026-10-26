@@ -18,9 +18,10 @@ import { GRADIENTS, ViewCube } from "dimos-react/three"
 import type { PointLook } from "../core/render/rendering.ts"
 import type { CloudSettings } from "../layers/pointcloud.tsx"
 import { Icon } from "./icons.tsx"
-import { Button, Card, NumberInput, SearchInput, Segmented, Select, Slider, Toggle } from "dimos-react"
+import { Button, Card, NumberInput, SearchInput, Segmented, Select, Slider, Tabs, Toggle } from "dimos-react"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
+import { DriveHint } from "./KeyOverlay.tsx"
 import { ViewControls } from "./ViewControls.tsx"
 import { TfFootnote } from "./TfFootnote.tsx"
 import { panelTitle } from "./commands.ts"
@@ -29,7 +30,12 @@ import { useDockActions } from "./dockActions.ts"
 import { Unavailable } from "./Unavailable.tsx"
 import { GroupTitle, LayerList, useCollapsedGroups } from "./LayersPanel.tsx"
 import { FILTER_OVER, matchesQuery } from "../core/topicFilter.ts"
-import { ManipActions } from "./ManipPanel.tsx"
+import { ManipActions, ManipPanel } from "./ManipPanel.tsx"
+import { ArmPanel } from "./ArmPanel.tsx"
+import { JointSection } from "./JointControl.tsx"
+import { armsPanelShown } from "./ArmsPanel.tsx"
+import { jointControlState } from "../core/jointControl.ts"
+import { SceneSettings } from "./SettingsPanel.tsx"
 import { SnapshotTools } from "./SnapshotGallery.tsx"
 import { saveSnapshot, snapshot3d } from "../core/snapshots.ts"
 
@@ -76,9 +82,11 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             className={`scene-slot ${off ? "off" : ""}`}
             testid="scene-panel"
             keepMounted
+            settings={app ? () => <SceneSettings app={app} /> : undefined}
             info={slot?.collapsed ? "collapsed · nothing subscribed" : app ? <SceneRate app={app} /> : undefined}
             tools={app && !off && (
                 <div className="scene-tools">
+                    <JointControlButton app={app} />
                     <PauseButton app={app} />
                     <SnapshotTools what="3D view" take={async () => saveSnapshot(await snapshot3d(() => app.viewer.capture()), "3d")} />
                     <CloudButton app={app} open={menuOpen} onOpen={setMenuOpen} buttonRef={cloudButton} />
@@ -89,12 +97,19 @@ export function ScenePanel({ host, app, onTf }: { host: RefObject<HTMLDivElement
             {app?.viewer.webglError && !off && <Unavailable what="3D view" reason={app.viewer.webglError} />}
             {app && !off && !app.viewer.webglError && <SceneViewCube app={app} host={host} />}
             {app && !off && <ViewControls app={app} />}
-            {app && !off && <FocusedManipActions app={app} />}
+            {app && !off && <JointControlArea app={app} />}
             {app && !off && <TfFootnote app={app} onOpen={onTf} />}
+            {app && !off && <SceneWaiting app={app} />}
             {app && menuOpen && !off && <CloudMenu app={app} anchor={cloudButton.current} onClose={() => setMenuOpen(false)} />}
         </Panel>
         </>
     )
+}
+
+/** No point cloud coming in: the drive keys and what they do, so a first look at an empty view teaches the controls. */
+function SceneWaiting({ app }: { app: ViewerApp }) {
+    const total = totalRate(useStore(cloudRates))
+    return total.clouds ? null : <div className="scene-waiting"><DriveHint app={app} waiting="Waiting for lidar data." /></div>
 }
 
 /** Settings → View cube: dimos-react's CAD view cube in the top-right corner (click a face, edge or corner to look from there, drag to orbit). */
@@ -116,17 +131,55 @@ function SceneViewCube({ app, host }: { app: ViewerApp; host: RefObject<HTMLDivE
     return null
 }
 
-/** Focus mode hides the arm panel: while there's an arm target, its Preview / Execute / Clear come to the 3D view. */
-function FocusedManipActions({ app }: { app: ViewerApp }) {
-    const { target } = useStore(app.manipulation.state)
-    const api = useWorkspaceApi()
-    if (!target || api.mobile || api.view.hide.length !== 2) {
+/** Whether joint control can do anything here: an arm (the Arm format, a running planner) or a format's jogged joint with joint states. */
+export function useJointControlAvailable(app: ViewerApp): boolean {
+    const robot = useStore(app.robot)
+    const runs = useStore(app.runs.state)
+    const manipulation = useStore(app.manipulation.state)
+    const arm = useStore(app.arm.state)
+    return armsPanelShown(robot.type, runs, manipulation.available) || (!!app.profile.joint && arm.joints.length > 0)
+}
+
+/** The 3D view's "Enable joint control": the gizmos, Plan / Execute on top and the joint tabs at its side, while on. */
+function JointControlButton({ app }: { app: ViewerApp }) {
+    const { enabled } = useStore(jointControlState)
+    if (!useJointControlAvailable(app)) {
         return null
     }
     return (
-        <div className="manipulating-note" data-testid="manipulating-note">
-            <ManipActions app={app} testid="scene-manip" />
-        </div>
+        <Button size="sm" className="joint-control-toggle" pressed={enabled} data-testid="joint-control-toggle" title={enabled ? "Hide the joint control" : "Move the joints: gizmos in the view, Plan / Execute, the joint tabs"} onClick={() => jointControlState.update({ enabled: !enabled })}>
+            <Icon name="arm" size={14} /><span>{enabled ? "Joint control on" : "Enable joint control"}</span>
+        </Button>
+    )
+}
+
+/** Joint control turned on: Plan / Execute across the top of the view, and at its side the Joint control tab (planning groups,
+ * saved poses, the target, each joint; a jogged joint) and its Settings tab (the scene, status, planning). */
+function JointControlArea({ app }: { app: ViewerApp }) {
+    const { enabled, tab } = useStore(jointControlState)
+    const manipulation = useStore(app.manipulation.state)
+    const robot = useStore(app.robot)
+    const available = useJointControlAvailable(app)
+    if (!enabled || !available) {
+        return null
+    }
+    const planner = robot.type === "arm" || manipulation.available === true
+    return (
+        <>
+            {planner && <div className="joint-top" data-testid="joint-top"><ManipActions app={app} testid="scene-manip" /></div>}
+            <aside className="joint-side panel-body" data-testid="joint-side">
+                <Tabs size="sm" label="Joint control" items={[["joints", "Joint control"], ["settings", "Settings"]]} value={tab} onChange={(next) => jointControlState.update({ tab: next as "joints" | "settings" })} />
+                {tab === "joints"
+                    ? (
+                        <>
+                            {app.profile.joint && <JointSection app={app} />}
+                            {robot.type === "arm" && <ArmPanel app={app} />}
+                            {planner && <ManipPanel app={app} part="control" actions={false} />}
+                        </>
+                    )
+                    : planner ? <ManipPanel app={app} part="settings" actions={false} /> : <p className="hint">Nothing to set: this format jogs one joint (its speed and topic are on the Joint control tab).</p>}
+            </aside>
+        </>
     )
 }
 

@@ -7,6 +7,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { GamepadDriver, type GamepadStatus, gamepadSettings, noPad, type PadLike } from "../core/gamepad.ts"
 import { Store } from "../core/store.ts"
 import { padJoy } from "../core/joy.ts"
+import { normalizeMapping, remapPad } from "../core/padMapping.ts"
 import { releaseAllThumbSticks } from "dimos-react"
 
 export const gamepadStatus = new Store<GamepadStatus>(noPad())
@@ -61,7 +62,9 @@ export function useGamepad(app: ViewerApp | null) {
                 driver.release()
                 app.joy.release("gamepad")
             } else {
-                driver.poll(pads())
+                // the driver reads the pad through the gamepad chip's remapping; Joy stays the raw pad
+                const mapping = normalizeMapping(gamepadSettings.get().mapping)
+                driver.poll(pads().map((pad) => pad && remapPad(pad, mapping)))
                 // the same pad the driver reads: the first connected one
                 const pad = pads().find((other) => other?.connected)
                 pad ? app.joy.sample("gamepad", padJoy(pad)) : app.joy.release("gamepad")

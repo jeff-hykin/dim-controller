@@ -129,6 +129,10 @@ pub fn routes() -> Routes<Api> {
         .endpoint("GET", "api/host", "you need to know whether the robot's computer is overloaded", "The machine this runs on (the robot's computer): its CPU load, sampled every few seconds in the background. Returns {cpu: {busyPercent (all cores, over the last sample; Linux and macOS), cores, sampledAt (unix ms), everySecs} or null before the first sample, steamDeck (Valve's Jupiter or Galileo board), steamOs (/etc/os-release says SteamOS)}.", json!({}), crate::host::get)
         .endpoint("GET", "api/settings", "you need the current value of a view, drive or recorder setting", "Every page setting by key: lv.view {profile (the robot type picked: dog, humanoid, wheeled, arm, drone; \"\" = auto), robot (the type in use, written by the page), fixedFrame (\"\" = auto), follow, followFrame (the TF frame the camera follows; \"\" = the robot's), showStats, robotModel, camerasIn3d (every camera drawn in the 3D view), viewCube (the 3D view's view cube)}; lv.arm {linear, angular, jointSpeed} (arm jog speeds); lv.gamepad {deadZone, invertY}; lv.rendering.v2 {pointStyle, cubeShade}; lv.layers.enabled {<topic key>: on/off}; lv.layer.<type>.<topic key> (that layer's style: colors, sizes, ...); lv.drive.<robot type> {linear, angular, vertical, topics: [] = auto, else the output topics, one per entry, \"/name\" or \"/name TwistStamped\"}; lv.joy {enabled} (the raw gamepad, drive keys and thumb sticks as sensor_msgs/Joy on /joystick, default on); lv.record.topics {<topic key>: record or not (default on)}; lv.record.options {recordNew, compression, image_format, directory (\"\" = default), logs, rates {<topic key>: max messages/s}}; lv.cameras (the camera panels). Returns an object of setting key -> its value.", json!({}), get_settings)
         .endpoint("PATCH", "api/settings", "you want to change layers, the view, drive speeds or topics", "Change a page setting (merged into the key's object; a null field is removed); every open page applies it at once. E.g. {key: \"lv.layers.enabled\", value: {\"dimos/lidar/sensor_msgs.PointCloud2\": false}} hides a layer; {key: \"lv.view\", value: {follow: false}}. Keys: see GET api/settings. Returns {key, value} (the key's whole value after the merge); 400 for an unknown key or a value that isn't an object.", json!({ "key": required(s("e.g. lv.view, lv.layers.enabled, lv.layer.pointcloud.<topic key>")), "value": required(json!({ "type": "object", "description": "the fields to set" })) }), patch_settings)
+        // the layout: which panels are open where
+        .endpoint("GET", "api/layout", "you need to know which panels the user has open and where", "The page's layout: desktop and phone (each kind of page's arrangement: stage = the main view's panel, left / right = the side panels top to bottom, floating = boxes {id, x, y, width, height} in px, collapsed = folded to their header, closed = fixed panels closed, leftWidth / rightWidth px, weights = shares of a side's height; null before a page of that kind saved one), cameras (the camera panels: {id, key = the image topic's zenoh key}), plots (each plot's settings and series {key, field}) and fixedPanels (map, scene = the 3D view, settings, tf). Panel ids: map, scene, settings, tf, camera:<id>, plot:<id>. Returns {desktop, phone, cameras, plots, fixedPanels}.", json!({}), crate::layout::get)
+        .endpoint("PUT", "api/layout", "you want to set the whole panel layout (e.g. restore a saved one)", "Set any part of the layout, as GET api/layout returns it: desktop / phone (an arrangement), cameras (the camera panels), plots. Parts left out stay. Every open page applies it at once (an id it doesn't know is dropped, a panel the arrangement leaves out goes to its home side). Returns the layout.", json!({ "desktop": { "type": "object", "description": "the desktop arrangement" }, "phone": { "type": "object", "description": "the phone arrangement" }, "cameras": { "type": "array", "description": "camera panels [{id, key}]" }, "plots": { "type": "array", "description": "plots [{id, series: [{id, key, field, color}], historyS, ...}]" } }), crate::layout::put)
+        .endpoint("POST", "api/layout/panel", "you want to open, move or close one panel (camera, 3D view, map, plot, settings)", "Open, move or close one panel on every open page: panel = an id (map, scene = the 3D view, settings, tf, camera:<id>, plot:<id>) or camera / plot for a new one (topic: a new camera's image topic key; series: a new plot's [{key, field}], field default data); to = main (the main view; the one there moves to the left side), left, right (a side, at index, default the end), float (box {x, y, width, height} px) or closed; device = desktop (default) or phone. Returns {panel (its id), layout}; 404 for an unknown panel, 400 for a bad to.", json!({ "panel": required(s("map, scene, settings, tf, camera:<id>, plot:<id>, or camera / plot (new)")), "to": s("main (default), left, right, float, closed"), "device": s("desktop (default) or phone"), "index": n("position in a side, from the top"), "box": { "type": "object", "description": "floating box {x, y, width, height} px" }, "topic": s("a new camera's image topic key, e.g. dimos/color_image/sensor_msgs.Image"), "series": { "type": "array", "description": "a new plot's numbers [{key, field}]" } }), crate::layout::panel)
         // recording
         .endpoint("GET", "api/recorder", "you want to know if it's recording, or list the recordings", "The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default one, and Desktop's shared recordings folder) and its options (lv.record.options). Returns {recording {active, path, messages, bytes, dropped, skipped, seconds}, keys, logs {dirs, lines}, files [{name, path, bytes, seconds_old}], settings, directory, default_directory, recordings_root, options}.", json!({}), recorder::status)
         .endpoint("POST", "api/recorder/start", "you need to start recording the robot's data to an mcap file", "Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Location labels are written into it. Returns the recording status {active, path, messages, bytes, dropped, skipped, seconds}; 409 with the reason if it can't start (e.g. already recording), 503 if the bus can't be reached.", json!({ "keys": json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above" }), "name": s("file name (default controller_<time>.mcap)") }), recorder::start)
@@ -692,6 +696,36 @@ mod tests {
         assert_eq!(served, openapi());
         let roles: Vec<_> = table.endpoints.iter().filter_map(|e| e["role"].as_str()).collect();
         assert_eq!(roles, vec!["context", "view"]);
+    }
+
+    /// the layout round-trips: PUT then GET gives it back; POST api/layout/panel opens a new camera, moves a panel and closes it
+    #[tokio::test]
+    async fn layout_round_trips_and_panels_move() {
+        let (_api, router) = router();
+        let arrangement = json!({ "stage": "scene", "left": ["map"], "right": [], "floating": [], "collapsed": [], "closed": ["settings", "tf"], "leftWidth": 400, "rightWidth": 340, "weights": {}, "floatMemory": {} });
+        let plots = json!([{ "id": 1, "series": [{ "id": "a", "key": "dimos/speed/std_msgs.Float32", "field": "data", "color": "#4e9cff" }] }]);
+        let (status, put) = call(&router, "PUT", "/api/layout", Some(json!({ "desktop": arrangement, "plots": plots }))).await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, got) = call(&router, "GET", "/api/layout", None).await;
+        assert_eq!(got, put);
+        assert_eq!(got["desktop"], arrangement);
+        assert_eq!(got["plots"], plots);
+        assert_eq!(got["phone"], Value::Null);
+        // a new camera onto the main view: the 3D view moves to the left side
+        let (status, opened) = call(&router, "POST", "/api/layout/panel", Some(json!({ "panel": "camera", "topic": "dimos/color_image/sensor_msgs.Image" }))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(opened["panel"], "camera:1");
+        assert_eq!(opened["layout"]["desktop"]["stage"], "camera:1");
+        assert_eq!(opened["layout"]["desktop"]["left"], json!(["scene", "map"]));
+        assert_eq!(opened["layout"]["cameras"][0]["key"], "dimos/color_image/sensor_msgs.Image");
+        // closing it drops it from the cameras too
+        let (_, closed) = call(&router, "POST", "/api/layout/panel", Some(json!({ "panel": "camera:1", "to": "closed" }))).await;
+        assert_eq!(closed["layout"]["cameras"], json!([]));
+        assert_eq!(closed["layout"]["desktop"]["stage"], Value::Null);
+        let (status, _) = call(&router, "POST", "/api/layout/panel", Some(json!({ "panel": "camera:9" }))).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = call(&router, "POST", "/api/layout/panel", Some(json!({ "panel": "map", "to": "up" }))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     /// a PNG posted is listed, served and deleted; anything else is refused; every page hears of each change

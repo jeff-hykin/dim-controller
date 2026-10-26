@@ -10,6 +10,7 @@ import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoot
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
+import { GamepadModal } from "./GamepadModal.tsx"
 import { glassWindow } from "./GlassToGlass.tsx"
 import { gamepadStatus } from "./useGamepad.ts"
 import type { WorkspaceApi } from "./Workspace.tsx"
@@ -18,7 +19,7 @@ import { slowestVideo, type VideoLatency } from "../core/videoLatency.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
 
 /** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
-function BatteryChip() {
+export function BatteryChip() {
     const { readings } = useStore(batteryReadings)
     const [now, setNow] = useState(() => Date.now())
     useEffect(() => {
@@ -102,23 +103,14 @@ function useSmoothedLink(app: ViewerApp): { rate: number | null; latency: number
     return shown
 }
 
-export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
+/** The link's chip (the top bar's middle): throughput and latency, a click opens the Network modal. */
+export function LinkChip({ app }: { app: ViewerApp }) {
     const [networkOpen, setNetworkOpen] = useState(false)
     const connection = useStore(app.connection.status)
-    const { issues: tfIssues } = useStore(app.tfIssues)
-    const fallback = useStore(splatFallback)
-    const pad = gamepadChip(useStore(gamepadStatus))
     const average = useSmoothedLink(app)
     const link = linkChip({ ...connection, throughputBytesPerSec: average.rate }, average.latency, average.video, maxLatencyOf(useStore(app.settings).maxLatencyMs))
-    const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
     return (
         <>
-            {lease && (
-                <button type="button" className={`bar-chip tone-${lease.tone} bar-button bar-lease`} title={lease.detail} data-testid="bar-lease" onClick={() => void app.connection.takeBack()}>
-                    <Icon name="warn" size={13} />
-                    <span className="bar-value">{lease.text}</span>
-                </button>
-            )}
             <button type="button" className={`bar-chip tone-${link.tone} bar-button bar-link ${link.tone === "ok" ? "quiet" : ""}`} title={`${link.detail} (open Network: history and who's using the link)`} data-testid="bar-link" onClick={() => setNetworkOpen(true)}>
                 <span className="bar-dot" />
                 {/* fixed-width number slots in a fixed-width box, so neither this chip nor its neighbours move as the numbers change */}
@@ -130,11 +122,26 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 {networkOpen && <NetworkPanel app={app} onGlass={() => {
                     setNetworkOpen(false)
                     glassWindow.set({ open: true })
-                }} onStatus={() => {
-                    setNetworkOpen(false)
-                    api.act("status", "show")
                 }} />}
             </Modal>
+        </>
+    )
+}
+
+/** The chips that show only when they matter: the lease, TF trouble, the splat fallback, the battery, a busy CPU, the gamepad. */
+export function StatusChips({ app, api, battery = true, gamepad = true }: { app: ViewerApp; api: WorkspaceApi; battery?: boolean; gamepad?: boolean }) {
+    const { issues: tfIssues } = useStore(app.tfIssues)
+    const fallback = useStore(splatFallback)
+    const pad = gamepadChip(useStore(gamepadStatus))
+    const lease = leaseChip(useStore(app.connection.lease.state), api.mobile)
+    return (
+        <>
+            {lease && (
+                <button type="button" className={`bar-chip tone-${lease.tone} bar-button bar-lease`} title={lease.detail} data-testid="bar-lease" onClick={() => void app.connection.takeBack()}>
+                    <Icon name="warn" size={13} />
+                    <span className="bar-value">{lease.text}</span>
+                </button>
+            )}
             {tfIssues.length > 0 && (
                 <button type="button" className="bar-chip tone-warn bar-button" title={`TF: ${tfIssues[0].summary} (open the TF panel)`} data-testid="bar-tf" onClick={() => api.act("tf", "show")}>
                     <Icon name="warn" size={13} />
@@ -146,14 +153,42 @@ export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                     <span className="bar-value">splats → cubes</span>
                 </button>
             )}
-            <BatteryChip />
+            {battery && <BatteryChip />}
             <CpuChip />
-            {pad && (
+            {gamepad && pad && (
                 <span className={`bar-chip tone-${pad.tone} bar-gamepad`} title={`Gamepad · ${pad.detail}`} data-testid="bar-gamepad">
                     <Icon name="gamepad" size={14} />
                     <span className="bar-value">{pad.text}</span>
                 </span>
             )}
+        </>
+    )
+}
+
+/** The gamepad (the top bar's, beside STOP): its state, and a click opens the remapping (ui/GamepadModal.tsx). */
+export function GamepadChip() {
+    const pad = gamepadChip(useStore(gamepadStatus))
+    const [open, setOpen] = useState(false)
+    if (!pad) {
+        return null
+    }
+    return (
+        <>
+            <button type="button" className={`bar-chip tone-${pad.tone} bar-button bar-gamepad`} title={`Gamepad · ${pad.detail} (click to remap)`} data-testid="bar-gamepad" onClick={() => setOpen(true)}>
+                <Icon name="gamepad" size={14} />
+                <span className="bar-value">{pad.text}</span>
+            </button>
+            <GamepadModal open={open} onClose={() => setOpen(false)} />
+        </>
+    )
+}
+
+/** Every chip in one row (a phone's, under its top buttons). */
+export function BarChips({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
+    return (
+        <>
+            <LinkChip app={app} />
+            <StatusChips app={app} api={api} />
         </>
     )
 }

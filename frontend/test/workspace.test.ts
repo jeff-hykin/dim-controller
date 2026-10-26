@@ -299,3 +299,13 @@ Deno.test("the arrangement survives a reload (this viewer's localStorage), a bro
         before === null ? localStorage.removeItem(WORKSPACE_KEY) : localStorage.setItem(WORKSPACE_KEY, before)
     }
 })
+
+Deno.test("a layout serializes: JSON out and back in (the agent's GET / PUT api/layout) is the same arrangement", () => {
+    let arrangement = placePanel(defaultArrangement([...IDS, "plot:1"]), "scene", { zone: "right", index: 0 }, 1440)
+    arrangement = placePanel(arrangement, "plot:1", { zone: "float", box: { x: 300, y: 200, width: 420, height: 260 } }, 1440)
+    arrangement = toggleCollapsed(placePanel(arrangement, "map", { zone: "left", index: 0 }, 1440), "map")
+    const ids = [...IDS, "plot:1"]
+    const restored = normalizeArrangement(JSON.parse(JSON.stringify(arrangement)), ids)
+    assertEquals(restored, normalizeArrangement(arrangement, ids))
+    assertEquals(layoutWorkspace(restored, desktop, shown).slots, layoutWorkspace(normalizeArrangement(arrangement, ids), desktop, shown).slots)
+})

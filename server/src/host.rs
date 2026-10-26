@@ -1,6 +1,8 @@
 //! The machine the backend runs on (the robot's computer): its CPU load, sampled every SAMPLE_SECS in the background
 //! (Linux: one small file read; macOS: one kernel call), so serving it costs nothing. The page's CPU chip polls it.
-//! It also says whether that machine is a Steam Deck or runs SteamOS (the page's Steam Deck banner).
+//! It also says whether that machine is a Steam Deck or runs SteamOS (the page's Steam Deck banner), and its network:
+//! the IP it reaches the network from and its WiFi signal (the Network modal; Linux: /proc/net/wireless, macOS:
+//! system_profiler, asked at most every WIFI_SECS).
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -9,6 +11,8 @@ use axum::Json;
 use serde_json::json;
 
 const SAMPLE_SECS: u64 = 5;
+/** the WiFi reading is reused this long (macOS's system_profiler takes about a second) */
+const WIFI_SECS: u64 = 30;
 
 #[derive(Clone, Copy)]
 struct Sample {
@@ -88,6 +92,70 @@ fn steam_in(root: &std::path::Path) -> (bool, bool) {
     (deck, steam_os)
 }
 
+/// The WiFi interface and its signal (dBm) from /proc/net/wireless: the strongest interface listed.
+fn parse_proc_wireless(text: &str) -> Option<(String, f64)> {
+    text.lines()
+        .skip(2)
+        .filter_map(|line| {
+            let (name, rest) = line.split_once(':')?;
+            // status, link quality, level (dBm; "-56." with a dot), noise, ...
+            let level: f64 = rest.split_whitespace().nth(2)?.trim_end_matches('.').parse().ok()?;
+            Some((name.trim().to_string(), level))
+        })
+        .filter(|(_, level)| *level < 0.0)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+}
+
+/// The WiFi interface and its signal (dBm) from `system_profiler SPAirPortDataType -json` (the network's name is
+/// redacted by macOS).
+fn parse_airport(json: &serde_json::Value) -> Option<(String, f64)> {
+    json["SPAirPortDataType"].as_array()?.iter().find_map(|entry| {
+        entry["spairport_airport_interfaces"].as_array()?.iter().find_map(|interface| {
+            let signal = interface["spairport_current_network_information"]["spairport_signal_noise"].as_str()?;
+            let dbm: f64 = signal.split_whitespace().next()?.parse().ok()?;
+            Some((interface["_name"].as_str().unwrap_or("wifi").to_string(), dbm))
+        })
+    })
+}
+
+async fn wifi_now() -> Option<(String, f64)> {
+    if cfg!(target_os = "linux") {
+        return parse_proc_wireless(&tokio::fs::read_to_string("/proc/net/wireless").await.ok()?);
+    }
+    if cfg!(target_os = "macos") {
+        let output = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::process::Command::new("system_profiler").args(["SPAirPortDataType", "-json"]).kill_on_drop(true).output(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        return parse_airport(&serde_json::from_slice(&output.stdout).ok()?);
+    }
+    None
+}
+
+/// The WiFi reading, asked again once it's WIFI_SECS old.
+async fn wifi() -> Option<(String, f64)> {
+    static CACHE: tokio::sync::Mutex<Option<(std::time::Instant, Option<(String, f64)>)>> = tokio::sync::Mutex::const_new(None);
+    let mut cache = CACHE.lock().await;
+    if let Some((at, reading)) = cache.as_ref() {
+        if at.elapsed() < Duration::from_secs(WIFI_SECS) {
+            return reading.clone();
+        }
+    }
+    let reading = wifi_now().await;
+    *cache = Some((std::time::Instant::now(), reading.clone()));
+    reading
+}
+
+/// The address this machine reaches the network from (the route to a public address; a UDP connect sends nothing).
+fn local_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
+}
+
 pub async fn get() -> Response {
     static STEAM: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
     let (steam_deck, steam_os) = *STEAM.get_or_init(|| steam_in(std::path::Path::new("/")));
@@ -97,13 +165,28 @@ pub async fn get() -> Response {
         "cpu": sample.map(|s| json!({ "busyPercent": (s.busy_percent * 10.0).round() / 10.0, "cores": cores, "sampledAt": s.at, "everySecs": SAMPLE_SECS })),
         "steamDeck": steam_deck,
         "steamOs": steam_os,
+        "ip": local_ip(),
+        "wifi": wifi().await.map(|(interface, dbm)| json!({ "interface": interface, "signalDbm": dbm })),
     }))
     .into_response()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::steam_in;
+    use super::{parse_airport, parse_proc_wireless, steam_in};
+
+    #[test]
+    fn wifi_signal_from_linux_and_macos() {
+        let proc = "Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE\n face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22\n wlan0: 0000   54.  -56.  -256        0      0      0      0     12        0\n";
+        assert_eq!(parse_proc_wireless(proc), Some(("wlan0".to_string(), -56.0)));
+        assert_eq!(parse_proc_wireless("header\nheader\n"), None);
+        let airport = serde_json::json!({ "SPAirPortDataType": [{ "spairport_airport_interfaces": [
+            { "_name": "en0", "spairport_current_network_information": { "_name": "<redacted>", "spairport_signal_noise": "-61 dBm / -95 dBm" } },
+            { "_name": "awdl0" },
+        ] }] });
+        assert_eq!(parse_airport(&airport), Some(("en0".to_string(), -61.0)));
+        assert_eq!(parse_airport(&serde_json::json!({})), None);
+    }
 
     #[test]
     fn steam_deck_and_steamos() {

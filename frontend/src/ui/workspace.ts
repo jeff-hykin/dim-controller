@@ -55,7 +55,6 @@ const HOMES: Record<string, { side: Side; collapsed?: boolean; weight: number; f
     map: { side: "left", weight: 1, float: { width: 340, height: 340 } },
     scene: { side: "left", weight: 1.15, float: { width: 420, height: 320 } },
     settings: { side: "right", weight: 1.5, float: { width: 360, height: 520 } },
-    arms: { side: "right", weight: 1.5, float: { width: 360, height: 560 } },
     tf: { side: "right", collapsed: true, weight: 1, float: { width: 340, height: 420 } },
 }
 const CAMERA_HOME = { side: "left" as Side, weight: 1, float: { width: 480, height: 270 + PANEL_HEAD } }
@@ -69,10 +68,8 @@ export const homeOf = (id: string) => HOMES[id] ?? (isPlot(id) ? PLOT_HOME : CAM
 export const isDynamicPanel = (id: string) => isCamera(id) || isPlot(id)
 /** a side panel dropped into an empty side takes this share of the width (the main view keeps the rest) */
 export const SPLIT_SHARE = 0.3
-/** shown only while there are arms to control (ui/ArmsPanel.tsx) */
-export const ARMS_PANEL = "arms"
-/** the panels that always exist (cameras come and go: camera:<n>, and so do the arms) */
-export const FIXED_PANELS = Object.keys(HOMES).filter((id) => id !== ARMS_PANEL)
+/** the panels that always exist (cameras and plots come and go: camera:<n>, plot:<n>) */
+export const FIXED_PANELS = Object.keys(HOMES)
 
 export function defaultArrangement(ids: string[]): Arrangement {
     return normalizeArrangement(null, ids)

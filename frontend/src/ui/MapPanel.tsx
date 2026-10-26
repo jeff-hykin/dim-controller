@@ -214,13 +214,6 @@ export function MapPanel({ app }: { app: ViewerApp }) {
         { id: "follow", label: follow.following ? "Following" : "Follow", icon: "target", title: followTitle, pressed: follow.following, run: recenter },
         { id: "fit", label: "Fit map", icon: "fit-map", title: "Fit the whole map", run: fit },
     ])
-    const [settingsOpen, setSettingsOpen] = useState(false)
-    const cog = useRef<HTMLButtonElement>(null)
-    useEffect(() => {
-        if (!open) {
-            setSettingsOpen(false)
-        }
-    }, [open])
     return (
         <Panel
             id="map"
@@ -230,6 +223,14 @@ export function MapPanel({ app }: { app: ViewerApp }) {
             testid="map-panel"
             info={status.info}
             bodyClassName="map-body"
+            settings={() => (
+                <div className="map-settings-fields">
+                    <MapChoiceFields app={app} frames={frames} />
+                    <Button size="sm" className="map-fit" title="Fit the whole map" onClick={fit}>
+                        <Icon name="fit-map" size={14} />Fit the whole map
+                    </Button>
+                </div>
+            )}
         >
             {open && (
                 <>
@@ -237,9 +238,6 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                     {status.problem && <div className={status.empty ? "map-empty" : "map-problem"} data-testid={status.empty ? "map-empty" : undefined}>{status.problem}</div>}
                     {!status.problem && follow.following && follow.waiting && <div className="map-problem">waiting for TF frame "{layout.followFrame}"</div>}
                     <div className="map-controls panel-chrome">
-                        <Button ref={cog} className="dr-btn--icon map-control map-settings" pressed={settingsOpen} aria-haspopup="menu" aria-expanded={settingsOpen} title="Map settings: topic, costmap, frame to follow, fit" aria-label="Map settings" onClick={() => setSettingsOpen(!settingsOpen)}>
-                            <Icon name="settings" size={15} />
-                        </Button>
                         <Button className="dr-btn--icon map-control map-follow" pressed={follow.following} title={followTitle} aria-label={follow.following ? "Following" : "Follow"} onClick={recenter}>
                             <Icon name="target" size={15} />
                         </Button>
@@ -249,37 +247,9 @@ export function MapPanel({ app }: { app: ViewerApp }) {
                             <Icon name="target" size={13} />Re-center on {layout.followFrame}
                         </Button>
                     )}
-                    {settingsOpen && (
-                        <MapSettings anchor={cog.current} onClose={() => setSettingsOpen(false)}>
-                            <MapChoiceFields app={app} frames={frames} />
-                            <Button size="sm" className="map-fit" title="Fit the whole map" onClick={fit}>
-                                <Icon name="fit-map" size={14} />Fit the whole map
-                            </Button>
-                        </MapSettings>
-                    )}
                 </>
             )}
         </Panel>
-    )
-}
-
-/** The map's settings (behind its cog): a popover that closes on a click outside it. */
-function MapSettings({ anchor, onClose, children }: { anchor: HTMLElement | null; onClose: () => void; children: ReactNode }) {
-    useEffect(() => {
-        const close = (event: Event) => {
-            if (!(event.target as HTMLElement).closest?.(".map-settings-menu, .map-settings")) {
-                onClose()
-            }
-        }
-        addEventListener("pointerdown", close, true)
-        return () => removeEventListener("pointerdown", close, true)
-    }, [onClose])
-    return createPortal(
-        <Card padded={false} className="map-settings-menu" role="menu" aria-label="Map settings" style={popoverPosition(anchor, 280)}>
-            <div className="quality-title">Map</div>
-            {children}
-        </Card>,
-        document.body,
     )
 }
 

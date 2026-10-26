@@ -21,6 +21,8 @@ import { Button, Card, NumberInput, Select } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { popoverPosition } from "./panelDrag.ts"
 import { Panel } from "./Panel.tsx"
+import { DriveHint } from "./KeyOverlay.tsx"
+import { CameraSettings } from "./SettingsPanel.tsx"
 import { useWorkspaceApi } from "./Workspace.tsx"
 import { useDockActions } from "./dockActions.ts"
 import { ContainCrash, Unavailable } from "./Unavailable.tsx"
@@ -498,6 +500,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             className="camera-video"
             testid="camera-panel"
             onClose={() => removeCameraPanel(cameraId(panel.id))}
+            settings={() => <CameraSettings app={app} />}
             info={info || (topic ? "…" : "")}
             bodyClassName={fill ? "camera-body fill" : "camera-body"}
             tools={
@@ -595,7 +598,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 </div>
             )}
             {topic && open && stalled && !paused && <div className="camera-stalled" data-testid="camera-stalled">{reconnecting ? "reconnecting…" : "slow / stopped link"}</div>}
-            {!topic && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{!tabs.length ? "No camera on the bus yet" : switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
+            {!topic && tabs.length > 0 && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
+            {!topic && !tabs.length && <div className="camera-placeholder"><DriveHint app={app} waiting="No camera on the bus yet." /></div>}
+            {topic && open && !size.width && !paused && <div className="camera-placeholder"><DriveHint app={app} waiting={`Waiting for ${topic.name}…`} /></div>}
         </Panel>
     )
 }

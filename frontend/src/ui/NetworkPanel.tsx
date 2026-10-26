@@ -354,7 +354,49 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
 }
 
 /** `onGlass`: the glass-to-glass test (its own window over the view, the modal closed so the camera shows) */
-export function NetworkPanel({ app, onStatus, onGlass }: { app: ViewerApp; onStatus: () => void; onGlass: () => void }) {
+/** the robot computer's network (api/host: the IP it reaches the network from, its WiFi signal), asked every HOST_POLL_MS while open */
+const HOST_POLL_MS = 10_000
+
+/** WiFi signal in dBm as 0..4 bars (-50 and up: 4; under -80: 1) */
+export function wifiBars(dbm: number): number {
+    return dbm >= -50 ? 4 : dbm >= -60 ? 3 : dbm >= -70 ? 2 : 1
+}
+
+function useHostNetwork(): { ip: string | null; wifi: { interface: string; signalDbm: number } | null } | null {
+    const [host, setHost] = useState<{ ip: string | null; wifi: { interface: string; signalDbm: number } | null } | null>(null)
+    useEffect(() => {
+        let alive = true
+        const poll = async () => {
+            try {
+                const { ip, wifi } = await (await fetch(new URL("api/host", location.href))).json()
+                if (alive) {
+                    setHost({ ip: ip ?? null, wifi: wifi ?? null })
+                }
+            } catch {
+                // an older backend or a blip: the tile says so
+            }
+        }
+        poll()
+        const timer = setInterval(poll, HOST_POLL_MS)
+        return () => {
+            alive = false
+            clearInterval(timer)
+        }
+    }, [])
+    return host
+}
+
+function WifiBars({ dbm }: { dbm: number }) {
+    const bars = wifiBars(dbm)
+    return (
+        <span className="wifi-bars" aria-label={`${bars} of 4 bars`}>
+            {[1, 2, 3, 4].map((bar) => <i key={bar} className={bar <= bars ? "on" : ""} style={{ height: 3 + bar * 3 }} />)}
+        </span>
+    )
+}
+
+export function NetworkPanel({ app, onGlass }: { app: ViewerApp; onGlass: () => void }) {
+    const host = useHostNetwork()
     const history = app.connection.network
     const connection = useStore(app.connection.status)
     const lease = useStore(app.connection.lease.state)
@@ -411,6 +453,13 @@ export function NetworkPanel({ app, onStatus, onGlass }: { app: ViewerApp; onSta
                 <Tile label="Latency" value={msNumber(summary.latencyNow)} unit="ms" detail={<>spike {msNumber(summary.latencyP95)} · max {msNumber(summary.latencyMax)}{slowest && <span title={`slowest camera, source to screen: ${spreadText(slowest.total)}`}> · video {Math.round(slowest.total.p50)} ms</span>}</>} />
                 <Tile label="Link" value={link.text} tone={link.tone} detail={connection.droppedPerSecond ? `${connection.droppedPerSecond} dropped/s` : "no drops"} />
                 <Tile label="Lease" value={leaseShown.text} tone={leaseShown.tone} detail={leaseShown.detail} />
+                <div className="net-tile" data-testid="net-robot">
+                    <div className="net-tile-label">Robot computer</div>
+                    <div className="net-tile-value">
+                        {host?.wifi ? <><WifiBars dbm={host.wifi.signalDbm} />{Math.round(host.wifi.signalDbm)}<span className="net-tile-unit"> dBm</span></> : host ? "wired" : "–"}
+                    </div>
+                    <div className="net-tile-detail mono">{host?.ip ?? "IP unknown"}{host?.wifi ? ` · ${host.wifi.interface}` : ""}</div>
+                </div>
             </div>
             <div className="net-charts">
                 <Plot
@@ -471,8 +520,8 @@ export function NetworkPanel({ app, onStatus, onGlass }: { app: ViewerApp; onSta
                     shown in its panel over the last 5 s: typical is the median, p50, and spike the p95, the slowest 1 in 20 frames; from zenoh-gateway 0.5.21 on), split into its stages under the row. A
                     stream switched off is unsubscribed until switched back on; priority (0 is what the page gives the stream: small state above
                     the main camera above other cameras above maps; when the link is short each step up halves what it gives up, each step down
-                    doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser.{" "}
-                    <button type="button" className="net-link" onClick={onStatus}>Open Status</button>
+                    doubles it, and "last" gives up first) and the gear's options are the gateway's, kept by this browser. The robot
+                    computer's WiFi signal and IP are the machine this Controller's backend runs on.
                 </p>
             </details>
             <div className="net-actions">

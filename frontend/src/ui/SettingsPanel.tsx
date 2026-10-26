@@ -1,11 +1,14 @@
-// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (not for an arm: arms have their own panel, ArmsPanel.tsx), the map's choices (the same
-// setting as the map's cog), the 3D view's follow frame (the same as its follow button follows), then rendering.
+// Settings: the controller format (the robot type: how it's driven, not what it is), then driving (not for an arm):
+// the keyboard shortcuts, driving and turning speed, and the rest under "Advanced" sections. A panel's own settings are
+// on its cog: the 3D view's (SceneSettings), a camera's (CameraSettings), the map's (MapPanel.tsx), a plot's.
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { Button, Disclosure, Field, Heading, NumberInput, Select, Slider, Toggle } from "dimos-react"
+import { useState } from "react"
+import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
@@ -14,19 +17,14 @@ import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
 import { useTfFrames } from "./useTfFrames.ts"
-import { MapChoiceFields } from "./MapPanel.tsx"
 import { CamerasIn3dToggle } from "./ScenePanel.tsx"
 import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
 import { Stepper } from "./Stepper.tsx"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
-    const view = useStore(app.settings)
-    const render = useStore(rendering)
     const robot = useStore(app.robot)
     const current = profiles.find((profile) => profile.type === robot.type)
-    // the TF frames to offer for following (the map's and the 3D view's), refreshed while shown
-    const frames = useTfFrames(app)
     return (
         <div className="settings-panel">
             <div className="field-block robot-type" data-testid="robot-type">
@@ -42,40 +40,41 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     />
                 </div>
                 <p className="hint" data-testid="robot-type-reason">
-                    {robot.auto ? `Auto: picked from the blueprint (${robot.reason}).` : "Picked here; Auto picks from the blueprint."} How you control it: the keys, speeds, the drive or arm controls and the model in the view. Choose any format, e.g. Dog for an RC car.
+                    {robot.auto ? `Auto: picked from the blueprint (${robot.reason}).` : "Picked here; Auto picks from the blueprint."} How you control it: the keys, speeds and the model in the view.
                 </p>
             </div>
             {robot.type !== "arm" && (
                 <section className="settings-section" data-section="drive">
-                    <Heading level={3}>Drive</Heading>
+                    <Heading level={3}>Driving</Heading>
                     <DrivePanel app={app} />
-                    <Field inline label="Max latency (ms)" title="Over this (or when the link drops), driving disengages until you press Reconnect.">
-                        <MaxLatencyInput app={app} />
-                    </Field>
-                    <GamepadSettingsFields />
-                    <JoySettingsFields />
+                    <Disclosure title="Advanced gamepad" defaultOpen={false} persistKey="lv.settings.advanced.gamepad">
+                        <GamepadSettingsFields />
+                        <RemapButton />
+                        <JoySettingsFields />
+                    </Disclosure>
+                    <Disclosure title="Advanced link safety" defaultOpen={false} persistKey="lv.settings.advanced.link">
+                        <Field inline label="Max latency (ms)" title="Over this (or when the link drops), driving disengages until you press Reconnect.">
+                            <MaxLatencyInput app={app} />
+                        </Field>
+                    </Disclosure>
                 </section>
             )}
-            <section className="settings-section" data-section="map">
-                <Heading level={3}>Map</Heading>
-                <div className="map-settings-fields">
-                    <MapChoiceFields app={app} frames={frames} />
-                </div>
-            </section>
-            <section className="settings-section" data-section="scene">
-                <Heading level={3}>3D view</Heading>
-                <Field inline label="Follow robot" title="the 3D camera tracks a TF frame; a pan stops it, the follow button resumes it"><Toggle value={view.follow} onChange={(follow: any) => app.settings.update({ follow })} /></Field>
-                <FollowFramePicker app={app} frames={frames} />
-                <Field inline label="Follow turns" title="following, the camera turns with the frame's heading (yaw only: the world stays level), like a third-person game; orbit and zoom stay an offset from it"><Toggle value={view.followTurns !== false} onChange={(followTurns: any) => app.settings.update({ followTurns })} /></Field>
-                <Field inline label="Cameras in 3D" title="each camera's picture and frustum at its CameraInfo frame; an open camera panel's stream is shared, else a small one a few times a second"><CamerasIn3dToggle app={app} /></Field>
-            </section>
-            <section className="settings-section" data-section="cameras">
-                <Heading level={3}>Cameras</Heading>
-                <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
-                    <Slider min={0} max={300} step={5} value={view.cameraHiddenGraceS ?? 60} format={(seconds: number) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS: number) => app.settings.update({ cameraHiddenGraceS })} />
-                </Field>
-            </section>
-            <Heading level={3}>Rendering</Heading>
+            <p className="hint">Camera, 3D view, map and plot settings are on each panel's cog.</p>
+        </div>
+    )
+}
+
+/** The 3D view's cog: following, cameras in 3D, then how it draws (point style, cubes, the robot model, the view cube, stats). */
+export function SceneSettings({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    const render = useStore(rendering)
+    const frames = useTfFrames(app)
+    return (
+        <div className="settings-panel scene-settings">
+            <Field inline label="Follow robot" title="the 3D camera tracks a TF frame; a pan stops it, the follow button resumes it"><Toggle value={view.follow} onChange={(follow: any) => app.settings.update({ follow })} /></Field>
+            <FollowFramePicker app={app} frames={frames} />
+            <Field inline label="Follow turns" title="following, the camera turns with the frame's heading (yaw only: the world stays level), like a third-person game; orbit and zoom stay an offset from it"><Toggle value={view.followTurns !== false} onChange={(followTurns: any) => app.settings.update({ followTurns })} /></Field>
+            <Field inline label="Cameras in 3D" title="each camera's picture and frustum at its CameraInfo frame; an open camera panel's stream is shared, else a small one a few times a second"><CamerasIn3dToggle app={app} /></Field>
             <div className="field-block">
                 <span className="field-label">Point style</span>
                 <StylePicker value={render.pointStyle} onChange={(pointStyle: any) => rendering.update({ pointStyle: pointStyle as PointStyle })} />
@@ -93,7 +92,20 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
             <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
             <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
-            <p className="hint">Drag to pan · Shift+drag or right-drag to orbit · one finger orbits, two pan · scroll or pinch to zoom. Follow is on the 3D view and in the dock. The panel arrangement: drag headers, or the palette's "Reset the layout".</p>
+            <p className="hint">Drag to pan · Shift+drag or right-drag to orbit · scroll or pinch to zoom.</p>
+        </div>
+    )
+}
+
+/** A camera panel's cog: how long a hidden tab keeps its cameras. */
+export function CameraSettings({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    return (
+        <div className="settings-panel camera-settings">
+            <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
+                <Slider min={0} max={300} step={5} value={view.cameraHiddenGraceS ?? 60} format={(seconds: number) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS: number) => app.settings.update({ cameraHiddenGraceS })} />
+            </Field>
+            <p className="hint">Latency vs quality, fit / fill and undistort are on the camera itself.</p>
         </div>
     )
 }
@@ -110,6 +122,17 @@ function GamepadSettingsFields() {
             <Field inline label="Invert Y" title="up on the left stick backs up"><Toggle value={settings.invertY} onChange={(invertY: any) => gamepadSettings.update({ invertY })} /></Field>
             <p className="hint">Left stick drives, right stick turns, RB boosts, LT + RT stops (A to drive again). The full list is under ?.</p>
         </div>
+    )
+}
+
+/** Settings → Advanced gamepad: the remapping (the same modal as the gamepad chip's). */
+function RemapButton() {
+    const [open, setOpen] = useState(false)
+    return (
+        <>
+            <Button size="sm" onClick={() => setOpen(true)}>Remap the gamepad…</Button>
+            <GamepadModal open={open} onClose={() => setOpen(false)} />
+        </>
     )
 }
 

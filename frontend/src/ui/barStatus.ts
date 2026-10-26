@@ -1,4 +1,4 @@
-// What the one bar (ui/ActionDock.tsx; a phone's corner buttons) says about problems, worked out here so it's tested
+// What the top bar (ui/TopBar.tsx; a phone's corner buttons) says about problems, worked out here so it's tested
 // (test/barStatus.test.ts): the link when it isn't healthy, driving when it's disengaged (latency over the max, the link
 // lost), and the gamepad's state. A healthy link says nothing: the Status panel has the numbers.
 import type { ConnectionState } from "../core/transport.ts"

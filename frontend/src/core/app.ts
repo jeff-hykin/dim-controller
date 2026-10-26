@@ -17,6 +17,7 @@ import { Drive } from "./drive.ts"
 import { JOY_TOPIC, JOY_TYPE, JoyPublisher } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
+import { jointControlState } from "./jointControl.ts"
 import { urdfSource } from "./urdfSource.ts"
 import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
@@ -128,7 +129,7 @@ export class ViewerApp {
         leasePublish()
         this.drive.state.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
-        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true)
+        this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => jointControlState.get().enabled && (this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true))
         this.manipulation.watch()
         feedTf(this.connection, this.tf, this.viewer, this.tfHistory)
         feedBattery(this.connection, () => this.profile.name)

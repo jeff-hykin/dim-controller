@@ -39,7 +39,8 @@ function statusTone(name: string | null | undefined): Tone {
     }
 }
 
-export function ManipPanel({ app }: { app: ViewerApp }) {
+/** `part`: everything (the default), the control (groups, poses, target, joints) or its settings (scene, status, planning); `actions`: Preview / Execute on top */
+export function ManipPanel({ app, part = "all", actions = true }: { app: ViewerApp; part?: "all" | "control" | "settings"; actions?: boolean }) {
     const manipulation = app.manipulation
     const state = useStore(manipulation.state)
     const options = useStore(manipulation.options)
@@ -87,9 +88,10 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
 
     return (
         <div className="manip-panel" data-testid="manip-panel">
-            <ManipActions app={app} />
+            {actions && <ManipActions app={app} />}
             {state.plan && <p className="hint" data-testid="manip-plan-info">Plan {state.plan.id.slice(0, 8)} ({state.plan.mode}): {state.plan.duration.toFixed(2)} s, {state.plan.positions.length} points{state.preview ? " · previewing" : ""}</p>}
 
+            {part !== "settings" && <>
             <SavedPoses app={app} />
 
             <Heading level={3}>Planning Groups</Heading>
@@ -98,7 +100,9 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     <Button key={group.id} size="sm" pressed={selected.includes(group.id)} onClick={() => manipulation.toggleGroup(group.id)} title="Toggle this planning group in the target set" data-group={group.id}>{group.id}</Button>
                 ))}
             </div>
+            </>}
 
+            {part !== "control" && <>
             <Heading level={3}>Scene</Heading>
             <Field inline label="Scene grid"><Toggle value={options.grid} onChange={(grid: boolean) => manipulation.options.update({ grid })} /></Field>
             <Field inline label="Robot display">
@@ -133,6 +137,8 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
             </p>
             {view.model ? <p className="hint" data-testid="manip-model">3D arm: {view.model}</p> : view.problem && <p className="hint">3D arm: {view.problem}</p>}
 
+            </>}
+            {part !== "settings" && <>
             <Heading level={3}>Target</Heading>
             {selected.map((group) => {
                 const { links, fallback } = app.manipView.gizmoChoices(group)
@@ -182,6 +188,8 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                 <Button size="sm" variant="ghost" disabled={!target} onClick={() => manipulation.setTarget(null)}>Clear target</Button>
             </div>
 
+            </>}
+            {part !== "control" && <>
             <Heading level={3}>Planning</Heading>
             <Field inline label="Next plan speed">
                 <Stepper label="Next plan speed" min={0.05} max={1} step={0.05} value={options.speed} disabled={busy} format={(speed: number) => `${Math.round(speed * 100)}%`} onChange={(speed: number) => manipulation.options.update({ speed })} />
@@ -194,7 +202,8 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                     onChange={(mode: PlanningMode) => manipulation.options.update({ mode })}
                 />
             </Field>
-            <details className="manip-joint-control" data-testid="manip-joint-control">
+            </>}
+            {part !== "settings" && <details className="manip-joint-control" open={part === "control" || undefined} data-testid="manip-joint-control">
                 <summary>Joint Control</summary>
                 <div className="manip-joints" data-testid="manip-joints">
                     {selected.flatMap((groupId) => manipulation.groupById(groupId)?.joint_names.map((name) => {
@@ -222,7 +231,7 @@ export function ManipPanel({ app }: { app: ViewerApp }) {
                         )
                     }) ?? [])}
                 </div>
-            </details>
+            </details>}
 
         </div>
     )

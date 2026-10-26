@@ -14,6 +14,7 @@ mod drive;
 mod frontend;
 mod image;
 mod labels;
+mod layout;
 mod logs;
 mod hook_install;
 mod host;

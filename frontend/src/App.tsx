@@ -1,12 +1,14 @@
-// The page: the workspace (a main view between a left and a right rail, panels that can float over it; ui/workspace.ts)
-// and one bar along the bottom (ui/ActionDock.tsx): the drive keys, the main view's actions, the problem chips, Record
-// and STOP. No bar across the top: the Status panel has the link, what's running and the rates.
+// The page: one bar across the top (ui/TopBar.tsx: STOP, the link, the chips that matter, Record, Settings) over the
+// workspace (a main view between a left and a right rail, panels that can float over it; ui/workspace.ts). Settings
+// opens the drawer that adds panels (ui/SettingsDrawer.tsx); held drive keys show over the main view's bottom.
 // Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
 // phone the rails are drawers and driving is two thumb sticks.
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
-import { ActionDock } from "./ui/ActionDock.tsx"
+import { TopBar } from "./ui/TopBar.tsx"
+import { KeyOverlay } from "./ui/KeyOverlay.tsx"
+import { openSettingsDrawer, SettingsDrawer } from "./ui/SettingsDrawer.tsx"
 import { ActionBar } from "./ui/ActionBar.tsx"
 import { GlassWindow } from "./ui/GlassToGlass.tsx"
 import { PhoneCorners } from "./ui/PhoneCorners.tsx"
@@ -29,8 +31,7 @@ import { InfoPanels } from "./ui/InfoPanels.tsx"
 import { EmptyLayer, useOnboarding } from "./ui/Onboarding.tsx"
 import { Overlays } from "./ui/Overlays.tsx"
 import { rectStyle, useWorkspace, type WorkspaceApi, WorkspaceContext, WorkspaceSurface } from "./ui/Workspace.tsx"
-import { ARMS_PANEL, cameraId, FIXED_PANELS, plotId } from "./ui/workspace.ts"
-import { armsPanelShown } from "./ui/ArmsPanel.tsx"
+import { cameraId, FIXED_PANELS, plotId } from "./ui/workspace.ts"
 import type { RunState } from "./core/runs.ts"
 import { openOverlay } from "./ui/overlay.ts"
 import { ContainCrash } from "./ui/Unavailable.tsx"
@@ -64,10 +65,8 @@ export function App() {
     const cameras = useStore(cameraLayout)
     const robot = useStore(app?.robot ?? placeholderRobot)
     const runs = useStore(app?.runs.state ?? placeholderRuns)
-    const manipulation = useStore(app?.manipulation.state ?? placeholderManipulation)
-    const arms = app !== null && armsPanelShown(robot.type, runs, manipulation.available)
     const plots = plotsOf(useStore(plotLayout))
-    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...(arms ? [ARMS_PANEL] : []), ...plots.map((plot) => plotId(plot.id))]
+    const ids = [...cameras.panels.map((panel) => cameraId(panel.id)), ...FIXED_PANELS, ...plots.map((plot) => plotId(plot.id))]
     const cameraActions = useCameraActions(app)
     const api = useWorkspace(ids, mobile)
     // the profile changes with the robot type: keys follow it
@@ -91,7 +90,7 @@ export function App() {
                             <InfoPanels app={app} />
                         </>
                     )}
-                    <WorkspaceSurface emptyStage={<EmptyStage />} />
+                    <WorkspaceSurface emptyStage={<EmptyStage mobile={mobile} />} />
                 </div>
                 {app && <Driving app={app} api={api} />}
                 {app && <ActionBar api={api} />}
@@ -100,6 +99,7 @@ export function App() {
                 {app && <StatsOverlay app={app} />}
                 <SteamDeckBanner />
                 {app && <SceneMenu app={app} />}
+                {app && <SettingsDrawer app={app} api={api} />}
                 <SnapshotGallery />
             </div>
         </WorkspaceContext.Provider>
@@ -108,13 +108,27 @@ export function App() {
 
 const placeholderRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const placeholderRuns = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
-const placeholderManipulation = new Store({ available: null as boolean | null })
 
-function EmptyStage() {
+/** Nothing in the main view: "Add a panel", and an arrow up to the Settings button that adds one (a phone: its panel list). */
+function EmptyStage({ mobile }: { mobile: boolean }) {
+    if (mobile) {
+        return (
+            <div className="ws-empty-note">
+                <p>The main view is empty.</p>
+                <p className="hint">Open a panel from the panel list, or <button type="button" className="link" onClick={() => openOverlay("palette")}>the palette</button>.</p>
+            </div>
+        )
+    }
     return (
-        <div className="ws-empty-note">
-            <p>The main view is empty.</p>
-            <p className="hint">Press a panel's <b>main view</b> button, drag a panel onto the middle here, or <button type="button" className="link" onClick={() => openOverlay("palette")}>open the palette (/)</button>.</p>
+        <div className="ws-empty-add" data-testid="empty-stage">
+            <button type="button" className="ws-empty-card" onClick={openSettingsDrawer}>
+                <b>Add a panel</b>
+                <span>Camera, 3D view, map or plot: they're under Settings.</span>
+            </button>
+            <svg className="ws-empty-arrow" viewBox="0 0 520 330" preserveAspectRatio="xMaxYMin meet" aria-hidden="true">
+                <defs><marker id="ws-arrow-head" markerWidth="12" markerHeight="12" refX="7" refY="6" orient="auto"><path d="M0 0L12 6 0 12z" /></marker></defs>
+                <path d="M40 320 C 220 300, 420 230, 470 30" markerEnd="url(#ws-arrow-head)" />
+            </svg>
         </div>
     )
 }
@@ -127,7 +141,7 @@ function Driving({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
         <>
             {api.mobile
                 ? !onboarding.blocksDriving && (isArm ? <ArmHud app={app} mobile /> : <DriveHud app={app} mobile />)
-                : <ActionDock app={app} api={api} onboarding={onboarding} />}
+                : <><TopBar app={app} api={api} /><KeyOverlay app={app} stage={api.layout.stage} /></>}
             {/* over the main view only: an open drawer covers it */}
             {onboarding.message && !api.view.drawer && (
                 <div className="stage-message" style={rectStyle(api.layout.stage)}>
