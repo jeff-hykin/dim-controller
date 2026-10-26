@@ -178,8 +178,15 @@ html[data-corners="sharp"] .panel-head::before { top: 0; bottom: 0; } /* sharp c
 .panel-body .dr-field, .panel-body .dr-field-control, .panel-body .field-block { min-width: 0; max-width: 100%; }
 .panel-body .dr-segmented { flex-wrap: wrap; max-width: 100%; }
 /* a floating panel's resize corner */
-.panel-resize { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; z-index: 3; cursor: nwse-resize; touch-action: none; }
-.panel-resize::before { content: ""; position: absolute; right: 4px; bottom: 4px; width: 9px; height: 9px; border-right: 2px solid var(--lv-over-video); border-bottom: 2px solid var(--lv-over-video); opacity: 0.7; }
+/* a floating panel's resize grips, one per corner (the top two sit under the header's ends) */
+.panel-resize { position: absolute; width: 18px; height: 18px; z-index: 3; touch-action: none; }
+.panel-resize.se { right: 0; bottom: 0; cursor: nwse-resize; }
+.panel-resize.sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.panel-resize.ne { right: 0; top: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+.panel-resize.nw { left: 0; top: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+.panel-resize.se::before, .panel-resize.sw::before { content: ""; position: absolute; bottom: 4px; width: 9px; height: 9px; border-bottom: 2px solid var(--lv-over-video); opacity: 0.7; }
+.panel-resize.se::before { right: 4px; border-right: 2px solid var(--lv-over-video); }
+.panel-resize.sw::before { left: 4px; border-left: 2px solid var(--lv-over-video); }
 .panel-resize:hover::before { border-color: var(--fg); opacity: 1; }
 /* between two panels in a rail, and along a rail's inner edge: drag to resize */
 .ws-splitter, .ws-rail-edge { position: absolute; z-index: 4; touch-action: none; }
@@ -1059,7 +1066,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app.desktop { --lv-bar-h: 44px; }
 :root { --lv-panel-gap: 0px; } /* read by the workspace (ui/Workspace.tsx useFrame) from <html>; a phone has none */
 .main-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(var(--lv-bar-h) + var(--dim-inset-bottom, 0px)); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-    padding: 0 6px; backdrop-filter: var(--blur, none); border-top: 1px solid var(--border-strong);
+    padding: 0 6px; backdrop-filter: var(--blur, none);
     background: linear-gradient(color-mix(in srgb, var(--fg) 7%, transparent), color-mix(in srgb, var(--fg) 7%, transparent)), var(--backdrop, var(--lv-bar)); } /* the panel headers' gray */
 .main-bar-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .main-bar-side.right { justify-content: flex-end; }
@@ -1236,3 +1243,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .speed-stepper > .dr-btn.dr-btn--icon:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-alt, #b89cf0) 24%, transparent); border-color: var(--accent-alt, #b89cf0); }
 .speed-stepper > .dr-btn.dr-btn--icon:active:not(:disabled) { background: color-mix(in srgb, var(--accent-alt, #b89cf0) 34%, transparent); }
 .speed-stepper > .dr-btn.dr-btn--icon:disabled { color: var(--muted-fg); border-color: var(--border); background: transparent; }
+/* the seams between docked panels: one 2 px line each (a rail's inner edge, and under every docked panel, which is
+   also the line above the bar, so the bar has none of its own) */
+.app.desktop .lv-panel.zone-left { border-right-width: 2px; border-color: var(--border-strong); }
+.app.desktop .lv-panel.zone-right { border-left-width: 2px; border-color: var(--border-strong); }
+.app.desktop .lv-panel.zone-left, .app.desktop .lv-panel.zone-right, .app.desktop .lv-panel.zone-stage { border-bottom-width: 2px; border-color: var(--border-strong); }

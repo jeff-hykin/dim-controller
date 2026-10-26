@@ -50,6 +50,9 @@ export function useDismiss(open: boolean, selector: string, close: () => void) {
     }, [open, selector])
 }
 
+/** a floating panel resizes from any corner */
+const RESIZE_CORNERS = ["nw", "ne", "sw", "se"] as const
+
 export function Panel({ id, title, icon, info, tools, children, className = "", bodyClassName = "", testid, onBodyClick, onClose, settings, keepMounted }: {
     id: string
     title: string
@@ -166,22 +169,30 @@ export function Panel({ id, title, icon, info, tools, children, className = "", 
                 <div className="panel-tools panel-chrome">{tools}{headless && info !== undefined && <span className="panel-info">{info}</span>}</div>
             )}
             <div className={`panel-content ${bodyClassName}`} onClick={onBodyClick}>{children}</div>
-            {floating && !slot.collapsed && (
+            {floating && !slot.collapsed && RESIZE_CORNERS.map((corner) => (
                 <div
-                    className="panel-resize"
+                    key={corner}
+                    className={`panel-resize ${corner}`}
                     title="Drag to resize"
                     aria-label="Resize"
                     onPointerDown={(event) => {
                         event.preventDefault()
                         event.stopPropagation()
                         const start = slot.rect
+                        const west = corner.endsWith("w")
+                        const north = corner.startsWith("n")
                         startPointerDrag(event, (dx, dy) => {
-                            const box = clampFloat({ ...start, width: Math.max(FLOAT_MIN.width, start.width + dx), height: Math.max(FLOAT_MIN.height, start.height + dy) }, api.layout.area)
-                            arrange((current) => movePanel(normalizeArrangement(current, api.ids), id, { zone: "float", box: { ...box, x: start.x, y: start.y } }))
+                            // a west / north corner moves that edge: the opposite one stays put
+                            const width = Math.max(FLOAT_MIN.width, start.width + (west ? -dx : dx))
+                            const height = Math.max(FLOAT_MIN.height, start.height + (north ? -dy : dy))
+                            const x = west ? start.x + start.width - width : start.x
+                            const y = north ? start.y + start.height - height : start.y
+                            const box = clampFloat({ x, y, width, height }, api.layout.area)
+                            arrange((current) => movePanel(normalizeArrangement(current, api.ids), id, { zone: "float", box }))
                         })
                     }}
                 />
-            )}
+            ))}
         </section>
     )
 }
