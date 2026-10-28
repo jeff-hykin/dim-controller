@@ -98,8 +98,10 @@ deno task dev --base /apps/dim-controller/   # vite; with DESKTOP_URL=http://loc
 ```
 
 Without a backend the page still loads (no topics), which is enough to check layout and panels at phone and desktop
-sizes. To try a change in a real Desktop without a release, build it and serve the frontend from disk: Desktop runs
-the app with `CONTROLLER_FRONTEND=<dir>` pointing at a built `frontend/dist`. Releases are tags (`vX.Y.Z`), with the
+sizes. To try a change in this machine's Desktop without a release, `scripts/hot` (from the repo root): it builds the
+frontend into the installed app's `hot/frontend`, which the backend serves from disk (`CONTROLLER_FRONTEND`), so after
+the first run a change is a rebuild and a page reload. `scripts/hot --server` also builds and runs this checkout's
+server (with its `dimos.yaml`, so new endpoints aren't refused); `scripts/hot --undo` goes back to the release. Releases are tags (`vX.Y.Z`), with the
 version bumped in `dimos.yaml`, `server/Cargo.toml` and `server/Cargo.lock` together; a frontend dependency change
 also needs `deno task update-hashes` from the repo root (the flake's hashes). `deno task test` there runs everything
 (server tests, typecheck, frontend tests).

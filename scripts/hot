@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Try a change on this machine's Desktop without a release: vite builds this checkout's frontend into the installed
+# app's hot/frontend, which the backend serves from disk per request (reload the page; no restart after the first run).
+# The first run swaps the install's `result` for a wrapper that keeps Desktop's nix-built server but points
+# CONTROLLER_FRONTEND there, and has Desktop restart the backend. --server also builds this checkout's server (cargo, dev
+# profile) and runs that instead, with this checkout's dimos.yaml (Desktop refuses calls the installed one doesn't list).
+#   scripts/hot [--server]   from a dim-controller checkout
+#   scripts/hot --undo       back to the nix build Desktop made (a Desktop update or `dimos-desktop checkout` also ends it)
+# DESKTOP_URL (default http://localhost:5555) and DIMOS_APPS (default ~/.dimos/apps) point it at another Desktop here.
+set -euo pipefail
+app_dir="${DIMOS_APPS:-$HOME/.dimos/apps}/dim-controller"
+desktop="${DESKTOP_URL:-http://localhost:5555}"
+hot="$app_dir/hot"
+repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+
+restart() {
+    if ! curl -sf -X POST "$desktop/gateways/desktop/management/apps/dim-controller/reload" >/dev/null; then
+        echo "Desktop at $desktop didn't take the reload: is it running (and new enough)? Restart it to pick up the build" >&2
+        return 1
+    fi
+    for _ in $(seq 1 60); do
+        if curl -sf "$desktop/apps/dim-controller/api/settings" >/dev/null; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    echo "the controller backend didn't come back (its log: dimos-desktop logs dim-controller)" >&2
+    return 1
+}
+
+if [ ! -d "$app_dir" ]; then
+    echo "dim-controller isn't installed here ($app_dir): dimos-desktop install https://github.com/jeff-hykin/dim-controller" >&2
+    exit 1
+fi
+
+if [ "${1:-}" = "--undo" ]; then
+    if [ -e "$app_dir/.result-nix" ]; then
+        ln -sfn "$(readlink "$app_dir/.result-nix")" "$app_dir/result"
+        rm "$app_dir/.result-nix"
+        git -C "$app_dir" checkout -q -- dimos.yaml 2>/dev/null || true
+        restart
+    elif [ -L "$app_dir/.result-nix" ]; then
+        # its nix build was garbage-collected: build the installed release again
+        rm "$app_dir/.result-nix"
+        dimos-desktop checkout dim-controller "$(git -C "$app_dir" describe --tags --abbrev=0)"
+    fi
+    echo "back to $(readlink "$app_dir/result")"
+    exit 0
+fi
+
+with_server=""
+if [ "${1:-}" = "--server" ]; then
+    with_server=1
+fi
+current="$(readlink "$app_dir/result" || true)"
+if [ -z "$current" ] || { [ ! -e "$current" ] && [ "${current#"$hot"/}" = "$current" ]; }; then
+    # an update can check out a tag without building it
+    echo "the installed controller has no build: dimos-desktop checkout dim-controller <its tag> first" >&2
+    exit 1
+fi
+
+(
+    cd "$repo/frontend"
+    # the deno its flake and deno.lock use
+    nix shell github:NixOS/nixpkgs/nixos-25.11#deno -c sh -c 'deno install --frozen --quiet && deno run -A npm:vite build --logLevel warn'
+)
+mkdir -p "$hot/frontend"
+rsync -a --delete "$repo/frontend/dist/" "$hot/frontend/"
+
+case "$current" in
+    "$hot"/*) ;;
+    *) ln -sfn "$current" "$app_dir/.result-nix" ;;
+esac
+if [ -n "$with_server" ]; then
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$repo/server/target}"
+    (cd "$repo/server" && cargo build -q)
+    wrapper="$hot/wrapper-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$wrapper/bin"
+    cp "$CARGO_TARGET_DIR/debug/dimos-app-server" "$wrapper/bin/server"
+    printf '#!/bin/sh\nexport CONTROLLER_FRONTEND="%s"\nexec "%s" "$@"\n' "$hot/frontend" "$wrapper/bin/server" > "$wrapper/bin/dimos-app-server"
+    chmod +x "$wrapper/bin/dimos-app-server"
+    # a new folder each time, so Desktop sees a new build and restarts the server
+    ln -sfn "$wrapper" "$app_dir/result"
+    cp "$repo/dimos.yaml" "$app_dir/dimos.yaml"
+    restart
+    # keep the last 3 server patches
+    ls -1d "$hot"/wrapper-*/ | sort -r | tail -n +4 | xargs rm -rf
+elif [ "${current#"$hot"/}" = "$current" ]; then
+    # first frontend patch: keep the nix build's server binary, change only the frontend it serves
+    server="$(grep -o 'exec "[^"]*"' "$app_dir/.result-nix/bin/dimos-app-server" | cut -d'"' -f2)"
+    mkdir -p "$hot/wrapper/bin"
+    printf '#!/bin/sh\nexport CONTROLLER_FRONTEND="%s"\nexec "%s" "$@"\n' "$hot/frontend" "$server" > "$hot/wrapper/bin/dimos-app-server"
+    chmod +x "$hot/wrapper/bin/dimos-app-server"
+    ln -sfn "$hot/wrapper" "$app_dir/result"
+    restart
+fi
+# a frontend-only patch after that keeps whatever server is in place (a --server one stays)
+echo "hot: $(git -C "$repo" log --oneline -1 | cut -c1-60)$(git -C "$repo" diff --quiet || echo ' + uncommitted changes') on $desktop; reload the controller page (undo: scripts/hot --undo)"
