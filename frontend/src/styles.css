@@ -211,16 +211,10 @@ html[data-corners="sharp"] .panel-head::before { top: 0; bottom: 0; } /* sharp c
 .stage-message { position: absolute; z-index: 8; pointer-events: none; }
 .stage-message > .dr-empty--layer { inset: 0; }
 /* a phone: the rails are drawers over the main view */
-.ws-scrim { position: absolute; inset: 0; z-index: 19; background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px); }
-.ws-drawer { position: absolute; z-index: 20; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); animation: drawer-left 0.16s ease-out; }
-.ws-drawer.right { animation-name: drawer-right; }
-@keyframes drawer-left { from { transform: translateX(-24px); opacity: 0; } }
-@keyframes drawer-right { from { transform: translateX(24px); opacity: 0; } }
 .mobile .lv-panel:not(.zone-stage) { z-index: 21; }
 /* the workspace makes no layer of its own on a phone: the thumb sticks (z 7) lie over the main view and the drawer's
    backdrop but under the drawer, which reaches over them on a phone on its side */
 .app.mobile .workspace { z-index: auto; }
-.mobile .ws-scrim { z-index: 6; }
 
 /* ── action dock (ui/ActionDock.tsx): drive keys and readout, actions, STOP ── */
 .action-dock { position: absolute; left: 0; right: 0; bottom: var(--dim-inset-bottom); z-index: 30; display: flex; align-items: center; gap: 12px; height: var(--lv-bar-h); box-sizing: border-box;
@@ -954,8 +948,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .view-row { display: flex; align-items: center; gap: 4px; }
 .view-row .quality-option { flex: 1; min-width: 0; padding: 10px 8px; }
 .view-row .quality-name { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.view-row .view-float.dr-btn--icon { width: 40px; height: 40px; flex: none; }
-.view-row .view-float[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
 .net-actions { display: flex; justify-content: flex-start; }
 .g2g { display: grid; justify-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border); text-align: center; }
 .g2g p { margin: 0; }
@@ -974,9 +966,6 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 /* a phone: the panel list on the left, Record, the palette and the drawer on the right */
 .phone-corners > .record-control { margin-left: auto; }
 /* a phone's Status / Settings / TF page: the whole screen, a back bar where the top buttons were */
-.ws-sheet { position: absolute; z-index: 20; background: var(--surface); animation: drawer-right 0.16s ease-out; }
-.ws-sheet-head { position: absolute; top: 0; left: 0; right: 0; z-index: 22; box-sizing: border-box; display: flex; align-items: flex-end; padding: 0 8px 6px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.ws-sheet-back.dr-btn { height: 40px; gap: 4px; padding: 0 14px 0 8px; }
 .mobile .lv-panel.zone-right { border-left-width: 0; }
 /* the action bar (ui/ActionBar.tsx): this machine's command buttons along the bottom of the main view */
 .action-bar { position: absolute; z-index: 8; display: flex; align-items: center; gap: 6px; min-width: 0; }

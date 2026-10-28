@@ -4,7 +4,7 @@
 // is being typed and no overlay is open; Ctrl/Alt/Meta combinations belong to the browser and Desktop's shell.
 import type { RobotProfile } from "../profile/types.ts"
 
-export type Overlay = "palette" | "help" | "drawer" | null
+export type Overlay = "palette" | "help" | null
 
 export interface KeyInput {
     code: string
@@ -114,7 +114,7 @@ export function keyBindings(profile: Pick<RobotProfile, "drive" | "controls"> | 
         { keys: ["Space"], action: "STOP (always, even while typing)", group: "Drive" },
         { keys: ["/"], action: "Command palette: every action, searchable", group: "Commands" },
         { keys: ["?"], action: "This list of shortcuts", group: "Commands" },
-        { keys: ["Esc"], action: "Close the palette, this list or a drawer; stop", group: "Commands" },
+        { keys: ["Esc"], action: "Close the palette or this list; stop", group: "Commands" },
         { keys: ["["], action: "Show / hide the left rail", group: "Panels" },
         { keys: ["]"], action: "Show / hide the right rail", group: "Panels" },
         { keys: ["\\"], action: "Focus the main view (hide both rails)", group: "Panels" },

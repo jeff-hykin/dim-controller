@@ -68,11 +68,19 @@ Deno.test("a held jog of the picked joint goes to the profile's joint topic, at 
     drive.settings.update({ joint: "r1pro/torso_joint2" })
     assertEquals(pickedJoint(arm, drive), "r1pro/torso_joint2")
     jogPicked(arm, drive, -1)
-    await wait(300)
+    // held long enough to reach its lead (a loaded machine runs timers late: up to 2 s)
+    const lead = -0.5 - arm.settings.get().jointSpeed * LEAD_S
+    for (const start = Date.now(); Date.now() - start < 2000;) {
+        await wait(20)
+        const last = targets(R1_COMMAND).at(-1)
+        if (Date.now() - start >= 300 && last && Math.abs(last.position[0] - lead) < 1e-9) {
+            break
+        }
+    }
     const sent = targets(R1_COMMAND)
     assert(sent.length >= 4)
     assertEquals(sent.at(-1)!.name, ["r1pro/torso_joint2"])
-    assertAlmostEquals(sent.at(-1)!.position[0], -0.5 - arm.settings.get().jointSpeed * LEAD_S, 1e-9)
+    assertAlmostEquals(sent.at(-1)!.position[0], lead, 1e-9)
     sendState({ "r1pro/torso_joint2": -0.6 })
     arm.releaseJoint()
     assertEquals(targets(R1_COMMAND).at(-1)!.position, [-0.6])

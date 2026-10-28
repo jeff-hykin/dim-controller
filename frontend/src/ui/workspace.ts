@@ -4,7 +4,7 @@
 // to its header (its rail's other panels take the height). Dragging a header snaps it
 // into a rail (near or over it), onto the stage (its middle: swap), or leaves it floating, its edges snapping to the
 // stage, the rails and the other floating panels. The arrangement is this viewer's (localStorage `lv.workspace`: a
-// phone and a desktop each keep their own). On a phone the rails are drawers over the stage.
+// phone and a desktop each keep their own). A phone shows one panel at a time, filling the screen.
 // Pure (no React, no DOM): the boxes are worked out here and unit tested (test/workspace.test.ts).
 import { Store } from "../core/store.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
@@ -353,18 +353,17 @@ export interface Frame {
     gap?: number
 }
 
-/** This page's view state (not saved): the phone drawer that's open, and the rails hidden for now (both: focus). */
+/** This page's view state (not saved): the rails hidden for now (both: focus). */
 export interface View {
-    drawer: Side | null
     hide: Side[]
 }
-export const SHOWN: View = { drawer: null, hide: [] }
+export const SHOWN: View = { hide: [] }
 
 export interface Slot {
     rect: Rect
     zone: Zone
     collapsed: boolean
-    /** not on screen (in a shut drawer, a rail hidden by focus): kept mounted, never drawn */
+    /** not on screen (a rail hidden by focus, a phone's other panels): kept mounted, never drawn */
     hidden: boolean
 }
 
@@ -373,8 +372,6 @@ export interface WorkspaceLayout {
     area: Rect
     stage: Rect
     rails: Partial<Record<Side, Rect>>
-    /** phone: the open drawer's box */
-    drawer: Rect | null
     slots: Record<string, Slot>
 }
 
@@ -382,7 +379,7 @@ const NOWHERE: Rect = { x: 0, y: 0, width: 0, height: 0 }
 const round = (rect: Rect): Rect => ({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(0, Math.round(rect.width)), height: Math.max(0, Math.round(rect.height)) })
 
 /**
- * The panels of one rail (or drawer) stacked edge to edge in `box`: folded ones their header, the open ones share the
+ * The panels of one rail stacked edge to edge in `box`: folded ones their header, the open ones share the
  * rest by weight (fold one and its neighbours take its height).
  */
 function stack(arrangement: Arrangement, ids: string[], box: Rect): Record<string, Rect> {
@@ -411,30 +408,15 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         slots[id] = { rect: round(inset), zone, collapsed, hidden }
     }
     if (frame.mobile) {
-        // the stage fills the screen above the thumb sticks; the rails are drawers over it (never over
-        // the sticks: STOP stays in reach)
+        // a phone shows one panel at a time, filling the screen above the thumb sticks; the others stay mounted, unseen
         const area: Rect = { x: 0, y: frame.top, width, height: frame.bottom - frame.top }
-        const drawerWidth = Math.min(width - 40, 380)
-        // the right drawer (Status, Settings, TF) is a full screen page under a back bar where the top buttons were
-        const drawer = view.drawer === "right"
-            ? { x: 0, y: frame.top, width, height: frame.height - frame.top }
-            : view.drawer ? { x: 0, y: frame.top, width: drawerWidth, height: area.height } : null
-        if (arrangement.stage) {
-            place(arrangement.stage, area, "stage")
-        }
-        for (const side of ["left", "right"] as const) {
-            const shown = drawer && view.drawer === side
-            const rects = stack(arrangement, arrangement[side], shown ? drawer : NOWHERE)
-            for (const id of arrangement[side]) {
-                place(id, shown ? rects[id] : NOWHERE, side, !shown)
+        const shown = phonePanel(arrangement)
+        for (const id of [arrangement.stage, ...arrangement.left, ...arrangement.right, ...arrangement.floating.map((box) => box.id)]) {
+            if (id) {
+                place(id, id === shown ? area : NOWHERE, id === shown ? "stage" : "float", id !== shown)
             }
         }
-        // floating panels float over the stage here too, never wider than the screen
-        for (const box of arrangement.floating) {
-            const clamped = clampFloat({ ...box, width: Math.min(box.width, width - 16) }, area)
-            place(box.id, { ...clamped, height: arrangement.collapsed.includes(box.id) ? PANEL_HEAD : clamped.height }, "float")
-        }
-        return { area, stage: area, rails: {}, drawer: drawer && round(drawer), slots }
+        return { area, stage: area, rails: {}, slots }
     }
 
     // every panel edge to edge: the rails against the window's sides, the main view between them
@@ -471,7 +453,57 @@ export function layoutWorkspace(arrangement: Arrangement, frame: Frame, view: Vi
         const clamped = clampFloat(box, area)
         place(box.id, { ...clamped, height: arrangement.collapsed.includes(box.id) ? PANEL_HEAD : clamped.height }, "float")
     }
-    return { area: round(area), stage: round(stage), rails: Object.fromEntries(Object.entries(rails).map(([side, rect]) => [side, round(rect)])), drawer: null, slots }
+    return { area: round(area), stage: round(stage), rails: Object.fromEntries(Object.entries(rails).map(([side, rect]) => [side, round(rect)])), slots }
+}
+
+/** The panel a phone shows: the main view's, else the first camera, else the first panel there is. */
+export function phonePanel(arrangement: Arrangement): string | null {
+    const all = [...arrangement.left, ...arrangement.right, ...arrangement.floating.map((box) => box.id)]
+    return arrangement.stage ?? all.find(isCamera) ?? all[0] ?? null
+}
+
+// ---- the settings drawer's drop zones: each one a split of a panel that's on screen ----
+
+export interface SplitZone {
+    key: string
+    rect: Rect
+    placement: Placement
+    title: string
+    /** the panel it splits (null: the empty main view) */
+    of: string | null
+}
+
+/**
+ * Where a new panel can go: the empty main view whole; the main view's panel split in half beside it (into an empty side);
+ * every unfolded rail panel split in half above and below it. Floating panels and hidden rails offer nothing.
+ */
+export function splitZones(arrangement: Arrangement, layout: WorkspaceLayout): SplitZone[] {
+    const zones: SplitZone[] = []
+    const stage = arrangement.stage ? layout.slots[arrangement.stage] : null
+    if (!stage) {
+        zones.push({ key: "stage", rect: layout.stage, placement: { zone: "stage" }, title: "Main view", of: null })
+    } else {
+        const { rect } = stage
+        const half = rect.width / 2
+        if (!arrangement.left.some((id) => !layout.slots[id]?.hidden)) {
+            zones.push({ key: "stage:left", rect: round({ ...rect, width: half }), placement: { zone: "left", index: 0 }, title: "Left of", of: arrangement.stage })
+        }
+        if (!arrangement.right.some((id) => !layout.slots[id]?.hidden)) {
+            zones.push({ key: "stage:right", rect: round({ ...rect, x: rect.x + half, width: half }), placement: { zone: "right", index: 0 }, title: "Right of", of: arrangement.stage })
+        }
+    }
+    for (const side of ["left", "right"] as const) {
+        arrangement[side].forEach((id, index) => {
+            const slot = layout.slots[id]
+            if (!slot || slot.hidden || slot.collapsed) {
+                return
+            }
+            const half = slot.rect.height / 2
+            zones.push({ key: `${id}:above`, rect: round({ ...slot.rect, height: half }), placement: { zone: side, index }, title: "Above", of: id })
+            zones.push({ key: `${id}:below`, rect: round({ ...slot.rect, y: slot.rect.y + half, height: half }), placement: { zone: side, index: index + 1 }, title: "Below", of: id })
+        })
+    }
+    return zones
 }
 
 // ---- dragging: where a header dropped here would go ----
@@ -551,7 +583,7 @@ export function saveArrangement(arrangement: Arrangement) {
 export const workspace = new Store<{ arrangement: Arrangement }>({ arrangement: loadArrangement([...FIXED_PANELS, cameraId(1)]) })
 workspace.subscribe(() => saveArrangement(workspace.get().arrangement))
 
-/** This page's view state (never saved: a reload starts with the drawers shut and the rails shown). */
+/** This page's view state (never saved: a reload starts with the rails shown). */
 export const workspaceView = new Store<View>(SHOWN)
 
 export function arrange(change: (arrangement: Arrangement) => Arrangement) {

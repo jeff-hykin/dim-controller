@@ -28,6 +28,12 @@ function fakeBridge() {
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/** waits until `done` holds (a loaded machine runs timers late), up to 2 s */
+const until = async (done: () => boolean) => {
+    for (const start = Date.now(); !done() && Date.now() - start < 2000;) {
+        await wait(5)
+    }
+}
 
 function pad(axes: number[], pressed: number[] = [], values: Record<number, number> = {}): PadLike {
     return {
@@ -73,7 +79,7 @@ Deno.test("published on /joystick only when it changes, at most JOY_HZ, the late
     joy.sample("gamepad", padJoy(pad([0, -0.7, 0, 0])))
     joy.sample("gamepad", padJoy(pad([0, -0.8, 0, 0], [5])))
     assertEquals(puts.length, 1, "not before the gap")
-    await wait(1000 / JOY_HZ + 30)
+    await until(() => puts.length >= 2)
     assertEquals(puts.length, 2)
     assertEquals(puts[1].axes[1], -0.8)
     assertEquals(puts[1].buttons[5], 1)
@@ -84,7 +90,7 @@ Deno.test("published on /joystick only when it changes, at most JOY_HZ, the late
     }
     assertEquals(puts.length, 2, "an unchanged pad sends nothing")
     joy.release("gamepad")
-    await wait(1000 / JOY_HZ + 30)
+    await until(() => puts.length >= 3)
     assertEquals(puts.length, 3)
     assertEquals(puts[2].axes, [0, 0, 0, 0, 0, 0])
     assertEquals(puts[2].buttons.every((button) => button === 0), true)

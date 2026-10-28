@@ -40,7 +40,7 @@ export function ActionBar({ api }: { api: WorkspaceApi }) {
         return () => clearTimeout(timer)
     }, [result, details])
     const stage = api.layout.stage
-    if (api.view.drawer || stage.width < 120) {
+    if (stage.width < 120) {
         return null
     }
     const hide = (value: boolean) => {

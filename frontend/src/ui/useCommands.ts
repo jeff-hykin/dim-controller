@@ -79,9 +79,11 @@ export function useCommands(app: ViewerApp, api: WorkspaceApi, cameras: CameraAc
     }
     commands.push(
         { id: "layout.reset", label: "Reset the layout", group: "Layout", hint: "camera main, map + 3D left, status + settings right", words: "default arrangement panels restore", run: () => resetArrangement(api.ids) },
-        { id: "layout.left", label: api.mobile ? "Open the left drawer" : api.view.hide.includes("left") ? "Show the left rail" : "Hide the left rail", group: "Layout", keys: ["["], run: () => api.toggleRail("left") },
-        { id: "layout.right", label: api.mobile ? "Open the right drawer" : api.view.hide.includes("right") ? "Show the right rail" : "Hide the right rail", group: "Layout", keys: ["]"], run: () => api.toggleRail("right") },
-        ...(api.mobile ? [] : [{ id: "layout.focus", label: focused ? "Show both rails" : "Focus the main view (hide both rails)", group: "Layout" as const, keys: ["\\"], run: api.toggleFocus }]),
+        ...(api.mobile ? [] : [
+            { id: "layout.left", label: api.view.hide.includes("left") ? "Show the left rail" : "Hide the left rail", group: "Layout" as const, keys: ["["], run: () => api.toggleRail("left") },
+            { id: "layout.right", label: api.view.hide.includes("right") ? "Show the right rail" : "Hide the right rail", group: "Layout" as const, keys: ["]"], run: () => api.toggleRail("right") },
+            { id: "layout.focus", label: focused ? "Show both rails" : "Focus the main view (hide both rails)", group: "Layout" as const, keys: ["\\"], run: api.toggleFocus },
+        ]),
         { id: "camera.add", label: "Add a camera panel", group: "Cameras", words: "new video image", run: cameras.addCamera },
         { id: "plot.add", label: "Add a plot", group: "Panels", words: "new graph chart number float time series", run: () => api.act(addPlot(), "show") },
         ...cameraTabs(connection.topics).map((tab): Command => ({

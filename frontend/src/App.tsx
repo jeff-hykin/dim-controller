@@ -2,7 +2,7 @@
 // workspace (a main view between a left and a right rail, panels that can float over it; ui/workspace.ts). Settings
 // opens the drawer that adds panels (ui/SettingsDrawer.tsx); held drive keys show over the main view's bottom.
 // Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
-// phone the rails are drawers and driving is two thumb sticks.
+// phone one panel shows at a time and driving is two thumb sticks.
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
@@ -90,7 +90,7 @@ export function App() {
                             <InfoPanels app={app} />
                         </>
                     )}
-                    <WorkspaceSurface emptyStage={<EmptyStage mobile={mobile} />} />
+                    <WorkspaceSurface emptyStage={(noPanels) => <EmptyStage mobile={mobile} noPanels={noPanels} />} />
                 </div>
                 {app && <Driving app={app} api={api} />}
                 {app && <ActionBar api={api} />}
@@ -109,8 +109,8 @@ export function App() {
 const placeholderRobot = new Store({ type: "dog" as const, auto: true, reason: "" })
 const placeholderRuns = new Store<RunState>({ known: false, desktop: false, dimosInstalled: null, running: [], starting: null, blueprints: {} })
 
-/** Nothing in the main view: "Add a panel", and an arrow down to the Settings button that adds one (a phone: its panel list). */
-function EmptyStage({ mobile }: { mobile: boolean }) {
+/** Nothing in the main view: "Add a panel", and, with no panels at all, an arrow down to the Settings button that adds one (a phone: its panel list). */
+function EmptyStage({ mobile, noPanels }: { mobile: boolean; noPanels: boolean }) {
     if (mobile) {
         return (
             <div className="ws-empty-note">
@@ -125,10 +125,10 @@ function EmptyStage({ mobile }: { mobile: boolean }) {
                 <b>Add a panel</b>
                 <span>Camera, 3D view, map or plot: they're under Settings.</span>
             </button>
-            <svg className="ws-empty-arrow" viewBox="0 0 520 330" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+            {noPanels && <svg className="ws-empty-arrow" viewBox="0 0 520 330" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
                 <defs><marker id="ws-arrow-head" markerWidth="12" markerHeight="12" refX="7" refY="6" orient="auto"><path d="M0 0L12 6 0 12z" /></marker></defs>
                 <path d="M40 10 C 220 30, 420 100, 470 300" markerEnd="url(#ws-arrow-head)" />
-            </svg>
+            </svg>}
         </div>
     )
 }
@@ -142,8 +142,7 @@ function Driving({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
             {api.mobile
                 ? !onboarding.blocksDriving && (isArm ? <ArmHud app={app} mobile /> : <DriveHud app={app} mobile />)
                 : <><TopBar app={app} api={api} /><KeyOverlay app={app} stage={api.layout.stage} /></>}
-            {/* over the main view only: an open drawer covers it */}
-            {onboarding.message && !api.view.drawer && (
+            {onboarding.message && (
                 <div className="stage-message" style={rectStyle(api.layout.stage)}>
                     <EmptyLayer {...onboarding.message} />
                 </div>

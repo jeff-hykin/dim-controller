@@ -1,7 +1,7 @@
 // The workspace in React: the arrangement (ui/workspace.ts) for the panels there are now, the boxes it gives them in
 // this window, and the one set of panel actions the headers, the palette and the keyboard share. <WorkspaceSurface>
 // draws what isn't a panel: the splitters, the rails' edges, the landing preview while a header is dragged, the empty
-// main view's hint and, on a phone, the drawer's backdrop.
+// main view's hint.
 import { createContext, type PointerEvent as ReactPointerEvent, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { persistentStore, Store, useStore } from "../core/store.ts"
 import { type PanelAction } from "./commands.ts"
@@ -127,9 +127,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
         const zone = locate(next, id)?.zone
         const side: Side | null = zone === "left" || zone === "right" ? zone : null
         const current = workspaceView.get()
-        if (mobile) {
-            workspaceView.set({ ...current, drawer: side })
-        } else if (side && current.hide.includes(side)) {
+        if (!mobile && side && current.hide.includes(side)) {
             workspaceView.set({ ...current, hide: current.hide.filter((other) => other !== side) })
         }
     }
@@ -139,7 +137,9 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     }
     const act = (id: string, action: PanelAction | "show") => {
         const current = normalizeArrangement(workspace.get().arrangement, ids)
-        if (action === "show") {
+        if (action === "show" && mobile) {
+            act(id, "main")
+        } else if (action === "show") {
             const next = showPanel(current, id)
             normalized(() => next)
             reveal(id, next)
@@ -147,10 +147,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
             normalized((arrangement) => toggleCollapsed(arrangement, id))
         } else if (action === "main") {
             if (current.stage !== id) {
-                normalized((arrangement) => movePanel(arrangement, id, { zone: "stage" }))
-                if (mobile) {
-                    workspaceView.set({ ...workspaceView.get(), drawer: null })
-                }
+                normalized((arrangement) => placePanel(arrangement, id, { zone: "stage" }, frame.width))
             }
         } else if (action === "minimize") {
             normalized((arrangement) => minimizeStage(arrangement))
@@ -160,8 +157,8 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     }
     const startDrag = (id: string, event: ReactPointerEvent, element: HTMLElement) => {
         const current = normalizeArrangement(workspace.get().arrangement, ids)
-        // a phone has no rails to drop into: only a floating panel moves, and it stays floating
-        if (event.button !== 0 || mobile && !current.floating.some((box) => box.id === id)) {
+        // a phone shows one panel at a time: nothing to drag
+        if (event.button !== 0 || mobile) {
             return
         }
         const currentView = workspaceView.get()
@@ -176,7 +173,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
         startHeaderDrag(event, element, {
             size,
             grab,
-            target: (pointer, box) => mobile ? { zone: "float", box: clampFloat(box, here.area), preview: clampFloat(box, here.area) } : dropTarget(current, frame, currentView, id, pointer, box),
+            target: (pointer, box) => dropTarget(current, frame, currentView, id, pointer, box),
             preview: (target) => dragPreview.set({ target, stage: target && current.stage !== id ? stageTarget(here.stage) : null }),
             drop: (target) => {
                 normalized((arrangement) => movePanel(arrangement, id, target))
@@ -194,9 +191,7 @@ export function useWorkspace(ids: string[], mobile: boolean): WorkspaceApi {
     }
     const toggleRail = (side: Side) => {
         const current = workspaceView.get()
-        if (mobile) {
-            workspaceView.set({ ...current, drawer: current.drawer === side ? null : side })
-        } else {
+        if (!mobile) {
             workspaceView.set({ ...current, hide: current.hide.includes(side) ? current.hide.filter((other) => other !== side) : [...current.hide, side] })
         }
     }
@@ -252,8 +247,8 @@ function useFrame(mobile: boolean): Frame {
     }
 }
 
-/** What's drawn around the panels: splitters, rail edges, the drag preview, the empty stage, a phone's drawer backdrop. */
-export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
+/** What's drawn around the panels: splitters, rail edges, the drag preview, the empty stage */
+export function WorkspaceSurface({ emptyStage }: { emptyStage: (noPanels: boolean) => ReactNode }) {
     const api = useWorkspaceApi()
     const { arrangement, layout, mobile } = api
     const preview = useStore(dragPreview)
@@ -312,8 +307,8 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
     const target = preview.target
     return (
         <>
-            {!arrangement.stage && (
-                <div className="ws-empty-stage" style={rectStyle(layout.stage)}>{emptyStage}</div>
+            {!Object.values(layout.slots).some((slot) => slot.zone === "stage") && (
+                <div className="ws-empty-stage" style={rectStyle(layout.stage)}>{emptyStage(!Object.values(layout.slots).some((slot) => !slot.hidden))}</div>
             )}
             {splitters}
             {target && (
@@ -322,22 +317,6 @@ export function WorkspaceSurface({ emptyStage }: { emptyStage: ReactNode }) {
                     <div className={`ws-drop-preview zone-${target.zone}`} style={rectStyle(target.preview)} />
                     {!layout.rails.left && <div className={`ws-edge-hint left ${target.zone === "left" ? "on" : ""}`} style={{ top: layout.area.y, height: layout.area.height, left: 0 }} />}
                     {!layout.rails.right && <div className={`ws-edge-hint right ${target.zone === "right" ? "on" : ""}`} style={{ top: layout.area.y, height: layout.area.height, right: 0 }} />}
-                </>
-            )}
-            {mobile && layout.drawer && api.view.drawer === "right" && (
-                <>
-                    <div className="ws-sheet" style={{ ...rectStyle(layout.drawer), top: 0, height: layout.drawer.y + layout.drawer.height }} />
-                    <div className="ws-sheet-head" style={{ height: layout.drawer.y }}>
-                        <Button className="ws-sheet-back" onClick={() => workspaceView.set({ ...workspaceView.get(), drawer: null })} data-testid="sheet-back">
-                            <Icon name="chevron-left" size={18} />Back
-                        </Button>
-                    </div>
-                </>
-            )}
-            {mobile && layout.drawer && api.view.drawer === "left" && (
-                <>
-                    <div className="ws-scrim" onClick={() => workspaceView.set({ ...workspaceView.get(), drawer: null })} />
-                    <div className={`ws-drawer ${api.view.drawer}`} style={rectStyle(layout.drawer)} />
                 </>
             )}
         </>

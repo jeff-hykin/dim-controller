@@ -1,7 +1,7 @@
 // The top bar's Settings button opens this over a dimmed main view: on the left a column of panel thumbnails (Camera,
 // 3D view, 2D Map, Plot, Settings), each with a count of the streams it could show that nothing shows; on the right the
-// settings list. A click on a thumbnail, or a drag of it, shows the places it can go as outlined, named zones (the left
-// side and the right side: a split view, the main view, floating); a click on a zone, or a drop on one, opens it there.
+// settings list. A click on a thumbnail, or a drag of it, shows the places it can go as outlined, named zones: each
+// panel on screen split in half (or the empty main view); a click on a zone, or a drop on one, opens it there.
 // Escape, or a click outside the zones, puts it back. Desktop only (a phone keeps its own panel list).
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react"
 import type { ViewerApp } from "../core/app.ts"
@@ -13,10 +13,9 @@ import { SettingsPanel } from "./SettingsPanel.tsx"
 import { addCameraPanel, cameraLayout, cameraPanels } from "./CameraPanels.tsx"
 import { addPlot, plotLayout, plotsOf } from "./PlotPanel.tsx"
 import { kindOf, PANEL_KINDS, type PanelKind, type Shown, unshownStreams } from "./panelCatalog.ts"
-import { floatBoxFor, homeOf, type Placement, type Rect } from "./workspace.ts"
+import { homeOf, type Rect, splitZones, type SplitZone } from "./workspace.ts"
+import { panelTitle } from "./commands.ts"
 import { DRAG_SLOP } from "./panelDrag.ts"
-
-export type ZoneId = "left" | "stage" | "float" | "right"
 
 /** the drawer's state: open, or a kind being placed (picked by a click, or dragged with the pointer at `pointer`) */
 export const settingsDrawer = new Store<{ open: boolean; placing: PanelKind | null; pointer: { x: number; y: number } | null }>({ open: false, placing: null, pointer: null })
@@ -37,31 +36,17 @@ export function useShown(api: WorkspaceApi): Shown {
     }), [key, cameras, plots])
 }
 
-/** The drop zones over the workspace: each side a split view's share of it, the main view above floating in the middle. */
-export function dropZones(area: Rect): Record<ZoneId, Rect> {
-    const pad = 16, side = Math.round(area.width * 0.22)
-    const middleX = area.x + side + pad * 2, middleWidth = area.width - 2 * (side + pad * 2)
-    const mainHeight = Math.round((area.height - pad * 3) * 0.64)
-    return {
-        left: { x: area.x + pad, y: area.y + pad, width: side, height: area.height - pad * 2 },
-        right: { x: area.x + area.width - pad - side, y: area.y + pad, width: side, height: area.height - pad * 2 },
-        stage: { x: middleX, y: area.y + pad, width: middleWidth, height: mainHeight },
-        float: { x: middleX, y: area.y + pad * 2 + mainHeight, width: middleWidth, height: area.height - pad * 3 - mainHeight },
-    }
-}
+/** a zone's name: "Main view", or the panel it splits and which half ("Left of Camera", "Below 2D Map") */
+const zoneName = (zone: SplitZone) => zone.of ? `${zone.title} ${panelTitle(zone.of)}` : zone.title
 
-const ZONE_TEXT: Record<ZoneId, { title: string; about: (stage: string | null) => string }> = {
-    left: { title: "Left side", about: () => "split view beside the main view" },
-    right: { title: "Right side", about: () => "split view beside the main view" },
-    stage: { title: "Main view", about: (stage) => stage ? "what's there now moves to its side" : "fills the middle" },
-    float: { title: "Floating", about: () => "over the main view" },
-}
+/** a zone drawn a little inside the half it stands for, so two halves of one panel read as two */
+const inset = (rect: Rect, by = 6): Rect => ({ x: rect.x + by, y: rect.y + by, width: Math.max(0, rect.width - 2 * by), height: Math.max(0, rect.height - 2 * by) })
 
 export function SettingsDrawer({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const state = useStore(settingsDrawer)
     const { topics } = useStore(app.connection.status)
     const shown = useShown(api)
-    const [hover, setHover] = useState<ZoneId | null>(null)
+    const [hover, setHover] = useState<string | null>(null)
     useEffect(() => {
         if (!state.open && !state.placing) {
             return
@@ -73,23 +58,18 @@ export function SettingsDrawer({ app, api }: { app: ViewerApp; api: WorkspaceApi
     if (api.mobile || (!state.open && !state.placing)) {
         return null
     }
-    const zones = dropZones(api.layout.area)
-    const place = (kind: PanelKind, zone: ZoneId) => {
+    const zones = splitZones(api.arrangement, api.layout)
+    const place = (kind: PanelKind, zone: SplitZone) => {
         const id = kind === "camera"
             ? addCameraPanel(topics, app.profile.cameras.preferred)
             : kind === "plot"
             ? addPlot()
             : kind
-        const placement: Placement = zone === "stage"
-            ? { zone: "stage" }
-            : zone === "float"
-            ? { zone: "float", box: floatBoxFor(api.arrangement, id, api.layout) }
-            : { zone, index: api.arrangement[zone].length }
-        api.place(id, placement)
+        api.place(id, zone.placement)
         closeDrawer()
     }
     const zoneAt = (point: { x: number; y: number }) =>
-        (Object.entries(zones) as [ZoneId, Rect][]).find(([, rect]) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height)?.[0] ?? null
+        zones.find(({ rect }) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height) ?? null
     // a thumbnail pressed: a click picks it (zones to click), a drag carries it (zones to drop on)
     const press = (kind: PanelKind, event: ReactPointerEvent) => {
         if (event.button !== 0) {
@@ -103,7 +83,7 @@ export function SettingsDrawer({ app, api }: { app: ViewerApp; api: WorkspaceApi
             }
             if (dragging) {
                 settingsDrawer.set({ open: false, placing: kind, pointer: { x: moved.clientX, y: moved.clientY } })
-                setHover(zoneAt({ x: moved.clientX, y: moved.clientY }))
+                setHover(zoneAt({ x: moved.clientX, y: moved.clientY })?.key ?? null)
             }
         }
         const up = (released: PointerEvent) => {
@@ -128,24 +108,26 @@ export function SettingsDrawer({ app, api }: { app: ViewerApp; api: WorkspaceApi
         const kind = PANEL_KINDS.find((one) => one.kind === state.placing)!
         return (
             <div className="drop-zones" data-testid="drop-zones" onClick={closeDrawer} style={rectStyle(api.layout.area)}>
-                {(Object.entries(zones) as [ZoneId, Rect][]).map(([zone, rect]) => (
+                {zones.map((zone) => {
+                    const rect = inset(zone.rect)
+                    return (
                     <button
                         type="button"
-                        key={zone}
-                        className={`drop-zone ${hover === zone ? "on" : ""}`}
-                        data-zone={zone}
+                        key={zone.key}
+                        className={`drop-zone ${hover === zone.key ? "on" : ""}`}
+                        data-zone={zone.key}
                         style={{ ...rectStyle(rect), left: rect.x - api.layout.area.x, top: rect.y - api.layout.area.y }}
-                        onPointerEnter={() => setHover(zone)}
+                        onPointerEnter={() => setHover(zone.key)}
                         onPointerLeave={() => setHover(null)}
                         onClick={(event) => {
                             event.stopPropagation()
                             place(kind.kind, zone)
                         }}
                     >
-                        <span className="drop-zone-title">{ZONE_TEXT[zone].title}</span>
-                        <span className="drop-zone-about">{ZONE_TEXT[zone].about(api.arrangement.stage)}</span>
+                        <span className="drop-zone-title">{zoneName(zone)}</span>
                     </button>
-                ))}
+                    )
+                })}
                 {state.pointer
                     ? <div className="drop-ghost" style={{ left: state.pointer.x - api.layout.area.x - 70, top: state.pointer.y - api.layout.area.y - 30 }}><Icon name={kind.icon} size={22} /><span>{kind.title}</span></div>
                     : <div className="drop-hint">Where should the {kind.title.toLowerCase()} go? <span className="dim">Esc to cancel</span></div>}

@@ -13,7 +13,7 @@ import { type JoyPublisher, keyboardJoy } from "../core/joy.ts"
 import type { Axes, RobotProfile } from "../profile/types.ts"
 import { isTypingTarget, routeKeyDown } from "./keymap.ts"
 import { closeOverlay, openOverlay, overlay } from "./overlay.ts"
-import { type Side, workspaceView } from "./workspace.ts"
+import { type Side } from "./workspace.ts"
 
 export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, panels: { toggleRail: (side: Side) => void; toggleFocus: () => void }, joy: JoyPublisher | null = null, arm: ArmControl | null = null) {
     // the latest callbacks, without re-binding (a re-bind mid-hold would forget the held keys)
@@ -61,7 +61,7 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
             const open = overlay.get().open
             const decision = routeKeyDown(event, {
                 typing: isTypingTarget(event.target),
-                overlay: open ?? (workspaceView.get().drawer ? "drawer" : null),
+                overlay: open ?? null,
                 driveKeys: profile?.drive.keys ?? {},
             })
             switch (decision.kind) {
@@ -81,9 +81,6 @@ export function useKeyboard(drive: Drive | null, profile: RobotProfile | null, p
                         event.preventDefault()
                         event.stopPropagation()
                         closeOverlay()
-                    } else if (workspaceView.get().drawer) {
-                        event.preventDefault()
-                        workspaceView.set({ ...workspaceView.get(), drawer: null })
                     }
                     return
                 case "palette":

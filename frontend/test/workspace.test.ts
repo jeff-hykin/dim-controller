@@ -15,6 +15,7 @@ import {
     movePanel,
     normalizeArrangement,
     PANEL_HEAD,
+    phonePanel,
     placePanel,
     popOut,
     type Rect,
@@ -25,6 +26,7 @@ import {
     snapBox,
     SNAP_PX,
     SPLIT_SHARE,
+    splitZones,
     toggleCollapsed,
     workspace,
     WORKSPACE_KEY,
@@ -35,7 +37,7 @@ const IDS = ["camera:1", ...FIXED_PANELS]
 const opened = (ids = IDS) => normalizeArrangement({}, ids)
 const desktop: Frame = { width: 1440, height: 900, top: 44, bottom: 900 - 64, mobile: false }
 const phone: Frame = { width: 390, height: 844, top: 48, bottom: 520, mobile: true }
-const shown = { drawer: null, hide: [] }
+const shown = { hide: [] }
 
 const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 const within = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height
@@ -162,7 +164,7 @@ Deno.test("collapsing a rail panel gives its height to the others in its rail; e
 })
 
 Deno.test("focus hides both rails: the main view takes the width, the rail panels stay mounted but hidden", () => {
-    const layout = layoutWorkspace(opened(), desktop, { drawer: null, hide: ["left", "right"] })
+    const layout = layoutWorkspace(opened(), desktop, { hide: ["left", "right"] })
     assertEquals(layout.stage, layout.area)
     assert(layout.slots.map.hidden && layout.slots.settings.hidden)
     assert(!layout.slots["camera:1"].hidden)
@@ -263,24 +265,41 @@ Deno.test("splitters: the pair's share moves, their total height doesn't; rails 
     assertEquals(resizeRail(arrangement, "right", 9999).rightWidth, 640)
 })
 
-Deno.test("phone: the main view fills the screen; a rail is a drawer, its panels shown only while it's open", () => {
+Deno.test("phone: one panel at a time, filling the screen: the main view's, else the first camera", () => {
     const arrangement = opened()
-    const closed = layoutWorkspace(arrangement, phone, shown)
-    assertEquals(closed.slots["camera:1"].rect, { x: 0, y: 48, width: 390, height: 472 })
-    assert(["map", "scene", "settings"].every((id) => closed.slots[id].hidden))
-    const left = layoutWorkspace(arrangement, phone, { drawer: "left", hide: [] })
-    assert(left.drawer && left.drawer.x === 0 && left.drawer.width < phone.width)
-    // it ends where the sticks start
-    assertEquals(left.drawer.y + left.drawer.height, phone.bottom)
-    assert(!left.slots.map.hidden && !left.slots.scene.hidden && within(left.slots.map.rect, left.drawer))
-    assert(left.slots.settings.hidden)
-    const right = layoutWorkspace(arrangement, phone, { drawer: "right", hide: [] })
-    assert(right.drawer && right.drawer.x + right.drawer.width === phone.width)
-    assert(!right.slots.settings.hidden && right.slots.map.hidden)
-    // a floating panel floats over the main view with no drawer open, pulled onto the screen
+    const layout = layoutWorkspace(arrangement, phone, shown)
+    assertEquals(layout.slots["camera:1"].rect, { x: 0, y: 48, width: 390, height: 472 })
+    assert(["map", "scene", "settings", "tf"].every((id) => layout.slots[id].hidden))
+    // nothing in the main view: the first camera shows anyway
+    const noStage = { ...arrangement, stage: null, left: ["map", "camera:1", "scene"] }
+    assertEquals(phonePanel(noStage), "camera:1")
+    assert(!layoutWorkspace(noStage, phone, shown).slots["camera:1"].hidden)
+    // a floating panel is just another one the phone isn't showing
     const floated = movePanel(arrangement, "tf", { zone: "float", box: { x: 900, y: 200, width: 500, height: 300 } })
-    const tf = layoutWorkspace(floated, phone, shown).slots.tf
-    assert(tf.zone === "float" && !tf.hidden && tf.rect.width <= phone.width - 16 && tf.rect.x < phone.width - 100)
+    assert(layoutWorkspace(floated, phone, shown).slots.tf.hidden)
+    const map = movePanel(arrangement, "map", { zone: "stage" })
+    const mapLayout = layoutWorkspace(map, phone, shown)
+    assert(!mapLayout.slots.map.hidden && mapLayout.slots["camera:1"].hidden)
+})
+
+Deno.test("drop zones: the empty main view whole, else each panel on screen split in half", () => {
+    const empty = defaultArrangement(FIXED_PANELS)
+    const bare = splitZones(empty, layoutWorkspace(empty, desktop, shown))
+    assertEquals(bare.map((zone) => zone.key), ["stage"])
+    // the camera alone: its left and right halves make the sides
+    const camera = defaultArrangement(IDS)
+    const cameraLayout = layoutWorkspace(camera, desktop, shown)
+    const halves = splitZones(camera, cameraLayout)
+    assertEquals(halves.map((zone) => zone.key), ["stage:left", "stage:right"])
+    assertEquals(halves[0].placement, { zone: "left", index: 0 })
+    assert(within(halves[0].rect, cameraLayout.stage) && halves[0].rect.width * 2 <= cameraLayout.stage.width + 1)
+    // rails full: each unfolded rail panel above and below, the main view (sides taken) and folded TF nothing
+    const open = opened()
+    const zones = splitZones(open, layoutWorkspace(open, desktop, shown))
+    assertEquals(zones.map((zone) => zone.key), ["map:above", "map:below", "scene:above", "scene:below", "settings:above", "settings:below"])
+    assertEquals(zones.find((zone) => zone.key === "scene:below")!.placement, { zone: "left", index: 2 })
+    // no zone is ever floating
+    assert(zones.every((zone) => zone.placement.zone !== "float"))
 })
 
 Deno.test("the arrangement survives a reload (this viewer's localStorage), a broken entry falls back to the default", () => {
