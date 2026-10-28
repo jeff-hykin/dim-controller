@@ -596,7 +596,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
                     <Button variant="primary" onClick={() => setOverride(topic.key, { paused: undefined })}>Resume</Button>
                 </div>
             )}
-            {topic && open && stalled && !paused && <div className="camera-stalled" data-testid="camera-stalled">{reconnecting ? "reconnecting…" : "slow / stopped link"}</div>}
+            {topic && open && stalled && !paused && !!size.width && <div className="camera-stalled" data-testid="camera-stalled">{reconnecting ? "reconnecting…" : "slow / stopped link"}</div>}
             {!topic && tabs.length > 0 && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
             {!topic && !tabs.length && <div className="camera-placeholder"><DriveHint app={app} waiting="No camera on the bus yet." /></div>}
             {topic && open && !size.width && !paused && <div className="camera-placeholder"><DriveHint app={app} waiting={`Waiting for ${topic.name}…`} /></div>}
