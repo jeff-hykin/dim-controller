@@ -11,7 +11,7 @@ dimos-desktop install https://github.com/jeff-hykin/dim-controller
 ```
 
 Open **Controller** from Desktop's rail while a blueprint (sim, replay or robot) runs. Topics show up as they flow;
-nothing is configured by topic name. Details for every part: [docs/reference.md](docs/reference.md).
+nothing is configured by topic name. Details for every part: [docs/reference.md](docs/reference.md). Changing the UI (adding a panel, a layer, a setting): [docs/changing_the_ui.md](docs/changing_the_ui.md).
 
 ## 3D view
 
