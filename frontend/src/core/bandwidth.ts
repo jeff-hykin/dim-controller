@@ -41,8 +41,8 @@ export const DEFAULT_PRIORITY = 1
  */
 export const PRIORITY_TIERS = { state: 4, sensors: 2, viewed: 1, background: 0.5, bulk: 0.25 } as const
 
-/** small messages you can't control the robot without */
-const STATE_TYPES = /^(sensor_msgs\.(JointState|BatteryState|Imu)|nav_msgs\.(Odometry|Path)|geometry_msgs\.\w+|std_msgs\.\w+)$/
+/** small messages you can't control the robot without (tf: nothing is placed without it) */
+const STATE_TYPES = /^(sensor_msgs\.(JointState|BatteryState|Imu)|nav_msgs\.(Odometry|Path)|geometry_msgs\.\w+|std_msgs\.\w+|tf2_msgs\.TFMessage)$/
 
 /** the robot's model and its mesh files: big, and only needed once */
 const MODEL_TOPICS = /^\/(robot_description|file_info|file_request|render_file_request)(\/|$)/
