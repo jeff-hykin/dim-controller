@@ -170,8 +170,11 @@ export function buildScene(data: SceneData): BuiltScene {
                 return geom.mesh && data.meshes[geom.mesh] ? meshGeometry(geom.mesh) : null
             case "hfield":
                 return geom.hfield && data.hfields[geom.hfield] ? hfieldGeometry(geom.hfield) : null
+            case "plane":
+                // MuJoCo's plane: half-extents in its xy, 0 or less = infinite (drawn 1 km out)
+                return new THREE.PlaneGeometry(2 * (a > 0 ? a : 1000), 2 * (b > 0 ? b : 1000))
             default:
-                return null // the plane: the view has its own ground grid
+                return null
         }
     }
 
@@ -195,6 +198,10 @@ export function buildScene(data: SceneData): BuiltScene {
                 metalness: 0,
                 transparent: alpha < 1,
                 opacity: alpha,
+                // a floor sits behind the view's ground grid at the same height instead of z-fighting it
+                polygonOffset: geom.type === "plane",
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1,
             })
             if (material.map) {
                 material.color.set(0xffffff)

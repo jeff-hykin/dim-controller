@@ -31,7 +31,7 @@ const scene: SceneData = {
             quat: I,
             mocap: false,
             geoms: [
-                { name: "ground", type: "plane", size: [0, 0, 0.05], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1] },
+                { name: "ground", type: "plane", size: [10, 5, 0.1], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1] },
                 { name: "hill", type: "hfield", size: [1, 1, 2, 0.1], pos: [0, 0, 0], quat: I, rgba: [0, 1, 0, 1], hfield: "h" },
                 { name: "tri", type: "mesh", size: [0, 0, 0], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], mesh: "tri" },
             ],
@@ -44,14 +44,31 @@ const scene: SceneData = {
     textures: {},
 }
 
-Deno.test("bodies are named groups at their pose, the plane left to the view's own grid", () => {
+Deno.test("bodies are named groups at their pose", () => {
     const { root, bodies, lights } = buildScene(scene)
     assertEquals([...bodies.keys()], ["cart", "terrain"])
     assertEquals(bodies.get("cart")!.position.toArray(), [1, 2, 0.3])
-    assertEquals(bodies.get("terrain")!.children.map((child) => child.name), ["hill", "tri"])
+    assertEquals(bodies.get("terrain")!.children.map((child) => child.name), ["ground", "hill", "tri"])
     assertEquals(lights.length, 1)
     assert(lights[0] instanceof THREE.SpotLight)
     assert(root.children.length === 2)
+})
+
+Deno.test("a plane is drawn in its xy at twice its half-extents, in its color, behind the ground grid", () => {
+    const ground = buildScene(scene).bodies.get("terrain")!.getObjectByName("ground") as THREE.Mesh
+    ground.geometry.computeBoundingBox()
+    assertEquals(ground.geometry.boundingBox!.getSize(new THREE.Vector3()).toArray(), [20, 10, 0])
+    const material = ground.material as THREE.MeshStandardMaterial
+    assert(material.polygonOffset)
+    assertEquals(material.color.getHexString(), "ffffff")
+})
+
+Deno.test("an infinite plane (size 0) still draws, far out", () => {
+    const infinite = structuredClone(scene)
+    infinite.bodies[1].geoms[0].size = [0, 0, 0.1]
+    const ground = buildScene(infinite).bodies.get("terrain")!.getObjectByName("ground") as THREE.Mesh
+    ground.geometry.computeBoundingBox()
+    assert(ground.geometry.boundingBox!.getSize(new THREE.Vector3()).x >= 1000)
 })
 
 Deno.test("a box takes MuJoCo's half-sizes; a cylinder stands along z", () => {
@@ -73,7 +90,7 @@ Deno.test("a geom's rgba is read as sRGB, the way MuJoCo shows it", () => {
 
 Deno.test("a height field's raised sample lands at (-x, +y), scaled by its top", () => {
     const { bodies } = buildScene(scene)
-    const hill = bodies.get("terrain")!.children[0] as THREE.Mesh
+    const hill = bodies.get("terrain")!.getObjectByName("hill") as THREE.Mesh
     const position = hill.geometry.getAttribute("position")
     let high = 0
     for (let index = 1; index < position.count; index++) {
@@ -90,7 +107,7 @@ Deno.test("grass grows only on a height field whose material is grass*, hidden u
     grassy.bodies[1].geoms[1].material = "grass_0"
     const { grass, bodies } = buildScene(grassy)
     assertEquals(grass.length, 1)
-    const hill = bodies.get("terrain")!.children[0] as THREE.Mesh
+    const hill = bodies.get("terrain")!.getObjectByName("hill") as THREE.Mesh
     assert(hill.children.includes(grass[0].mesh))
     assertEquals(grass[0].mesh.visible, false)
     assertEquals(grass[0].area, 4)
