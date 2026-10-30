@@ -9,6 +9,7 @@ import { Store, useStore } from "../core/store.ts"
 import { dimosKey, type Publisher, type Topic } from "../core/transport.ts"
 import { Field, Slider, Toggle } from "dimos-react"
 import { buildScene, type SceneData } from "../core/sceneData.ts"
+import { SimLighting } from "../core/simLighting.ts"
 import { bladeCount, isSoftwareRenderer, probeRendererName, windTime } from "../core/grass.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
 
@@ -23,6 +24,8 @@ export interface SimSceneSettings {
     cutAbove: number
     /** add the world's own lights to the view's */
     lights: boolean
+    /** the default sun casts shadows */
+    shadows: boolean
 }
 
 let gpuName: string | null = null
@@ -72,8 +75,10 @@ class SimSceneLayer {
     #asking: ReturnType<typeof setInterval>
     #requests: Publisher | null = null
     #unsubscribeGrass: () => void
+    #lighting: SimLighting
 
     constructor(readonly context: LayerContext, readonly topic: Topic, readonly settings: Store<SimSceneSettings>) {
+        this.#lighting = new SimLighting(context.viewer.renderer)
         // scene coordinates are the world frame; the layer root is re-placed in the view's fixed frame every frame
         this.root.matrixAutoUpdate = false
         settings.subscribe(() => this.#applySettings())
@@ -120,6 +125,7 @@ class SimSceneLayer {
         this.#scene = buildScene(data)
         this.#id = data.id
         this.root.add(this.#scene.root)
+        this.#lighting.light(this.#scene.root)
         this.#applySettings()
         const geoms = data.bodies.reduce((count, body) => count + body.geoms.length, 0)
         const movers = data.bodies.filter((body) => body.mocap).length
@@ -133,7 +139,7 @@ class SimSceneLayer {
         if (!scene) {
             return
         }
-        const { opacity, cutAbove, lights } = this.settings.get()
+        const { opacity, cutAbove, lights, shadows } = this.settings.get()
         const { on: grass, density: grassDensity } = grassSettings().get()
         scene.root.traverse((object) => {
             const mesh = object as THREE.Mesh
@@ -150,6 +156,7 @@ class SimSceneLayer {
         for (const light of scene.lights) {
             light.visible = lights
         }
+        this.#lighting.shadows = shadows !== false
         for (const blades of scene.grass) {
             blades.mesh.count = Math.min(blades.mesh.instanceMatrix.count, bladeCount(blades.area, grassDensity))
             blades.mesh.visible = grass && blades.mesh.count > 0
@@ -231,6 +238,9 @@ function SimSceneSettingsEditor({ settings }: { settings: Store<SimSceneSettings
             <Field inline label="Hide above" title="leaves out ceilings and upper floors">
                 <Slider min={0.5} max={30} step={0.1} value={value.cutAbove} format={(height) => `${height.toFixed(1)} m`} onChange={(cutAbove) => settings.update({ cutAbove })} />
             </Field>
+            <Field inline label="Shadows" title="the default sun's shadows">
+                <Toggle value={value.shadows !== false} onChange={(shadows) => settings.update({ shadows })} />
+            </Field>
             <Field inline label="The world's lights">
                 <Toggle value={value.lights} onChange={(lights) => settings.update({ lights })} />
             </Field>
@@ -257,7 +267,7 @@ registerLayer<SimSceneSettings>({
     types: ["std_msgs.String"],
     // a SceneData module says it's there on /scene_info (1 Hz); /scene_data itself only publishes when asked
     names: ["/scene_info"],
-    defaults: { opacity: 1, cutAbove: 2.5, lights: false },
+    defaults: { opacity: 1, cutAbove: 2.5, lights: false, shadows: true },
     create: (context, topic, settings) => new SimSceneLayer(context, topic, settings),
     Settings: SimSceneSettingsEditor,
 })

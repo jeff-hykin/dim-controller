@@ -209,6 +209,7 @@ export function buildScene(data: SceneData): BuiltScene {
             const mesh = new THREE.Mesh(geometry, material)
             mesh.name = geom.name
             mesh.userData.baseOpacity = alpha
+            mesh.userData.plane = geom.type === "plane"
             mesh.position.set(...geom.pos)
             mesh.quaternion.set(...geom.quat)
             mesh.castShadow = true
