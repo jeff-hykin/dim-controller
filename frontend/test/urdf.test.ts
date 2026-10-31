@@ -2,7 +2,7 @@
 // root), MeshFile replies decoded, STL meshes (binary and ASCII) loaded, joint positions read back from link poses, and
 // a model filling in as its meshes arrive, and its static links (an env) told from its moving ones.
 import { assert, assertAlmostEquals, assertEquals, assertThrows } from "jsr:@std/assert@1"
-import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
+import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
 import { Kinematics, modelPartsOf, RobotModel, staticLinks } from "../src/core/robotDescription.ts"

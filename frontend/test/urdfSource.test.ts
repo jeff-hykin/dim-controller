@@ -1,7 +1,7 @@
 // UrdfSource (core/urdfSource.ts): "*.urdf" on /render_file_request asks for the URDF, on subscribing and on every connect,
 // re-sent until it comes on /file_info (the first can beat the subscription), and an empty reply isn't a URDF.
 import { assertEquals } from "jsr:@std/assert@1"
-import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
+import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
 import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"

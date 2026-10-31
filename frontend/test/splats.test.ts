@@ -3,7 +3,7 @@
 // grouped one in its group; mesh files and splat files each shown by theirs across them, meshes untextured; old
 // settings carried over.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
+import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
 import * as THREE from "three"
 import { parseUrdf } from "dimos-react/three"
 import { splitHash } from "../src/core/meshCache.ts"

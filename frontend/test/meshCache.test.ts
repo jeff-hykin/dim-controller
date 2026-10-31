@@ -1,8 +1,8 @@
 // The IndexedDB file cache (core/meshCache.ts) and UrdfSource's use of it: a file that came once is drawn from the cache
 // on the next load without asking the robot again, and a tab holding the cache's old version open doesn't stall a load.
 import { assertEquals } from "jsr:@std/assert@1"
-import { DOMParser } from "https://esm.sh/@xmldom/xmldom@0.8.10"
-import { IDBFactory } from "https://esm.sh/fake-indexeddb@6.0.0?bundle"
+import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
+import { IDBFactory } from "npm:fake-indexeddb@6.0.0"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
 import { cachedFile, resetCacheConnection, storeFile } from "../src/core/meshCache.ts"
