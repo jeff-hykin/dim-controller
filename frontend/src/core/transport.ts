@@ -119,6 +119,8 @@ export class Connection {
     readonly status = new Store<ConnectionState>({ state: "connecting", topics: [], droppedPerSecond: 0, rttMs: null, throughputBytesPerSec: null, error: null })
     #subscriptions = new Set<LiveSubscription>()
     #lastDropped = 0
+    /** the gateway stats poll the drop rates were last taken from, and when (polls come every 1-10 s on a thin link) */
+    #lastPoll: { stats: object; at: number } | null = null
     #shared: ReturnType<typeof getZenoh>
     /** the last RTT sample seen and when (performance.now()): a link that stops answering stops changing it */
     #lastRtt: { value: number | null; at: number } = { value: null, at: 0 }
@@ -197,16 +199,20 @@ export class Connection {
             if (++tick % LEASE_RETRY_TICKS === 0) {
                 this.#retryLeaseRefused(client)
             }
-            const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
             // the gateway counts payload before it is compressed and framed, so the wire is the true rate
             const counts = await peerCounts((client as unknown as { _peer?: RTCPeerConnection | null })._peer).catch(() => null)
             const bytes = counts?.wire ?? null
             const now = performance.now()
             const wire = bytes !== null && lastWire !== null && bytes >= lastWire.bytes ? ((bytes - lastWire.bytes) * 1000) / (now - lastWire.at) : null
             lastWire = bytes === null ? null : { bytes, at: now }
-            this.status.update({ droppedPerSecond: dropped - this.#lastDropped, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
-            this.#lastDropped = dropped
-            this.#sampleDrops(client)
+            // drops count up only when a stats poll lands, so each rate is over the time between polls, held until the next
+            const polled = this.#lastPoll?.stats !== client.stats
+            const pollSecs = this.#lastPoll ? Math.max(1, (now - this.#lastPoll.at) / 1000) : 1
+            const droppedPerSecond = polled ? this.#pollDrops(client, pollSecs) : this.status.get().droppedPerSecond
+            if (polled) {
+                this.#lastPoll = { stats: client.stats, at: now }
+            }
+            this.status.update({ droppedPerSecond, rttMs: client.rttMs ?? null, throughputBytesPerSec: wire ?? throughputOf(client.gatewayStats) })
             this.network.sample(now, counts, this.latencyMs(now))
         }, 1000)
         this.#lastRtt = { value: client.rttMs ?? null, at: performance.now() }
@@ -300,8 +306,17 @@ export class Connection {
         return Object.assign(unsubscribe, { update, watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs) })
     }
 
+    /** The page's drops per second since the last stats poll (`secs` ago), and each stream's link drops (#sampleDrops). */
+    #pollDrops(client: ZenohGateway, secs: number): number {
+        const dropped = Object.values(client.stats).reduce((sum, stats) => sum + (stats.dropped || 0), 0)
+        const perSecond = Math.round(Math.max(0, dropped - this.#lastDropped) / secs)
+        this.#lastDropped = dropped
+        this.#sampleDrops(client, secs)
+        return perSecond
+    }
+
     /** Each stream's link drops from the gateway's own counts: not its maxHz thinning, which is asked for. */
-    #sampleDrops(client: ZenohGateway) {
+    #sampleDrops(client: ZenohGateway, secs: number) {
         const previous = this.drops.get()
         const next: Record<string, { perSecond: number; total: number }> = {}
         for (const [key, stats] of Object.entries(client.stats as Record<string, { gateway?: { stats?: Record<string, unknown> } | null }>)) {
@@ -310,7 +325,7 @@ export class Connection {
                 continue
             }
             const total = ["droppedQueue", "droppedAge", "abandonedPartial"].reduce((sum, name) => sum + Number(counts[name] ?? 0), 0)
-            next[key] = { total, perSecond: Math.max(0, total - (previous[key]?.total ?? total)) }
+            next[key] = { total, perSecond: Math.round(Math.max(0, total - (previous[key]?.total ?? total)) / secs) }
         }
         if (JSON.stringify(next) !== JSON.stringify(previous)) {
             this.drops.set(next)
