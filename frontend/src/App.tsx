@@ -3,6 +3,7 @@
 // opens the drawer that adds panels (ui/SettingsDrawer.tsx); held drive keys show over the main view's bottom.
 // Every panel has the same frame and the same header actions (ui/Panel.tsx); everything is also in the `/` palette, and `?` lists the keys. On a
 // phone one panel shows at a time and driving is two thumb sticks.
+import { watchLayoutDrops } from "./core/layoutFiles.ts"
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
 import { Store, useStore } from "./core/store.ts"
@@ -59,7 +60,11 @@ export function App() {
         }
         theme()
         addEventListener("dimos-react-theme", theme)
-        return () => removeEventListener("dimos-react-theme", theme)
+        const stopDrops = watchLayoutDrops()
+        return () => {
+            removeEventListener("dimos-react-theme", theme)
+            stopDrops()
+        }
     }, [])
 
     const cameras = useStore(cameraLayout)

@@ -13,7 +13,8 @@ import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DriveKeyboardFold, DrivePanel, DriveProfileFold } from "./DrivePanel.tsx"
-import { SettingsFold, SettingsLink } from "./SettingsGroup.tsx"
+import { SettingsFold, SettingsGroup, SettingsLink } from "./SettingsGroup.tsx"
+import { LAYOUT_SUFFIX, pickLayoutFile, saveLayoutFile } from "../core/layoutFiles.ts"
 import { rendering } from "../core/render/rendering.ts"
 import { StylePicker } from "./StylePicker.tsx"
 import { followFrameOptions } from "../core/map2d.ts"
@@ -27,6 +28,10 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
     return (
         <div className="settings-panel app-settings">
+            <SettingsGroup title="Layout" data-layout-files="">
+                <SettingsLink icon="download" label="Save layout" note={`panels, cameras and plots as a ${LAYOUT_SUFFIX} file`} onClick={() => saveLayoutFile()} />
+                <SettingsLink icon="upload" label="Load layout…" note={`or drop a ${LAYOUT_SUFFIX} file anywhere`} onClick={pickLayoutFile} />
+            </SettingsGroup>
             {robot.type !== "arm" && (
                 <>
                     <DrivePanel app={app} />
