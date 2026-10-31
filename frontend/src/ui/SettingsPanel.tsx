@@ -28,10 +28,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
     return (
         <div className="settings-panel app-settings">
-            <SettingsGroup title="Layout" data-layout-files="">
-                <SettingsLink icon="download" label="Save layout" note={`panels, cameras and plots as a ${LAYOUT_SUFFIX} file`} onClick={() => saveLayoutFile()} />
-                <SettingsLink icon="upload" label="Load layout…" note={`or drop a ${LAYOUT_SUFFIX} file anywhere`} onClick={pickLayoutFile} />
-            </SettingsGroup>
             {robot.type !== "arm" && (
                 <>
                     <DrivePanel app={app} />
@@ -52,6 +48,10 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <DriveProfileFold app={app} />
                 </>
             )}
+            <SettingsGroup title="Layout" data-layout-files="">
+                <SettingsLink icon="download" label="Save layout" note={`panels, cameras and plots as a ${LAYOUT_SUFFIX} file`} onClick={() => saveLayoutFile()} />
+                <SettingsLink icon="upload" label="Load layout…" note={`or drop a ${LAYOUT_SUFFIX} file anywhere`} onClick={pickLayoutFile} />
+            </SettingsGroup>
         </div>
     )
 }
