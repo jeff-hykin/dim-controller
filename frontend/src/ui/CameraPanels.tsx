@@ -14,6 +14,7 @@ import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
 import { DEFAULT_DEPTH_LOOK, DEPTH_COLORMAPS, DepthCanvas, type DepthLook } from "../core/render/depth.ts"
 import { canvasToPng, composeSnapshot, saveSnapshot } from "../core/snapshots.ts"
+import { hasJpegFrames, jpegFrames, nextJpegFrame, videoReadable } from "../core/jpegFrames.ts"
 import { SnapshotTools } from "./SnapshotGallery.tsx"
 import { UndistortCanvas, undistortInfoFor } from "../core/render/undistort.ts"
 import { type CameraModel, cameraModel } from "dimos-react/three"
@@ -36,6 +37,17 @@ import type { CameraActions } from "./useCommands.ts"
 
 /** a camera view with no new picture for this long says "slow / stopped link" and drops its fps */
 const STALL_MS = 1000
+/** a browser that can't read the video back undistorts the camera's JPEGs, this many a second (each is a whole JPEG over the data channel) */
+const JPEG_UNDISTORT_HZ = 10
+
+/** the camera topic's next JPEG on a canvas (a snapshot's picture, the same size as the video's) */
+async function jpegCanvas(app: ViewerApp, topic: Topic): Promise<HTMLCanvasElement> {
+    const bitmap = await nextJpegFrame(app.connection, topic)
+    const canvas = composeSnapshot([bitmap], bitmap.width, bitmap.height)
+    bitmap.close()
+    return canvas
+}
+
 /** stalled this long while on screen, the camera subscribes afresh (a stream lost in a reconnect or a source swap never comes back on its own), then again less and less often while it stays stalled */
 const RESUBSCRIBE_MS = 3000
 
@@ -426,8 +438,19 @@ function CameraPanel({ app, panel, topics, onChange }: {
         undistortDraw.current = (source) => renderer.draw(source, model!)
         const element = video.current
         let frameCallback = 0
+        let stopJpeg: (() => void) | null = null
         if (!depth && element) {
             const drew = () => {
+                // a browser that can't read the video back (Firefox on Android): the camera's own JPEGs instead
+                if (!stopJpeg && topic && hasJpegFrames(topic) && videoReadable(element) === false) {
+                    stopJpeg = jpegFrames(app.connection, topic, JPEG_UNDISTORT_HZ, (bitmap) => {
+                        renderer.draw(bitmap, model!)
+                        bitmap.close()
+                    })
+                }
+                if (stopJpeg) {
+                    return
+                }
                 renderer.draw(element, model!)
                 frameCallback = element.requestVideoFrameCallback(drew)
             }
@@ -439,9 +462,10 @@ function CameraPanel({ app, panel, topics, onChange }: {
         return () => {
             undistortDraw.current = null
             element?.cancelVideoFrameCallback(frameCallback)
+            stopJpeg?.()
             renderer.dispose()
         }
-    }, [undistorting, open, depth, model, topic?.key])
+    }, [app, undistorting, open, depth, model, topic?.key])
     const undistortTitle = !undistort
         ? `Undistort: straighten the picture through its lens model (${infoTopic ? `CameraInfo ${infoTopic.name}` : "needs a CameraInfo"}; pick another in the gear menu)`
         : model
@@ -482,7 +506,8 @@ function CameraPanel({ app, panel, topics, onChange }: {
             depthRenderer.current.draw(lastDepth.current, lookRef.current)
             picture = depthRenderer.current.canvas
         } else if (!depth && element?.videoWidth) {
-            picture = element
+            // a video the browser can't read back (Firefox on Android) gives a blank snapshot: the camera's next JPEG instead
+            picture = topic && hasJpegFrames(topic) && videoReadable(element) === false ? await jpegCanvas(app, topic) : element
         }
         if (!picture || !topic) {
             throw new Error("no picture yet")
