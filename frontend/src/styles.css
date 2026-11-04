@@ -974,8 +974,8 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .action-bar { position: absolute; z-index: 8; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .action-bar-scroll { display: flex; gap: 6px; overflow-x: auto; min-width: 0; scrollbar-width: none; padding: 2px; }
 .action-bar-scroll::-webkit-scrollbar { display: none; }
-/* a finger scrolls the buttons sideways even over a camera (.camera-body * takes every touch), and the last one can come in from the edge */
-.action-bar-scroll, .camera-body .action-bar-scroll, .camera-body .action-bar-scroll * { touch-action: pan-x; }
+/* a finger scrolls the buttons sideways (the page's locked viewport is touch-action: none; ui/useMobile.ts lets it through), and the last one can come in from the edge */
+.action-bar-scroll { touch-action: pan-x; }
 .action-bar-scroll::after { content: ""; flex: none; width: 40vw; }
 .action-button-wrap { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .action-bar .dr-btn { flex: none; background: color-mix(in srgb, var(--card) 85%, transparent); backdrop-filter: blur(6px); }

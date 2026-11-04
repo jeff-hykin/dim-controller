@@ -16,8 +16,8 @@ export function useMobile(): boolean {
     return mobile
 }
 
-/** The places a finger may still scroll on a phone (panels, menus, dialogs like Network, the 3D view's layers menu); everywhere else is the view or a stick. */
-const SCROLLABLE = ".panel-body, .record-options, .record-topics, .quality-menu, .dr-modal-body, .cloud-menu, select"
+/** The places a finger may still scroll on a phone (panels, the action bar, menus, dialogs like Network, the 3D view's layers menu); everywhere else is the view or a stick. */
+const SCROLLABLE = ".panel-body, .action-bar-scroll, .record-options, .record-topics, .quality-menu, .dr-modal-body, .cloud-menu, select"
 
 /**
  * While driving from a phone the page must never pan or zoom under a thumb: iOS ignores user-scalable=no, so pinch
