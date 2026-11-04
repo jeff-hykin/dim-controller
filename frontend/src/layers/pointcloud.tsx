@@ -4,7 +4,7 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { applyLook, GRADIENTS, makePointMaterial } from "dimos-react/three"
+import { applyLook, GRADIENTS, makePointMaterial, RAMPS } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
@@ -65,10 +65,12 @@ const SPLAT_BUDGET = 3_000_000
 /** cloud topic → its default gradient: each new cloud takes the first one no other has yet (memworld first), so two clouds
  * read apart without anyone picking colors; only a cloud with no saved look uses it */
 const defaultGradients = new Map<string, string>()
+/** A ramp whose low end is near black draws a cloud's lowest band (usually the floor) as a black hole, so clouds aren't given one unasked. */
+const startsBright = (name: string) => Math.max(...[1, 3, 5].map((at) => parseInt(RAMPS[name][0][1].slice(at, at + 2), 16))) >= 0x80
 function defaultGradient(topic: Topic): string {
     if (!defaultGradients.has(topic.key)) {
         const used = [...defaultGradients.values()]
-        const ordered = [DEFAULTS.look.gradient, ...GRADIENTS.filter((name) => name !== DEFAULTS.look.gradient)]
+        const ordered = [DEFAULTS.look.gradient, ...GRADIENTS.filter((name) => name !== DEFAULTS.look.gradient && startsBright(name))]
         defaultGradients.set(topic.key, ordered.find((name) => !used.includes(name)) ?? ordered[defaultGradients.size % ordered.length])
     }
     return defaultGradients.get(topic.key)!
