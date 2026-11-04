@@ -18,6 +18,9 @@ export interface SceneGeom {
     texture?: string
     /** its MuJoCo material's name, e.g. "grass_0" on a World Builder hill */
     material?: string
+    /** its material's texrepeat: times the texture repeats, per meter when texuniform, else across each face */
+    texrepeat?: [number, number]
+    texuniform?: boolean
 }
 export interface SceneBody {
     name: string
@@ -153,6 +156,23 @@ export function buildScene(data: SceneData): BuiltScene {
         return made
     }
 
+    /** the texture tiled as MuJoCo tiles it: a uniform repeat counts per meter of the geom's xy extent */
+    const repeated = (source: THREE.Texture, geom: SceneGeom): THREE.Texture => {
+        if (!geom.texrepeat) {
+            return source
+        }
+        const [x, y] = geom.texrepeat
+        const tiled = source.clone()
+        tiled.wrapS = tiled.wrapT = THREE.RepeatWrapping
+        if (geom.texuniform && (geom.type === "box" || geom.type === "plane")) {
+            tiled.repeat.set(2 * geom.size[0] * x, 2 * geom.size[1] * y)
+        } else {
+            tiled.repeat.set(x, y)
+        }
+        tiled.needsUpdate = true
+        return tiled
+    }
+
     const geomGeometry = (geom: SceneGeom): THREE.BufferGeometry | null => {
         const [a, b, c] = geom.size
         switch (geom.type) {
@@ -193,7 +213,7 @@ export function buildScene(data: SceneData): BuiltScene {
             const material = new THREE.MeshStandardMaterial({
                 // MuJoCo rgba is display (sRGB) color, not linear
                 color: new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace),
-                map: geom.texture && data.textures[geom.texture] ? texture(geom.texture) : null,
+                map: geom.texture && data.textures[geom.texture] ? repeated(texture(geom.texture), geom) : null,
                 roughness: 0.85,
                 metalness: 0,
                 transparent: alpha < 1,

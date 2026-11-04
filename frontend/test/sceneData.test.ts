@@ -119,3 +119,32 @@ Deno.test("a texture's mean color, read as sRGB", () => {
     assertAlmostEquals(color.g, 205 / 255, 1e-4) // through linear and back
     assertAlmostEquals(color.r, 0, 1e-6)
 })
+
+Deno.test("a uniform texrepeat tiles the texture per meter of the box, as MuJoCo does", () => {
+    const pixels = btoa(String.fromCharCode(...new Uint8Array(2 * 2 * 3).fill(128)))
+    const floor: SceneData = {
+        format: "dimos.scene_data.v1",
+        id: "floor",
+        frame: "map",
+        bodies: [{
+            name: "world",
+            label: "world",
+            pos: [0, 0, 0],
+            quat: I,
+            mocap: false,
+            geoms: [
+                { name: "uniform", type: "box", size: [7, 6, 0.1], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], texture: "checker", texrepeat: [1, 1], texuniform: true },
+                { name: "per_face", type: "box", size: [7, 6, 0.1], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], texture: "checker", texrepeat: [2, 3] },
+            ],
+            lights: [],
+        }],
+        meshes: {},
+        hfields: {},
+        textures: { checker: { width: 2, height: 2, channels: 3, pixels } },
+    }
+    const built = buildScene(floor)
+    const map = (name: string) => ((built.root.getObjectByName(name) as THREE.Mesh).material as THREE.MeshStandardMaterial).map!
+    assertEquals([map("uniform").repeat.x, map("uniform").repeat.y], [14, 12])
+    assertEquals([map("per_face").repeat.x, map("per_face").repeat.y], [2, 3])
+    assertEquals(map("uniform").wrapS, THREE.RepeatWrapping)
+})
