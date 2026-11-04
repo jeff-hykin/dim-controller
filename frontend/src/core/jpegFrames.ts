@@ -4,11 +4,24 @@
 import type { Connection, Topic } from "./transport.ts"
 import { decode } from "./lcm/lcm.ts"
 
+/** each video's answer, kept per stream (reading a pixel back stalls the GPU: once, not every frame) */
+const readable = new WeakMap<HTMLVideoElement, { stream: unknown; readable: boolean }>()
+
 /** whether this video's pixels can be read (a real frame is opaque, even a black one); null until it has a frame */
 export function videoReadable(video: HTMLVideoElement): boolean | null {
     if (!video.videoWidth) {
         return null
     }
+    const known = readable.get(video)
+    if (known && known.stream === video.srcObject) {
+        return known.readable
+    }
+    const answer = readPixel(video)
+    readable.set(video, { stream: video.srcObject, readable: answer })
+    return answer
+}
+
+function readPixel(video: HTMLVideoElement): boolean {
     const canvas = document.createElement("canvas")
     canvas.width = canvas.height = 1
     const context = canvas.getContext("2d", { willReadFrequently: true })!

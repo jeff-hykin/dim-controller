@@ -451,11 +451,13 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 if (stopJpeg) {
                     return
                 }
-                renderer.draw(element, model!)
+                // a video not read back yet isn't drawn (an unreadable one draws a flat purple)
+                if (videoReadable(element)) {
+                    renderer.draw(element, model!)
+                }
                 frameCallback = element.requestVideoFrameCallback(drew)
             }
-            frameCallback = element.requestVideoFrameCallback(drew)
-            renderer.draw(element, model!)
+            drew()
         } else if (depthRenderer.current) {
             renderer.draw(depthRenderer.current.canvas, model!)
         }
