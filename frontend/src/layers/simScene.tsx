@@ -73,6 +73,8 @@ class SimSceneLayer {
     readonly root = new THREE.Group()
     #scene: ReturnType<typeof buildScene> | null = null
     #id: string | null = null
+    /** the TF frame the scene's coordinates are in (its scene_data's `frame`) */
+    #frame = "world"
     #stop: () => void
     #asking: ReturnType<typeof setInterval>
     #requests: Publisher | null = null
@@ -128,6 +130,7 @@ class SimSceneLayer {
         }
         this.#scene = buildScene(data)
         this.#id = data.id
+        this.#frame = data.frame || "world"
         this.root.add(this.#scene.root)
         this.#lighting.light(this.#scene.root)
         this.#applySettings()
@@ -184,7 +187,7 @@ class SimSceneLayer {
                 ? ` · grass off: software GPU (${gpu()})`
                 : " · grass off"
         }
-        this.context.setStatus({ info: this.#info + note, problem: null, frame: "world" })
+        this.context.setStatus({ info: this.#info + note, problem: null, frame: this.#frame })
     }
 
     update(frame: { fixedFrame: string; now: number }) {
@@ -198,7 +201,7 @@ class SimSceneLayer {
             windTime.value = frame.now / 1000
             this.context.viewer.requestRender()
         }
-        const world = this.context.tf.lookup("world", frame.fixedFrame)
+        const world = this.context.tf.lookup(this.#frame, frame.fixedFrame)
         if (world) {
             if (!this.root.matrix.equals(world)) {
                 this.root.matrix.copy(world)
@@ -206,12 +209,12 @@ class SimSceneLayer {
                 this.context.viewer.requestRender()
             }
         }
-        // movers: their TF frame (world -> body) wins over the pose they started at
+        // movers: their TF frame (scene frame -> body) wins over the pose they started at
         for (const [name, group] of scene.bodies) {
             if (!group.userData.mocap) {
                 continue
             }
-            const pose = this.context.tf.lookup(name, "world")
+            const pose = this.context.tf.lookup(name, this.#frame)
             if (pose) {
                 const before = group.position.clone()
                 pose.decompose(group.position, group.quaternion, group.scale)
