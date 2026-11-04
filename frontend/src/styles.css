@@ -843,6 +843,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .headless > .panel-tools > .panel-info { flex: 1 1 auto; }
 /* the view switch (ui/PhoneCorners.tsx): what the main view shows */
 .view-switch.dr-btn--icon { width: auto; gap: 2px; padding: 0 6px 0 9px; }
+.view-switch-label { margin-left: 4px; font-size: 13px; font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .view-menu .quality-about { font-family: var(--mono); overflow-wrap: anywhere; }
 
 /* ── Steam Deck banner (ui/SteamDeckBanner.tsx): over the top of the main view ── */

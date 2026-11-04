@@ -81,6 +81,15 @@ export function addCameraPanel(topics: Topic[], preferred: string[], key?: strin
     return cameraId(id)
 }
 
+/** Point camera panel `panelId` at a topic (a new panel when it isn't a camera); its workspace id. */
+export function showCameraTopic(panelId: string | null, key: string): string {
+    if (!panelId || !isCamera(panelId)) {
+        return addCameraPanel([], [], key)
+    }
+    updatePanel(Number(panelId.split(":")[1]), { key, picked: key })
+    return panelId
+}
+
 /** A camera panel gone (its × or the palette); the workspace forgets it with it. */
 export function removeCameraPanel(panelId: string) {
     if (!isCamera(panelId)) {

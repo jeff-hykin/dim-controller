@@ -1,6 +1,6 @@
 // A phone has no bar across the top or a dock (the thumb sticks and STOP take the bottom): the panel list, Record, Go
 // to (dimos's named locations, when it has them), the palette and Settings sit over the main view's top corners, and the problem and gamepad chips between them. A phone
-// shows one panel at a time (no layout): the list switches between one of each kind.
+// shows one panel at a time (no layout): the list switches between one of each kind, and to any camera stream.
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
@@ -15,7 +15,8 @@ import { GoToNamed } from "./GoToNamed.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { phonePanel } from "./workspace.ts"
 import { kindOf, PANEL_KINDS, type PanelKind } from "./panelCatalog.ts"
-import { addCameraPanel } from "./CameraPanels.tsx"
+import { addCameraPanel, cameraLayout, cameraPanels, showCameraTopic } from "./CameraPanels.tsx"
+import { cameraTabs } from "../core/cameraChoice.ts"
 import { addPlot } from "./PlotPanel.tsx"
 import { useStore } from "../core/store.ts"
 
@@ -40,7 +41,7 @@ export function PhoneCorners({ app, api }: { app: ViewerApp; api: WorkspaceApi }
 /** the first open panel of this kind (cameras and plots can be many: the phone shows the first) */
 const firstOf = (api: WorkspaceApi, kind: PanelKind) => api.ids.find((id) => kindOf(id) === kind) ?? null
 
-/** One of each kind of panel (a phone's main view has no header): a tap shows it, making a camera or plot if there's none. */
+/** One of each kind of panel (a phone's main view has no header), then every camera stream: a tap shows it, making a camera or plot if there's none. */
 function PanelList({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
     const [open, setOpen] = useState(false)
     const button = useRef<HTMLButtonElement>(null)
@@ -71,6 +72,15 @@ function PanelList({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
         }
     }, [shown])
     const iconOfKind = (kind: PanelKind | null) => PANEL_KINDS.find((one) => one.kind === kind)?.icon ?? "panels"
+    // a camera stream goes on the camera that's showing (else the first one, else a new one)
+    const panels = useStore(cameraLayout)
+    const tabs = cameraTabs(topics)
+    const shownKey = shownKind === "camera" ? cameraPanels(panels).find((panel) => `camera:${panel.id}` === shown)?.key : undefined
+    const shownLabel = tabs.length > 1 ? tabs.find((tab) => tab.topic.key === shownKey)?.label : undefined
+    const pickStream = (key: string) => {
+        api.act(showCameraTopic(shownKind === "camera" ? shown : firstOf(api, "camera"), key), "main")
+        setOpen(false)
+    }
     return (
         <>
             <Button
@@ -85,11 +95,27 @@ function PanelList({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 data-testid="panel-list"
             >
                 <Icon name={iconOfKind(shownKind)} size={17} />
+                {shownLabel && <span className="view-switch-label">{shownLabel}</span>}
                 <Icon name="chevron-down" size={12} />
             </Button>
             {open && createPortal(
                 <Card padded={false} className="quality-menu view-menu" role="menu" aria-label="Panels" style={popoverPosition(button.current, 260)}>
-                    {PANEL_KINDS.map(({ kind, title, icon }) => (
+                    {tabs.length > 1 && tabs.map((tab) => (
+                        <div key={tab.topic.key} className="view-row">
+                            <button
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={tab.topic.key === shownKey}
+                                className={`quality-option ${tab.topic.key === shownKey ? "on" : ""}`}
+                                title={`${tab.topic.name} (${tab.topic.type})`}
+                                data-camera={tab.topic.key}
+                                onClick={() => pickStream(tab.topic.key)}
+                            >
+                                <span className="quality-name"><Icon name="camera" size={14} />{tab.label}</span>
+                            </button>
+                        </div>
+                    ))}
+                    {PANEL_KINDS.filter(({ kind }) => kind !== "camera" || tabs.length <= 1).map(({ kind, title, icon }) => (
                         <div key={kind} className={`view-row ${shownKind === kind ? "on" : ""}`}>
                             <button
                                 type="button"
