@@ -1,5 +1,6 @@
-// A simulated world's description (dimos.scene_data.v1, what a SceneData module publishes on /scene_data) as three.js
-// objects: a group per body, named by the body so its TF frame can move it, with its geoms and lights inside.
+// A simulated world's description as three.js objects: a group per body, named by the body so its TF frame can move it,
+// with its geoms and lights inside. dimos.scene_data.v1 inlines its meshes and textures as base64; v2 names a file for
+// each (an STL, a PNG), loaded beforehand and handed in as SceneFiles.
 import * as THREE from "three"
 import { grassFor } from "./grass.ts"
 
@@ -36,9 +37,22 @@ export interface SceneData {
     id: string
     frame: string
     bodies: SceneBody[]
-    meshes: Record<string, { vertices: string; faces: string; texcoords?: string; face_texcoords?: string }>
+    /** v1: the mesh inline; v2: the file it's in */
+    meshes: Record<string, { vertices: string; faces: string; texcoords?: string; face_texcoords?: string } | { file: string }>
     hfields: Record<string, { nrow: number; ncol: number; size: number[]; heights: string }>
-    textures: Record<string, { width: number; height: number; channels: number; pixels: string }>
+    /** v1: its pixels inline; v2: the PNG file they're in */
+    textures: Record<string, { width: number; height: number; channels: number; pixels: string } | { file: string; width: number; height: number; channels: number }>
+}
+
+/** a v2 scene's files, loaded: meshes by file name, textures' pixels (RGBA) by file name */
+export interface SceneFiles {
+    geometries: Map<string, THREE.BufferGeometry>
+    pixels: Map<string, Uint8Array>
+}
+
+/** the files a v2 scene names (a v1 scene names none) */
+export function sceneFileNames(data: SceneData): string[] {
+    return [...Object.values(data.meshes), ...Object.values(data.textures)].flatMap((entry) => ("file" in entry ? [entry.file] : []))
 }
 
 function bytes(b64: string): Uint8Array {
@@ -78,7 +92,7 @@ export interface BuiltScene {
     grass: { mesh: THREE.InstancedMesh; area: number }[]
 }
 
-export function buildScene(data: SceneData): BuiltScene {
+export function buildScene(data: SceneData, files: SceneFiles = { geometries: new Map(), pixels: new Map() }): BuiltScene {
     const root = new THREE.Group()
     root.name = `scene:${data.id}`
     const bodies = new Map<string, THREE.Group>()
@@ -91,6 +105,9 @@ export function buildScene(data: SceneData): BuiltScene {
         let geometry = meshCache.get(name)
         if (!geometry) {
             const mesh = data.meshes[name]
+            if ("file" in mesh) {
+                return files.geometries.get(mesh.file) ?? null
+            }
             const vertices = floats(mesh.vertices)
             const faces = uints(mesh.faces)
             geometry = new THREE.BufferGeometry()
@@ -134,11 +151,24 @@ export function buildScene(data: SceneData): BuiltScene {
         return geometry
     }
 
+    /** a texture's pixels, or null for a v2 file not loaded (yet) */
+    const texturePixels = (name: string): { width: number; height: number; channels: number; pixels: Uint8Array } | null => {
+        const source = data.textures[name]
+        if (!("file" in source)) {
+            return { ...source, pixels: bytes(source.pixels) }
+        }
+        const pixels = files.pixels.get(source.file)
+        return pixels ? { width: source.width, height: source.height, channels: 4, pixels } : null
+    }
+
     const texture = (name: string) => {
         let made = textureCache.get(name)
         if (!made) {
-            const source = data.textures[name]
-            const pixels = bytes(source.pixels)
+            const source = texturePixels(name)
+            if (!source) {
+                return null
+            }
+            const pixels = source.pixels
             const rgba = new Uint8Array(source.width * source.height * 4)
             for (let index = 0; index < source.width * source.height; index++) {
                 for (let channel = 0; channel < 3; channel++) {
@@ -157,8 +187,8 @@ export function buildScene(data: SceneData): BuiltScene {
     }
 
     /** the texture tiled as MuJoCo tiles it: a uniform repeat counts per meter of the geom's xy extent */
-    const repeated = (source: THREE.Texture, geom: SceneGeom): THREE.Texture => {
-        if (!geom.texrepeat) {
+    const repeated = (source: THREE.Texture | null, geom: SceneGeom): THREE.Texture | null => {
+        if (!source || !geom.texrepeat) {
             return source
         }
         const [x, y] = geom.texrepeat
@@ -238,8 +268,8 @@ export function buildScene(data: SceneData): BuiltScene {
             if (geom.type === "hfield" && geom.hfield && geom.material?.startsWith("grass")) {
                 const field = data.hfields[geom.hfield]
                 // a textured hill (World Builder's speckled grass) carries its green in the texture, not its rgba
-                const source = geom.texture ? data.textures[geom.texture] : undefined
-                const green = source ? averageColor(bytes(source.pixels), source.channels) : new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace)
+                const source = geom.texture && data.textures[geom.texture] ? texturePixels(geom.texture) : null
+                const green = source ? averageColor(source.pixels, source.channels) : new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace)
                 const blades = grassFor({ ...field, heights: floats(field.heights) }, green)
                 blades.mesh.visible = false
                 mesh.add(blades.mesh)
