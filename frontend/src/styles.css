@@ -1067,17 +1067,23 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .main-bar-side.right { justify-content: flex-end; }
 .main-bar-middle { display: flex; justify-content: center; }
 .main-bar .record-control { position: static; }
-.main-bar .dr-btn:not(.top-stop):not(.top-settings):not(.record-split > *), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
+.main-bar .dr-btn:not(.top-stop):not(.top-settings):not(.reconnect-button):not(.record-split > *), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
 .main-bar .record-control .record-split > .dr-btn { background: transparent; }
 .main-bar .top-settings { background: transparent; border-color: var(--border-strong); }
 .main-bar .bar-chip.bar-link { background: transparent; } /* framed, over the bar's gray */
-.main-bar .dr-btn:not(.top-stop):hover, .main-bar .bar-button:hover { background: var(--hover); }
+.main-bar .dr-btn:not(.top-stop):not(.reconnect-button):hover, .main-bar .bar-button:hover { background: var(--hover); }
 .main-bar .top-settings { margin-left: 4px; }
 .app .main-bar .dr-btn.top-stop { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 16px; flex: none; font: 800 14px var(--sans); letter-spacing: 0.12em;
     color: var(--primary-fg); background: var(--lv-stop); border-color: var(--lv-stop); }
 .app .main-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
 .top-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
 .main-bar .drive-halt { display: flex; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--warn); }
+/* the desktop's Reconnect is as loud as the phone's pill (ui/DriveHud.tsx): filled red, glowing, the only way to drive again */
+.app .main-bar .drive-halt .reconnect-button { height: 32px; padding: 0 16px; border-radius: 999px; font: 700 13px var(--sans); color: var(--primary-fg);
+    background: var(--lv-stop); border-color: var(--lv-stop); animation: reconnect-pulse 1.4s infinite; }
+.app .main-bar .drive-halt .reconnect-button:hover { background: var(--lv-stop-hover); }
+.app .main-bar .drive-halt .reconnect-button:disabled { animation: none; opacity: 0.75; }
+@keyframes reconnect-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--lv-stop) 30%, transparent), 0 0 14px color-mix(in srgb, var(--lv-stop) 45%, transparent); } }
 .top-settings { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .count-badge { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     background: var(--primary); color: var(--primary-fg); font: 700 10.5px var(--mono); border: 2px solid var(--card); border-radius: var(--radius-pill, 9px); pointer-events: none; }
