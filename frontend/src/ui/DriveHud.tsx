@@ -2,7 +2,7 @@
 // over the main view while held (ui/KeyOverlay.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
 // that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost, and above STOP
 // a profile's joint control (ui/JointControl.tsx). Both show the agent's commands (POST api/drive), dry runs included.
-import { disengagedShort, disengagedText } from "./barStatus.ts"
+import { disengagedBanner, disengagedShort, disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -22,6 +22,18 @@ export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHal
         <div className="drive-halt" role="alert" data-testid="drive-halt">
             {/* the short form keeps the dock narrow; the full reason is the tooltip, and the button says what to do */}
             <span title={disengagedText(halt)}>{disengagedShort(halt)}</span>
+            <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
+                {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
+            </Button>
+        </div>
+    )
+}
+
+/** The desktop's: floating over the panels, above the bar, so it can't be missed (the full reason is the tooltip). */
+export function DisengagedBanner({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+    return (
+        <div className="drive-halt-banner" role="alert" data-testid="drive-halt-banner" title={disengagedText(halt)}>
+            <span>{disengagedBanner(halt)}</span>
             <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
             </Button>

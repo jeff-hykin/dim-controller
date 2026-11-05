@@ -1078,12 +1078,15 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app .main-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
 .top-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
 .main-bar .drive-halt { display: flex; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--warn); }
-/* the desktop's Reconnect is as loud as the phone's pill (ui/DriveHud.tsx): filled red, glowing, the only way to drive again */
-.app .main-bar .drive-halt .reconnect-button { height: 32px; padding: 0 16px; border-radius: 999px; font: 700 13px var(--sans); color: var(--primary-fg);
-    background: var(--lv-stop); border-color: var(--lv-stop); animation: reconnect-pulse 1.4s infinite; }
-.app .main-bar .drive-halt .reconnect-button:hover { background: var(--lv-stop-hover); }
-.app .main-bar .drive-halt .reconnect-button:disabled { animation: none; opacity: 0.75; }
-@keyframes reconnect-pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--lv-stop) 30%, transparent), 0 0 14px color-mix(in srgb, var(--lv-stop) 45%, transparent); } }
+/* the desktop's disengaged banner (ui/DriveHud.tsx): floats over the panels just above the bar, as loud as the phone's pill */
+.drive-halt-banner { position: absolute; left: 50%; bottom: calc(100% + 16px); transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 14px;
+    padding: 8px 8px 8px 18px; border-radius: 999px; white-space: nowrap; font: 700 14px var(--sans); color: var(--primary-fg); background: var(--lv-stop);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); animation: reconnect-pulse 1.4s infinite; pointer-events: auto; }
+.app .main-bar .drive-halt-banner .reconnect-button { height: 32px; padding: 0 16px; border-radius: 999px; font: 700 13px var(--sans); color: var(--lv-stop);
+    background: var(--primary-fg); border-color: var(--primary-fg); }
+.app .main-bar .drive-halt-banner .reconnect-button:hover { background: color-mix(in srgb, var(--primary-fg) 85%, var(--lv-stop)); }
+.app .main-bar .drive-halt-banner .reconnect-button:disabled { opacity: 0.75; }
+@keyframes reconnect-pulse { 50% { box-shadow: 0 6px 24px rgb(0 0 0 / 0.45), 0 0 0 5px color-mix(in srgb, var(--lv-stop) 35%, transparent); } }
 .top-settings { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .count-badge { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     background: var(--primary); color: var(--primary-fg); font: 700 10.5px var(--mono); border: 2px solid var(--card); border-radius: var(--radius-pill, 9px); pointer-events: none; }

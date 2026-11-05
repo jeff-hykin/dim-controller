@@ -184,9 +184,13 @@ export class ViewerApp {
         }
     }
 
-    /** The drive panel's Reconnect: a new gateway session (video and control), then driving from the next input. */
+    /** Reconnect: a latency hold only gets fresh drive publishers (the streams stay as they are); otherwise a new gateway session. */
     async reconnect() {
         this.drive.stop()
+        if (this.drive.state.get().halt?.reason === "latency") {
+            this.drive.resume()
+            return
+        }
         this.drive.halt({ reason: this.drive.state.get().halt?.reason ?? "latency", latencyMs: null, maxMs: maxLatencyOf(this.settings.get().maxLatencyMs) })
         this.drive.setReconnecting(true)
         try {

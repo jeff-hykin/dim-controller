@@ -1,7 +1,7 @@
 // The one bar's problem chips (ui/barStatus.ts): the link only when it's a problem, "Disengaged" when the link watch
 // stops driving, and the gamepad's state.
 import { assert, assertEquals } from "jsr:@std/assert@1"
-import { disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS, smoothed } from "../src/ui/barStatus.ts"
+import { disengagedBanner, disengagedShort, disengagedText, gamepadChip, linkChip, linkProblem, rateText, SLOW_RTT_MS, smoothed } from "../src/ui/barStatus.ts"
 import type { VideoLatency } from "../src/core/videoLatency.ts"
 
 const link = (state: "connecting" | "connected" | "degraded" | "lost", rttMs: number | null = 20, throughputBytesPerSec: number | null = 240000) => ({ state, rttMs, droppedPerSecond: 0, error: null, throughputBytesPerSec })
@@ -41,6 +41,8 @@ Deno.test("driving stopped by the link watch reads Disengaged, with what to do",
     assertEquals(disengagedText({ reason: "latency", latencyMs: null, maxMs: 1000 }), "Disengaged: latency over 1000 ms max. Reconnect to drive.")
     assertEquals(disengagedText({ reason: "lost", latencyMs: null, maxMs: 1000 }), "Disengaged: link lost. Reconnect to drive.")
     assertEquals(disengagedShort({ reason: "latency", latencyMs: 1240, maxMs: 1000 }), "Disengaged · 1240 ms")
+    assertEquals(disengagedBanner({ reason: "latency" }), "Controls disconnected, too much latency")
+    assertEquals(disengagedBanner({ reason: "lost" }), "Controls disconnected, link lost")
     assert(!/held/i.test(disengagedText({ reason: "lost", latencyMs: null, maxMs: 1 })))
 })
 

@@ -11,7 +11,7 @@ import { Icon } from "./icons.tsx"
 import { BatteryChip, GamepadChip, LinkChip, StatusChips } from "./BarChips.tsx"
 import { RecordControl } from "./RecordControl.tsx"
 import { GoToNamed } from "./GoToNamed.tsx"
-import { DisengagedNotice } from "./DriveHud.tsx"
+import { DisengagedBanner } from "./DriveHud.tsx"
 import type { WorkspaceApi } from "./Workspace.tsx"
 import { openSettingsDrawer, settingsDrawer, useShown } from "./SettingsDrawer.tsx"
 import { loadUsedKinds, type PanelKind, saveUsedKinds, settingsBadge } from "./panelCatalog.ts"
@@ -30,7 +30,6 @@ export function TopBar({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 </Button>
                 <GoToNamed app={app} />
                 <GamepadChip />
-                {halt && !arm && <DisengagedNotice app={app} halt={halt} />}
             </div>
             <div className="main-bar-middle"><LinkChip app={app} /></div>
             <div className="main-bar-side right">
@@ -39,6 +38,7 @@ export function TopBar({ app, api }: { app: ViewerApp; api: WorkspaceApi }) {
                 <BatteryChip />
                 <SettingsButton app={app} api={api} />
             </div>
+            {halt && !arm && <DisengagedBanner app={app} halt={halt} />}
         </header>
     )
 }
