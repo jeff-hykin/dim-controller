@@ -1086,6 +1086,11 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
     background: var(--primary-fg); border-color: var(--primary-fg); }
 .app .main-bar .drive-halt-banner .reconnect-button:hover { background: color-mix(in srgb, var(--primary-fg) 85%, var(--lv-stop)); }
 .app .main-bar .drive-halt-banner .reconnect-button:disabled { opacity: 0.75; }
+.app .main-bar .drive-halt-banner .drive-halt-cog { width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--primary-fg); background: transparent;
+    border-color: color-mix(in srgb, var(--primary-fg) 45%, transparent); border-radius: 999px; }
+.app .main-bar .drive-halt-banner .drive-halt-cog:hover, .app .main-bar .drive-halt-banner .drive-halt-cog[aria-pressed="true"] { background: color-mix(in srgb, var(--primary-fg) 18%, transparent); }
+.drive-halt-threshold { display: flex; align-items: center; gap: 8px; font: 600 12px var(--sans); }
+.drive-halt-threshold .number { width: 110px; }
 @keyframes reconnect-pulse { 50% { box-shadow: 0 6px 24px rgb(0 0 0 / 0.45), 0 0 0 5px color-mix(in srgb, var(--lv-stop) 35%, transparent); } }
 .top-settings { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .count-badge { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;

@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { popoverPosition } from "./panelDrag.ts"
 import { JointHud } from "./JointControl.tsx"
+import { Icon } from "./icons.tsx"
+import { MaxLatencyInput } from "./SettingsPanel.tsx"
 
 /** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
 export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
@@ -29,11 +31,17 @@ export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHal
     )
 }
 
-/** The desktop's: floating over the panels, above the bar, so it can't be missed (the full reason is the tooltip). */
+/** The desktop's: floating over the panels, above the bar, so it can't be missed (the full reason is the tooltip); its cog
+ * shows Settings' max latency right there, to raise it on a slow link. */
 export function DisengagedBanner({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+    const [editing, setEditing] = useState(false)
     return (
         <div className="drive-halt-banner" role="alert" data-testid="drive-halt-banner" title={disengagedText(halt)}>
             <span>{disengagedBanner(halt)}</span>
+            {editing && <label className="drive-halt-threshold">Max latency <MaxLatencyInput app={app} /></label>}
+            <Button className="dr-btn--icon drive-halt-cog" data-testid="drive-halt-cog" pressed={editing} title="Max latency (Settings → Link safety)" aria-label="Max latency setting" onClick={() => setEditing(!editing)}>
+                <Icon name="settings" size={15} />
+            </Button>
             <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
                 {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
             </Button>

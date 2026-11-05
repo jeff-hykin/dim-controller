@@ -155,7 +155,7 @@ function JoySettingsFields() {
 }
 
 /** Settings → Max latency: saved on Enter or leaving the field, so "1" on the way to "1500" never holds driving */
-function MaxLatencyInput({ app }: { app: ViewerApp }) {
+export function MaxLatencyInput({ app }: { app: ViewerApp }) {
     const saved = maxLatencyOf(useStore(app.settings).maxLatencyMs)
     return (
         <NumberInput
