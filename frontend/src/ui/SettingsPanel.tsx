@@ -6,12 +6,11 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Button, ColorSwatch, Disclosure, Field, Heading, NumberInput, Select, TextInput, Toggle } from "dimos-react"
+import { Button, ColorSwatch, Disclosure, Field, Heading, Select, TextInput, Toggle } from "dimos-react"
 import { useState } from "react"
 import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
-import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DriveKeyboardFold, DrivePanel, DriveProfileFold } from "./DrivePanel.tsx"
 import { SettingsFold, SettingsGroup, SettingsLink } from "./SettingsGroup.tsx"
 import { LAYOUT_SUFFIX, pickLayoutFile, saveLayoutFile } from "../core/layoutFiles.ts"
@@ -40,11 +39,6 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     </SettingsFold>
                     <SettingsFold title="Joystick topic" persistKey="lv.settings.advanced.joy">
                         <JoySettingsFields />
-                    </SettingsFold>
-                    <SettingsFold title="Link safety" persistKey="lv.settings.advanced.link">
-                        <Field inline className="set-row" label="Max latency" hint="Over this latency, or when the link drops, driving stops until you press Reconnect.">
-                            <MaxLatencyInput app={app} />
-                        </Field>
                     </SettingsFold>
                     <DriveProfileFold app={app} />
                 </>
@@ -155,22 +149,6 @@ function JoySettingsFields() {
 }
 
 /** Settings → Max latency: saved on Enter or leaving the field, so "1" on the way to "1500" never holds driving */
-export function MaxLatencyInput({ app }: { app: ViewerApp }) {
-    const saved = maxLatencyOf(useStore(app.settings).maxLatencyMs)
-    return (
-        <NumberInput
-            className="number"
-            aria-label="Max latency (ms)"
-            data-testid="max-latency"
-            min={1}
-            step={100}
-            unit="ms"
-            value={saved}
-            onChange={(value) => app.settings.update({ maxLatencyMs: Math.round(value) })}
-        />
-    )
-}
-
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
 function FollowFramePicker({ app, frames }: { app: ViewerApp; frames: string[] }) {
     const view = useStore(app.settings)
