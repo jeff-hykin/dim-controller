@@ -9,7 +9,8 @@ import { decode, headerFrameId } from "./lcm/lcm.ts"
 import { LabelPool } from "dimos-react/three"
 import type { Topic } from "./transport.ts"
 import type { ViewerApp } from "./app.ts"
-import { cameraInfoFor } from "./video.ts"
+import { cameraInfoFor, isDepthTopic } from "./video.ts"
+import { isImage } from "./cameraChoice.ts"
 import { frontObject, groundLevel } from "./locate.ts"
 import { appEvents } from "dimos-react/dim-app/events.js"
 import type { LocationLabel } from "./labels.ts"
@@ -233,7 +234,7 @@ export class AgentLink {
     #ensureSources() {
         const topics = this.#topics()
         if (!this.#camera) {
-            const images = topics.filter((topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage").filter((topic) => !/depth/i.test(topic.name))
+            const images = topics.filter(isImage).filter((topic) => !isDepthTopic(topic))
             const topic = this.app.profile.cameras.preferred.map((name) => images.find((image) => image.name === name)).find(Boolean) ?? images[0]
             if (topic) {
                 const source = this.app.video.acquire(topic)

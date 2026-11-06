@@ -635,7 +635,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
             {topic && open && stalled && !paused && !!size.width && <div className="camera-stalled" data-testid="camera-stalled">{reconnecting ? "reconnecting…" : "slow / stopped link"}</div>}
             {!topic && tabs.length > 0 && <div className="camera-placeholder"><Icon name="camera" size={28} /><span>{switched ? "Pick a camera from the view switch (top bar)" : "Pick a camera from this panel's topic tabs (shown on hover) or the palette (/)"}</span></div>}
             {!topic && !tabs.length && <div className="camera-placeholder"><DriveHint app={app} waiting="No camera on the bus yet." /></div>}
-            {topic && open && !size.width && !paused && <div className="camera-placeholder"><DriveHint app={app} waiting={`Waiting for ${topic.name}…`} /></div>}
+            {topic && open && !size.width && !paused && <div className="camera-placeholder"><WaitingFor app={app} topic={topic} /></div>}
         </Panel>
     )
 }
@@ -735,4 +735,16 @@ function useQuality(app: ViewerApp, topic: Topic | null, depth: boolean): VideoQ
         }
     }, [app, topic?.key, depth])
     return quality
+}
+
+/** "Waiting for <topic>…", with why nothing comes once the gateway says (refused, or frames it can't encode). */
+function WaitingFor({ app, topic }: { app: ViewerApp; topic: Topic }) {
+    const [problem, setProblem] = useState<string | null>(null)
+    useEffect(() => {
+        const check = () => setProblem(app.video.problem(topic))
+        check()
+        const timer = setInterval(check, 1000)
+        return () => clearInterval(timer)
+    }, [app, topic])
+    return <DriveHint app={app} waiting={problem ? `${topic.name}: ${problem}` : `Waiting for ${topic.name}…`} />
 }

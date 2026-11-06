@@ -124,6 +124,15 @@ Deno.test("depth stays lossless whatever the preset", () => {
     assertEquals(subscriptions[0].options.encoding, "dimos_lcm_depth")
 })
 
+Deno.test("an H.264/H.265 camera (foxglove_msgs.CompressedVideo) is a color camera the gateway decodes, whatever its name", () => {
+    localStorage.clear()
+    const { connection, subscriptions } = fakeConnection()
+    const sources = new VideoSources(connection)
+    sources.acquire({ key: "dimos/front_camera/foxglove_msgs.CompressedVideo", name: "/front_camera", type: "foxglove_msgs.CompressedVideo" })
+    sources.acquire({ key: "dimos/depth_cam/foxglove_msgs.CompressedVideo", name: "/depth_cam", type: "foxglove_msgs.CompressedVideo" })
+    assertEquals(subscriptions.map((subscription) => [subscription.options.encoding, subscription.options.delivery]), [["dimos_lcm_compressed_video", "latest"], ["dimos_lcm_compressed_video", "latest"]])
+})
+
 // Cameras in 3D: the 3D view's projection and a camera panel share one subscription per topic. Alone, the 3D view
 // takes a small, slow stream; a panel opening over it switches that same subscription to the panel's preset, and
 // closing it switches back; the last user going stops it.
