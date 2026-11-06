@@ -1,6 +1,7 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // over the main view while held (ui/KeyOverlay.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
-// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost, and above STOP
+// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), each with its speed's − / + fixed
+// above it (driving left, turning right), STOP and boost, and above STOP
 // a profile's joint control (ui/JointControl.tsx). Both show the agent's commands (POST api/drive), dry runs included.
 import { disengagedBanner, disengagedShort, disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
@@ -16,7 +17,7 @@ import { createPortal } from "react-dom"
 import { popoverPosition } from "./panelDrag.ts"
 import { JointHud } from "./JointControl.tsx"
 import { Icon } from "./icons.tsx"
-import { MaxLatencyInput } from "./DrivePanel.tsx"
+import { DrivingSpeed, MaxLatencyInput, TurningSpeed } from "./DrivePanel.tsx"
 
 /** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
 export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
@@ -98,6 +99,8 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                     }}
                 />
                 {state.halt && <DisengagedPill app={app} halt={state.halt} />}
+                <div className="hud-speed left" data-testid="hud-driving-speed"><DrivingSpeed app={app} /></div>
+                <div className="hud-speed right" data-testid="hud-turning-speed"><TurningSpeed app={app} /></div>
                 <div className="hud-center">
                     {app.profile.joint && <JointHud app={app} />}
                     <Badge className="hud-note" data-testid="drive-readout">

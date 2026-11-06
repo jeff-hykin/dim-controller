@@ -13,6 +13,18 @@ import { Stepper } from "./Stepper.tsx"
 /** a drive speed: − value + in steps of 0.05, from 0.05 to `max` */
 const SpeedStepper = ({ unit, ...props }: { label: string; max: number; unit: string; value: number; onChange: (value: number) => void }) => <Stepper min={0.05} step={0.05} format={(value) => `${value.toFixed(2)} ${unit}`} {...props} />
 
+/** Settings' driving speed, also over the phone's left stick (ui/DriveHud.tsx) */
+export function DrivingSpeed({ app }: { app: ViewerApp }) {
+    const settings = useStore(app.drive.settings)
+    return <SpeedStepper label="Driving speed" max={3} unit="m/s" value={settings.linear} onChange={(linear) => app.drive.settings.update({ linear })} />
+}
+
+/** Settings' turning speed, also over the phone's right stick */
+export function TurningSpeed({ app }: { app: ViewerApp }) {
+    const settings = useStore(app.drive.settings)
+    return <SpeedStepper label="Turning speed" max={3} unit="rad/s" value={settings.angular} onChange={(angular) => app.drive.settings.update({ angular })} />
+}
+
 export function DrivePanel({ app }: { app: ViewerApp }) {
     const drive = app.drive
     const state = useStore(drive.state)
@@ -20,8 +32,8 @@ export function DrivePanel({ app }: { app: ViewerApp }) {
     return (
         <>
             <SettingsGroup title="Driving" data-section="drive">
-                <Field inline className="set-row" label="Driving speed"><SpeedStepper label="Driving speed" max={3} unit="m/s" value={settings.linear} onChange={(linear) => drive.settings.update({ linear })} /></Field>
-                <Field inline className="set-row" label="Turning speed"><SpeedStepper label="Turning speed" max={3} unit="rad/s" value={settings.angular} onChange={(angular) => drive.settings.update({ angular })} /></Field>
+                <Field inline className="set-row" label="Driving speed"><DrivingSpeed app={app} /></Field>
+                <Field inline className="set-row" label="Turning speed"><TurningSpeed app={app} /></Field>
                 <Field inline className="set-row" label="Max latency" hint="Over this latency, or when the link drops, driving stops until you press Reconnect.">
                     <MaxLatencyInput app={app} />
                 </Field>
