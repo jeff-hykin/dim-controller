@@ -50,7 +50,7 @@ export function DisengagedBanner({ app, halt }: { app: ViewerApp; halt: DriveHal
     )
 }
 
-/** The phone's version: one pill over the top of the sticks (it takes no room, so STOP never moves); a tap reconnects. */
+/** The phone's version: one pill over the top of the sticks, in place of the speeds (it takes no room, so STOP never moves); a tap reconnects. */
 function DisengagedPill({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     const text = halt.reconnecting ? "Reconnecting…" : `${disengagedShort(halt)}${halt.reason === "latency" ? " lag" : ""} · Reconnect`
     return (
@@ -98,9 +98,15 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                         thumbJoy("left", x, y)
                     }}
                 />
-                {state.halt && <DisengagedPill app={app} halt={state.halt} />}
-                <div className="hud-speed left" data-testid="hud-driving-speed"><DrivingSpeed app={app} /></div>
-                <div className="hud-speed right" data-testid="hud-turning-speed"><TurningSpeed app={app} /></div>
+                {/* disengaged, the pill takes the speeds' row (nothing drives until Reconnect), so the two never overlap */}
+                {state.halt
+                    ? <DisengagedPill app={app} halt={state.halt} />
+                    : (
+                        <>
+                            <div className="hud-speed left" data-testid="hud-driving-speed"><DrivingSpeed app={app} /></div>
+                            <div className="hud-speed right" data-testid="hud-turning-speed"><TurningSpeed app={app} /></div>
+                        </>
+                    )}
                 <div className="hud-center">
                     {app.profile.joint && <JointHud app={app} />}
                     <Badge className="hud-note" data-testid="drive-readout">

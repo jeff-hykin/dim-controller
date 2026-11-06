@@ -596,10 +596,13 @@ h3.dr-h3.first { margin-top: 4px; }
 /* landscape phone (useMobile.ts PHONE_LANDSCAPE): the main view fills the screen and the sticks lie over its lower
    corners, the center column stays narrow */
 @media (orientation: landscape) and (max-height: 520px) {
-    .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); --hud-center: min(30vw, 260px); }
+    .app.mobile { --phone-hud-h: min(62vh, 260px); }
+    .drive-hud.mobile { height: var(--phone-hud-h); --stick: clamp(104px, 38vh, 150px); --hud-center: min(30vw, 260px); }
     /* the touch zone hugs the stick, so a drag in the main view above it orbits instead of driving */
     .drive-hud.mobile > .stick-zone { align-self: end; height: calc(var(--stick) + 16px); margin-bottom: 25px; }
     .dr-thumbstick-base { top: 50%; }
+    /* the main view runs under the sticks here: what it waits for sits in the strip above them, not under STOP */
+    .mobile .zone-stage .drive-hint .drive-hint-waiting { top: calc((100% - var(--phone-hud-h) - var(--dim-inset-bottom, 0px)) / 2); }
     .hud-center { padding-bottom: 8px; gap: 6px; }
     .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
