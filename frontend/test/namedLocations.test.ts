@@ -1,8 +1,8 @@
-// dimos's NamedLocations wire contract (dimos/navigation/named_locations/module.py): its snapshot read as labels, and
-// the whole lists, request and go to the page sends.
+// dimos's named locations wire contract (dimos/mapping/relocalization/module.py): its list read as labels and a
+// revision, and the whole lists (edited from that revision), request and goal the page sends.
 import { assertEquals } from "jsr:@std/assert@1"
 import { decode } from "../src/core/lcm/lcm.ts"
-import { GO_TO_KEY, listBytes, NamedLocations, type NamedPose, renamedLocation, REQUEST_KEY, SNAPSHOT_KEY, snapshotLabels, stringBytes, UPDATE_TYPE, withLocation, withoutLocation } from "../src/core/namedLocations.ts"
+import { GOAL_KEY, listBytes, NamedLocations, type NamedPose, POINT_STAMPED, readList, renamedLocation, replaces, REQUEST_KEY, SNAPSHOT_KEY, stringBytes, UPDATE_TYPE, withLocation, withoutLocation } from "../src/core/namedLocations.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection } from "../src/core/transport.ts"
 
@@ -12,7 +12,8 @@ import type { Connection } from "../src/core/transport.ts"
 const DIMOS_SNAPSHOT = "e498190e0276d93d0000000000000002000000000000000f4e616d65644c6f636174696f6e7300000000000000000701000000016553f1001dcd6500000000046d6170003ff000000000000040000000000000000000000000000000000000000000000000000000000000003fe6a09e667f3bcd3fe6a09e667f3bcd000000086b69746368656e00000000016553f10100000000000000046d617000c00c0000000000003fd00000000000003fb999999999999a0000000000000000000000000000000000000000000000003ff000000000000000000005646f636b00"
 const hex = (text: string) => new Uint8Array(text.match(/../g)!.map((pair) => parseInt(pair, 16)))
 
-const at = (label: string, x: number): NamedPose => ({ label, frame_id: "map", position: [x, 0, 0], orientation: [0, 0, 0, 1] })
+const at = (label: string, x: number, frame_id = "map"): NamedPose => ({ label, frame_id, position: [x, 0, 0], orientation: [0, 0, 0, 1] })
+const rev = (seq_num: number, server_id = "run1") => ({ server_id, seq_num })
 const names = (list: NamedPose[]) => list.map((one) => [one.label, one.position[0]])
 
 /** A connection whose puts are recorded and whose /named_locations subscription the test feeds. */
@@ -36,11 +37,12 @@ function fakeConnection() {
 Deno.test("the module's topics", () => {
     assertEquals(SNAPSHOT_KEY, "dimos/named_locations/visualization_msgs.InteractiveMarkerUpdate")
     assertEquals(REQUEST_KEY, "dimos/named_locations_request/std_msgs.String")
-    assertEquals(GO_TO_KEY, "dimos/go_to_named_location/std_msgs.String")
+    assertEquals(GOAL_KEY, "dimos/goal/geometry_msgs.PointStamped")
 })
 
-Deno.test("a dimos list reads as labels keyed by name, in map", () => {
-    const labels = snapshotLabels(hex(DIMOS_SNAPSHOT))
+Deno.test("a dimos list reads as its revision and labels keyed by name, in map", () => {
+    const { revision, locations: labels } = readList(hex(DIMOS_SNAPSHOT))
+    assertEquals(revision, { server_id: "NamedLocations", seq_num: 7 })
     assertEquals(labels.map((label) => [label.id, label.label, label.frame_id]), [["kitchen", "kitchen", "map"], ["dock", "dock", "map"]])
     assertEquals(labels[0].position, [1, 2, 0])
     assertEquals(labels[0].orientation, [0, 0, 0.7071067811865476, 0.7071067811865476])
@@ -49,14 +51,15 @@ Deno.test("a dimos list reads as labels keyed by name, in map", () => {
 })
 
 Deno.test("an empty list is an empty list (the module is there)", () => {
-    assertEquals(snapshotLabels(listBytes([])), [])
+    assertEquals(readList(listBytes([], rev(0))).locations, [])
 })
 
-Deno.test("a published list is the whole list, poses only, stamped", () => {
-    const bytes = listBytes([at("galley", 1), at("dock", 2)], 1_700_000_123_456)
+Deno.test("a published list is the whole list, poses only, stamped, carrying the revision it was edited from", () => {
+    const bytes = listBytes([at("galley", 1), at("dock", 2)], rev(4, "abc"), 1_700_000_123_456)
     assertEquals(Array.from(bytes.slice(0, 8)), Array.from(hex(DIMOS_SNAPSHOT).slice(0, 8)), "dimos's fingerprint")
     const update = decode(UPDATE_TYPE, bytes)
     assertEquals([update.erases, update.markers], [[], []])
+    assertEquals([update.server_id, Number(update.seq_num)], ["abc", 4])
     // deno-lint-ignore no-explicit-any
     assertEquals(update.poses.map((pose: any) => [pose.name, pose.header.frame_id, pose.pose.position.x]), [["galley", "map", 1], ["dock", "map", 2]])
     assertEquals(update.poses[0].header.stamp, { sec: 1_700_000_123, nsec: 456_000_000 })
@@ -71,18 +74,38 @@ Deno.test("add, move, rename and delete are new whole lists, in order", () => {
     assertEquals(names(withoutLocation(list, "dock")), [["kitchen", 1]])
 })
 
-Deno.test("the page draws the latest list heard (its own included) and publishes whole lists on the one topic", async () => {
+Deno.test("edits carry the cached list's revision, and the page draws the latest list heard", async () => {
     const fake = fakeConnection()
     const named = new NamedLocations(fake.connection)
     assertEquals(named.state.get().locations, null, "no module yet")
-    fake.deliver(listBytes([at("kitchen", 1)]))
+    fake.deliver(listBytes([at("kitchen", 1, "premap")], rev(3)))
+    assertEquals(named.frame, "premap", "the list's frame, not a hardcoded map")
     await named.publish(renamedLocation(named.current, "kitchen", "galley"))
     assertEquals(named.current.map((one) => one.label), ["kitchen"], "drawn only once it comes back on the topic")
     assertEquals(fake.sent.map((one) => one.key), [SNAPSHOT_KEY])
-    fake.deliver(fake.sent[0].bytes)
+    assertEquals(readList(fake.sent[0].bytes).revision, rev(3), "edited from revision 3, not dim-controller")
+    fake.deliver(listBytes([at("galley", 1, "premap")], rev(4)))
     assertEquals(named.current.map((one) => one.label), ["galley"])
+    fake.deliver(fake.sent[0].bytes)
+    assertEquals([named.current.map((one) => one.label), named.state.get().revision], [["galley"], rev(4)], "a late echo of the old edit doesn't win")
     await named.goTo("galley")
-    assertEquals([fake.sent[1].key, decode("std_msgs.String", fake.sent[1].bytes).data], [GO_TO_KEY, "galley"])
+    const goal = decode(POINT_STAMPED, fake.sent[1].bytes)
+    assertEquals([fake.sent[1].key, goal.header.frame_id, goal.point], [GOAL_KEY, "premap", { x: 1, y: 0, z: 0 }])
+})
+
+Deno.test("a list replaces the cache unless it's an older revision of the same run", () => {
+    assertEquals(replaces(null, rev(0)), true)
+    assertEquals(replaces(rev(3), rev(3)), true)
+    assertEquals(replaces(rev(3), rev(4)), true)
+    assertEquals(replaces(rev(3), rev(2)), false)
+    assertEquals(replaces(rev(3), rev(0, "run2")), true, "a restarted module")
+})
+
+Deno.test("no edit before a list came", async () => {
+    const named = new NamedLocations(fakeConnection().connection)
+    let failed = false
+    await named.publish([at("hall", 1)]).catch(() => (failed = true))
+    assertEquals(failed, true)
 })
 
 Deno.test("each connect asks for the list", async () => {
