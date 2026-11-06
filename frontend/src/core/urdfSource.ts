@@ -7,6 +7,8 @@
 // something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
 // with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is cached under the URDF text's hash
 // (a mesh edited under an unchanged URDF stays stale until the URDF changes: dimos's UrdfManager dropped ?hash= on 10-23).
+// Replies come unreliably (most recent): the URDF names every file, so one not loaded is asked for again every meshRetryMs
+// (Settings → Advanced → Robot model) until it lands.
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
 import { decode, encode } from "./lcm/lcm.ts"
@@ -28,10 +30,11 @@ export const FILE_INFO = dimosKey("/file_info/**", "files.File")
 /** the same bytes under the older dimos's type name */
 export const LEGACY_FILE_INFO = dimosKey("/file_info/**", "files.MeshFile")
 /** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
- * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
+ * burst of them loses some on the way, each then asked for again after meshRetryMs) */
 const MESHES_IN_FLIGHT = 2
-/** a mesh asked for this long ago without a reply is asked for again (an 8 MB STL over a 2 Mbit/s link takes ~30 s) */
-const MESH_RETRY_MS = 60000
+/** the default for how long a mesh asked for without a reply waits before it's asked for again (an 8 MB STL over a
+ * 2 Mbit/s link takes ~30 s: on a link that slow, raise it in Settings or the big ones keep restarting) */
+export const MESH_RETRY_MS = 10000
 /** a splat file is tens of MB (a 1.2M-splat home's SPZ is ~27 MB, ~2 min at 2 Mbit/s): asking again sooner would send it twice */
 const SPLAT_RETRY_MS = 600000
 /** the URDF is asked for this often until it comes: the first can go out before the subscription is open */
@@ -86,6 +89,8 @@ export class UrdfSource {
     #drawnRanks = new Set<number>()
     /** while asking for the URDF fast: the re-ask timer, and when asking slows to the 1 s tick */
     #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
+    /** a mesh asked for this long ago without a reply is asked for again (Settings → Advanced → Robot model) */
+    meshRetryMs = MESH_RETRY_MS
 
     constructor(readonly connection: Connection) {}
 
@@ -95,7 +100,7 @@ export class UrdfSource {
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onRobotDescription(message.bytes)))
             for (const key of [FILE_INFO, LEGACY_FILE_INFO]) {
-                this.#stops.push(this.connection.subscribe(key, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
+                this.#stops.push(this.connection.subscribe(key, { delivery: "latest", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
             }
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
             let state = this.connection.status.get().state
@@ -325,7 +330,7 @@ export class UrdfSource {
         }
         const now = Date.now()
         for (const [uri, at] of this.#asked) {
-            if (now - at > (isSplatName(uri) ? SPLAT_RETRY_MS : MESH_RETRY_MS)) {
+            if (now - at > (isSplatName(uri) ? Math.max(SPLAT_RETRY_MS, this.meshRetryMs) : this.meshRetryMs)) {
                 this.#asked.delete(uri)
             }
         }

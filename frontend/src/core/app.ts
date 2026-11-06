@@ -17,7 +17,7 @@ import { DriveCore, type ViewSettings } from "./driveCore.ts"
 import type { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
 import { jointControlState } from "./jointControl.ts"
-import { urdfSource } from "./urdfSource.ts"
+import { MESH_RETRY_MS, urdfSource } from "./urdfSource.ts"
 import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
@@ -103,6 +103,9 @@ export class ViewerApp {
         const applyGrace = () => setHiddenGraceMs((this.settings.get().cameraHiddenGraceS ?? HIDDEN_GRACE_MS / 1000) * 1000)
         applyGrace()
         this.settings.subscribe(applyGrace)
+        const applyMeshRetry = () => (urdfSource(this.connection).meshRetryMs = (this.settings.get().meshRetryS ?? MESH_RETRY_MS / 1000) * 1000)
+        applyMeshRetry()
+        this.settings.subscribe(applyMeshRetry)
         this.layers = new LayerManager(this.viewer, this.tf, this.tfHistory, this.connection, this.video, this.profile)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => jointControlState.get().enabled && (this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true))
         this.manipulation.watch()

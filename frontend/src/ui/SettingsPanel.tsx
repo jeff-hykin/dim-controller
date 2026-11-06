@@ -23,6 +23,7 @@ import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
 import { MESH_STYLES, type MeshStyle } from "../core/render/meshStyle.ts"
 import { Stepper } from "./Stepper.tsx"
+import { MESH_RETRY_MS } from "../core/urdfSource.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
@@ -43,6 +44,10 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <DriveProfileFold app={app} />
                 </>
             )}
+            {robot.type === "arm" && <h4 className="set-group-title set-advanced-title">Advanced</h4>}
+            <SettingsFold title="Robot model" persistKey="lv.settings.advanced.robotModel">
+                <RobotModelFields app={app} />
+            </SettingsFold>
             <SettingsGroup title="Layout" data-layout-files="">
                 <SettingsLink icon="download" label="Save layout" note={`panels, cameras and plots as a ${LAYOUT_SUFFIX} file`} onClick={() => saveLayoutFile()} />
                 <SettingsLink icon="upload" label="Load layout…" note={`or drop a ${LAYOUT_SUFFIX} file anywhere`} onClick={pickLayoutFile} />
@@ -106,6 +111,16 @@ export function CameraSettings({ app }: { app: ViewerApp }) {
             </Field>
             <p className="hint">Latency vs quality, fit / fill and undistort are on the camera itself.</p>
         </div>
+    )
+}
+
+/** Settings → Advanced → Robot model: how often a mesh that hasn't landed is asked for again (they come unreliably) */
+function RobotModelFields({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    return (
+        <Field inline className="set-row" label="Re-ask missing meshes" title="the robot's meshes come unreliably: one the URDF names that hasn't landed is asked for again this often (a big mesh on a slow link needs longer than it takes to arrive, or it keeps restarting)">
+            <Stepper label="Re-ask missing meshes" min={5} max={Infinity} step={5} value={view.meshRetryS ?? MESH_RETRY_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(meshRetryS) => app.settings.update({ meshRetryS })} />
+        </Field>
     )
 }
 

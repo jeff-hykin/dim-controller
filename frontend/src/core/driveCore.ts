@@ -39,6 +39,8 @@ export interface ViewSettings {
     viewCube: boolean
     /** how long a hidden tab keeps its cameras subscribed (s; unset: 60) */
     cameraHiddenGraceS?: number
+    /** a robot model file asked for without a reply is asked for again after this long (s; unset: 10) */
+    meshRetryS?: number
 }
 
 export class DriveCore {
