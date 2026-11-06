@@ -208,6 +208,8 @@ pub struct State {
     /// the app's settings, where `Options` live (shared with api.rs)
     pub settings: Arc<Store>,
     zenoh_connect: String,
+    /// also find the local dimos on loopback (the server always; tests with their own endpoint don't)
+    scout_loopback: bool,
     session: AsyncMutex<Option<zenoh::Session>>,
     active: AsyncMutex<Option<Active>>,
     meter: AsyncMutex<Option<Meter>>,
@@ -248,8 +250,9 @@ pub fn split_key(key: &str) -> Option<(String, String)> {
 
 impl State {
     /// With settings of its own that aren't saved (tests); the app uses `with_settings`.
+    /// The tests': an endpoint given is the only link (no loopback scouting, so a dimos running here stays out of them).
     pub fn new(record_dir: PathBuf, zenoh_connect: String) -> Self {
-        Self::with_settings(record_dir, zenoh_connect, Arc::new(Store::load(None)))
+        Self { scout_loopback: false, ..Self::with_settings(record_dir, zenoh_connect, Arc::new(Store::load(None))) }
     }
 
     pub fn with_settings(record_dir: PathBuf, zenoh_connect: String, settings: Arc<Store>) -> Self {
@@ -257,6 +260,7 @@ impl State {
             record_dir,
             settings,
             zenoh_connect,
+            scout_loopback: true,
             session: AsyncMutex::new(None),
             active: AsyncMutex::new(None),
             meter: AsyncMutex::new(None),
@@ -284,23 +288,24 @@ impl State {
             return Ok(open.clone());
         }
         let mut config = zenoh::Config::default();
-        let settings: Vec<(&str, String)> = if !self.zenoh_connect.is_empty() {
-            // an explicit endpoint is the whole story: no multicast scouting of the LAN
-            vec![
-                ("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?),
-                ("scouting/multicast/enabled", "false".into()),
-            ]
-        } else {
-            // the local dimos, the way its own sessions find each other: scouting and links on loopback only. zenoh's
-            // default scouts every interface and meshes with any peer on the LAN or tailnet, whose queryables and
-            // link resets then take this session's RPC queries (dimos/rpc/...) with them
-            // (a local peer that meshes wider would otherwise gossip its remote peers here to be dialed)
-            vec![
-                ("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#.into()),
-                ("scouting/multicast/interface", serde_json::to_string(LOOPBACK_INTERFACE)?),
-                ("scouting/gossip/autoconnect", r#"{ router: [], peer: [] }"#.into()),
-            ]
-        };
+        // the local dimos, the way its own sessions find each other: scouting and links on loopback only. zenoh's
+        // default scouts every interface and meshes with any peer on the LAN or tailnet, whose queryables and
+        // link resets then take this session's RPC queries (dimos/rpc/...) with them
+        // (a local peer that meshes wider would otherwise gossip its remote peers here to be dialed)
+        let mut settings: Vec<(&str, String)> = vec![
+            ("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#.into()),
+            ("scouting/multicast/interface", serde_json::to_string(LOOPBACK_INTERFACE)?),
+            ("scouting/gossip/autoconnect", r#"{ router: [], peer: [] }"#.into()),
+        ];
+        if !self.zenoh_connect.is_empty() {
+            // Desktop's endpoint (on a robot, its own zenoh) as well, not instead: the run's workers find each other on
+            // loopback and peers don't route for peers, so a session on the endpoint alone hears only what's published
+            // through it (on the M20 GOS: the dog's topics, none of the run's own, e.g. /named_locations, the maps, the cameras)
+            settings.push(("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?));
+            if !self.scout_loopback {
+                settings.push(("scouting/multicast/enabled", "false".into()));
+            }
+        }
         for (key, value) in settings {
             config
                 .insert_json5(key, &value)
