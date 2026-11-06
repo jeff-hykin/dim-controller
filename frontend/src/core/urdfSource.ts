@@ -5,7 +5,8 @@
 // /render_file_request (dimos main for now) has /robot_description's XML (an empty /file_request has it sent now) and meshes
 // asked for on /file_request: both are asked until a URDF comes, and its meshes go where it came from. Subscribed only while
 // something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
-// with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load, uncached.
+// with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is cached under the URDF text's hash
+// (a mesh edited under an unchanged URDF stays stale until the URDF changes: dimos's UrdfManager dropped ?hash= on 10-23).
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
 import { decode, encode } from "./lcm/lcm.ts"
@@ -69,6 +70,8 @@ export class UrdfSource {
     #asked = new Map<string, number>()
     /** URI → the hash of the copy in the cache that isn't current (sent as &have=) */
     #have = new Map<string, string>()
+    /** sha256 of the URDF text: the hash a mesh named without one is cached under */
+    #xmlHash = ""
     #failed = new Set<string>()
     /** URIs being decoded (a splat file decodes in a worker) */
     #decoding = new Set<string>()
@@ -185,7 +188,7 @@ export class UrdfSource {
             this.#urdfAt = performance.now()
             this.#ranks = ranks
             this.#drawnRanks.clear()
-            meshLog(`URDF: ${this.#files.length} files, ${this.#files.filter((uri) => splitHash(uri).hash).length} with a hash (cacheable)`)
+            meshLog(`URDF: ${this.#files.length} files, ${this.#files.filter((uri) => splitHash(uri).hash).length} with their own hash, the rest cached under the URDF's`)
             this.state.update({ description, meshesWanted: meshUris(description).length, problem: null })
             this.#count()
             this.#loadCached(description)
@@ -223,6 +226,8 @@ export class UrdfSource {
         meshLog(`got ${file.uri.split("/").pop()?.split("?")[0]} (${(file.data.byteLength / 1e6).toFixed(1)} MB) ${this.#sinceUrdf()}`)
         if (reply.hash && splitHash(uri).hash) {
             storeFile(reply.base, reply.hash, file.data.slice())
+        } else if (!reply.hash && !splitHash(uri).hash && this.#xmlHash) {
+            storeFile(reply.base, this.#xmlHash, file.data.slice())
         }
         this.#load(uri, file.data)
         this.#askForMeshes()
@@ -256,9 +261,16 @@ export class UrdfSource {
     async #loadCached(description: RobotDescription) {
         const loads: Promise<unknown>[] = []
         const counts = { hit: 0, hitBytes: 0, stale: 0, missing: 0 }
+        const xmlHash = await sha256(this.#xml)
+        if (this.state.get().description !== description) {
+            return
+        }
+        this.#xmlHash = xmlHash
         await Promise.all(this.#files.map(async (uri) => {
-            const { base, hash } = splitHash(uri)
-            if (!hash || this.#loaded(uri)) {
+            const named = splitHash(uri)
+            const { base } = named
+            const hash = named.hash ?? this.#xmlHash
+            if (this.#loaded(uri)) {
                 return
             }
             const cached = await cachedFile(base)
@@ -272,7 +284,9 @@ export class UrdfSource {
                 loads.push(this.#load(uri, cached.data).then((loaded) => loaded || this.#failed.delete(uri)))
             } else if (cached) {
                 counts.stale++
-                this.#have.set(uri, cached.hash)
+                if (named.hash) {
+                    this.#have.set(uri, cached.hash)
+                }
             } else {
                 counts.missing++
             }
@@ -376,4 +390,9 @@ export function urdfSource(connection: Connection): UrdfSource {
         sources.set(connection, source)
     }
     return source
+}
+
+async function sha256(text: string): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
