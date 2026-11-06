@@ -1,21 +1,20 @@
-// Wires the core together (no React): bridge connection, TF, the 3D view, layers, camera streams, drive.
+// Wires the 3D page together (no React) on top of the drive core (core/driveCore.ts): TF, the 3D view, layers, camera streams.
 // The UI reads the stores; window.__lv exposes this for tests.
 import * as THREE from "three"
-import { Connection, dimosKey } from "./transport.ts"
-import { zenohKey } from "./cmdvel.ts"
 import { TfTree } from "dimos-react/three"
 import { feedTf } from "./tfFeed.ts"
 import { TfHistory } from "./tfHistory.ts"
 import { checkTf, confirmed, fixedFrameInUse, missingFixedFrameIssue, type TfIssue } from "./tfCheck.ts"
-import { feedBattery } from "./batteryFeed.ts"
 import { Viewer } from "dimos-react/three"
 import { watchSplatBudget } from "./render/rendering.ts"
 import { FrameHighlight } from "./render/frameHighlight.ts"
 import { LayerManager } from "./layers/manager.ts"
 import { HIDDEN_GRACE_MS, setHiddenGraceMs, VideoSources } from "./video.ts"
-import { Drive } from "./drive.ts"
-import { JOY_TYPE, JoyPublisher, joySettings, joyTopic } from "./joy.ts"
-import { ArmControl } from "./arm.ts"
+import type { Drive } from "./drive.ts"
+import type { JoyPublisher } from "./joy.ts"
+import type { Connection } from "./transport.ts"
+import { DriveCore, type ViewSettings } from "./driveCore.ts"
+import type { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
 import { jointControlState } from "./jointControl.ts"
 import { urdfSource } from "./urdfSource.ts"
@@ -26,37 +25,11 @@ import { NamedLocations } from "./namedLocations.ts"
 import { robotPose } from "./robot.ts"
 import { behind, ChaseHeading, headingOf, ridesOn, turnAbout } from "./followHeading.ts"
 import { disposeTree } from "dimos-react/three"
-import { plannerRunning, RunWatch } from "./runs.ts"
-import { persistentStore, Store } from "./store.ts"
-import { profileFor } from "../profile/index.ts"
+import { plannerRunning, type RunWatch } from "./runs.ts"
+import { Store } from "./store.ts"
 import type { RobotProfile, RobotType } from "../profile/types.ts"
-import { checkLink, DEFAULT_MAX_LATENCY_MS, LINK_CHECK_MS, maxLatencyOf } from "./linkWatch.ts"
-import { chosenType, type ResolvedType, resolveType, type RobotsAnswer, robotsAnswer } from "./robotType.ts"
 
-export interface ViewSettings {
-    /** the robot type picked in Settings (a RobotType), "" = auto (core/robotType.ts) */
-    profile: string
-    /** the type in use (auto's answer, or the pick), written by the page for the backend and the agent */
-    robot?: string
-    /** "" = the profile's, else picked from the tree */
-    fixedFrame: string
-    follow: boolean
-    /** the TF frame the 3D camera follows: "" = base_link when it's in TF, else the profile's base frame */
-    followFrame: string
-    /** following, the camera turns with the followed frame's heading (yaw only: the world stays level) */
-    followTurns: boolean
-    showStats: boolean
-    /** the robot type's stand-in model at the robot's pose */
-    robotModel: boolean
-    /** driving holds (Reconnect on the drive panel) once the control link's latency goes over this (ms) */
-    maxLatencyMs: number
-    /** every camera drawn in the 3D view (its picture and frustum at its CameraInfo frame; layers/camera3d.tsx) */
-    camerasIn3d: boolean
-    /** the CAD view cube in the 3D view's top-right corner (click a face to look from there) */
-    viewCube: boolean
-    /** how long a hidden tab keeps its cameras subscribed (s; unset: 60) */
-    cameraHiddenGraceS?: number
-}
+export type { ViewSettings }
 
 export class ViewerApp {
     readonly connection: Connection
@@ -68,8 +41,7 @@ export class ViewerApp {
     readonly highlight: FrameHighlight
     readonly video: VideoSources
     readonly layers: LayerManager
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", followTurns: true, showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: true })
-    #profile: RobotProfile
+    readonly settings: DriveCore["settings"]
     /** the robot type in use, whether it was picked or auto, and why */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
     readonly drive: Drive
@@ -87,7 +59,7 @@ export class ViewerApp {
     /** dimos's NamedLocations module: its locations (null until it answers), edits and go to (core/namedLocations.ts) */
     readonly namedLocations: NamedLocations
     /** what's running (Desktop's /gateways/dimos/active, live on its zenoh events): the first-run messages and the drive topic */
-    readonly runs = new RunWatch()
+    readonly runs: RunWatch
     /** the fixed frame in use and where the robot is (for the UI) */
     readonly frameInfo = new Store<{ fixedFrame: string; robotFound: boolean; followFound: boolean }>({ fixedFrame: "", robotFound: false, followFound: false })
     /** what's wrong with the TF tree (core/tfCheck.ts), checked every 2 s; a problem shows once two checks in a row see it */
@@ -106,15 +78,21 @@ export class ViewerApp {
     #missingFixedFrame: string | null = null
     #lastFrameAt = 0
     /** Desktop's robots (robots.json types, its default robot); null until it answers, or without Desktop */
-    #robots: RobotsAnswer | null = null
     /** the stand-in model drawn at the robot's pose, and the type it's for */
     #model: { type: RobotType; group: THREE.Group | null } | null = null
 
-    constructor(host: HTMLElement) {
-        const first = this.#resolve()
-        this.#profile = profileFor(first.type)
-        this.robot = new Store({ type: first.type, auto: true, reason: first.reason })
-        this.connection = new Connection(this.profile.drive.deadmanMs)
+    /** the part that drives (core/driveCore.ts), made before this chunk loaded; its connection, drive and stores are this one's */
+    readonly core: DriveCore
+
+    constructor(host: HTMLElement, core = new DriveCore()) {
+        this.core = core
+        this.settings = core.settings
+        this.robot = core.robot
+        this.connection = core.connection
+        this.drive = core.drive
+        this.joy = core.joy
+        this.arm = core.arm
+        this.runs = core.runs
         // (MSAA: without it voxel and mesh edges stair-step, even at a retina 2x)
         this.viewer = new Viewer(host, { clock: () => this.connection.bridgeNow(), antialias: true })
         // a drag pans (Shift+drag orbits: OrbitControls turns a modified pan into an orbit); a right-drag orbits
@@ -126,35 +104,18 @@ export class ViewerApp {
         applyGrace()
         this.settings.subscribe(applyGrace)
         this.layers = new LayerManager(this.viewer, this.tf, this.tfHistory, this.connection, this.video, this.profile)
-        this.drive = new Drive(this.connection, this.profile)
-        this.joy = new JoyPublisher(this.connection)
-        // the lease also keeps the drive topics (and the gamepad's) to this viewer
-        const leasePublish = () => this.connection.lease.setPublish([...this.drive.state.get().topics.map((topic) => zenohKey(topic.topic, topic.type)), dimosKey(joyTopic(), JOY_TYPE)])
-        leasePublish()
-        this.drive.state.subscribe(leasePublish)
-        joySettings.subscribe(leasePublish)
-        this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         this.manipView = new ArmManipView(this.viewer, this.tf, this.arm, this.manipulation, urdfSource(this.connection), () => jointControlState.get().enabled && (this.robot.get().type === "arm" || plannerRunning(this.runs.state.get()) || this.manipulation.state.get().available === true))
         this.manipulation.watch()
         feedTf(this.connection, this.tf, this.viewer, this.tfHistory)
-        feedBattery(this.connection, () => this.profile.name)
-        this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.viewer.onFrame((frame) => this.#eachFrame(frame.now))
-        this.connection.start()
         this.namedLocations = new NamedLocations(this.connection)
         this.labels = new LocationLabels(this, this.namedLocations)
         this.agent = new AgentLink(this)
-        this.runs.state.subscribe(() => {
-            this.#updateDriveCandidates()
-            this.#updateRobot()
-            this.#loadRobots()
-        })
-        this.runs.start()
         setInterval(() => this.#checkTf(), 2000)
-        setInterval(() => this.#checkLink(), LINK_CHECK_MS)
-        this.connection.status.subscribe(() => this.#updateRobot())
-        // Settings → Robot here, in another viewer or by the agent
-        this.settings.subscribe(() => this.#updateRobot())
+        core.profileChanged.add((profile) => {
+            this.layers.profile = profile
+            this.#framed = false
+        })
         // Cameras in 3D: one setting for every camera topic's 3D layer (the 3D panel's menu and Settings → 3D view)
         let camerasIn3d: boolean | null = null
         const applyCameras = () => {
@@ -166,86 +127,16 @@ export class ViewerApp {
         }
         applyCameras()
         this.settings.subscribe(applyCameras)
-        this.#updateRobot()
     }
 
-    #checkLink() {
-        const action = checkLink({
-            state: this.connection.status.get().state,
-            latencyMs: this.connection.latencyMs(),
-            maxMs: maxLatencyOf(this.settings.get().maxLatencyMs),
-            halt: this.drive.state.get().halt,
-            hidden: typeof document !== "undefined" && document.hidden,
-        })
-        if (action && "halt" in action) {
-            this.drive.halt(action.halt)
-        } else if (action) {
-            this.drive.resume()
-        }
-    }
-
-    /** Reconnect: a latency hold only gets fresh drive publishers (the streams stay as they are); otherwise a new gateway session. */
-    async reconnect() {
-        this.drive.stop()
-        if (this.drive.state.get().halt?.reason === "latency") {
-            this.drive.resume()
-            return
-        }
-        this.drive.halt({ reason: this.drive.state.get().halt?.reason ?? "latency", latencyMs: null, maxMs: maxLatencyOf(this.settings.get().maxLatencyMs) })
-        this.drive.setReconnecting(true)
-        try {
-            await this.connection.reconnect()
-            this.drive.resume()
-        } catch (error) {
-            console.warn("reconnect failed; the client keeps retrying", error)
-            // the link watch resumes once the client's own retry connects
-            this.drive.halt({ reason: "lost", latencyMs: null, maxMs: maxLatencyOf(this.settings.get().maxLatencyMs) })
-        } finally {
-            this.drive.setReconnecting(false)
-        }
+    /** Reconnect (core/driveCore.ts) */
+    reconnect() {
+        return this.core.reconnect()
     }
 
     /** the robot profile in use (it changes with Settings → Robot, or when auto changes its mind) */
     get profile(): RobotProfile {
-        return this.#profile
-    }
-
-    /** Always the wheeled base's controls (Jeff 10-26: no format picker; drones come later). The auto-detection
-     * (core/robotType.ts resolveType) stays for when more formats return. */
-    #resolve(): ResolvedType {
-        return { type: "wheeled", reason: "the wheeled base controls" }
-    }
-
-    #updateRobot() {
-        const resolved = this.#resolve()
-        const auto = true
-        const current = this.robot.get()
-        if (current.type !== resolved.type || current.reason !== resolved.reason || current.auto !== auto) {
-            this.robot.set({ type: resolved.type, auto, reason: resolved.reason })
-        }
-        if (resolved.type !== this.#profile.type) {
-            this.#profile = profileFor(resolved.type)
-            this.layers.profile = this.#profile
-            this.drive.setProfile(this.#profile)
-            this.#framed = false
-        }
-        if (this.settings.get().robot !== resolved.type && typeof location !== "undefined") {
-            this.settings.update({ robot: resolved.type })
-        }
-    }
-
-    /** robots.json's types (the dimos gateway's catalog/robots) and Desktop's default robot (its settings), again whenever what runs changes. */
-    #loadRobots() {
-        const json = (path: string) => fetch(new URL(`../../${path}`, location.href)).then((response) => (response.ok ? response.json() : null)).catch(() => null)
-        Promise.all([json("gateways/dimos/catalog/robots"), json("gateways/desktop/settings")])
-            .then(([catalog, settings]) => robotsAnswer(catalog, settings))
-            .then((answer: RobotsAnswer | null) => {
-                if (answer && JSON.stringify(answer) !== JSON.stringify(this.#robots)) {
-                    this.#robots = answer
-                    this.#updateRobot()
-                }
-            })
-            .catch(() => {})
+        return this.core.profile
     }
 
     #eachFrame(now: number) {
@@ -315,7 +206,7 @@ export class ViewerApp {
 
     /** Frames `target` (the profile's distance away), from behind `heading` with Follow turns on, else from the view's angle. */
     #frameBehind(target: THREE.Vector3, heading: number | null) {
-        const distance = this.#profile.viewDistance ?? 7
+        const distance = this.profile.viewDistance ?? 7
         if (heading !== null && this.settings.get().followTurns !== false) {
             // viewer.frame() keeps the camera's direction from its target: point that direction behind the frame first
             this.viewer.camera.position.copy(this.viewer.controls.target).add(behind(target, heading, distance).sub(target))
@@ -345,12 +236,12 @@ export class ViewerApp {
     }
 
     #placeModel(robot: THREE.Matrix4 | null) {
-        if (this.#model?.type !== this.#profile.type) {
+        if (this.#model?.type !== this.profile.type) {
             if (this.#model?.group) {
                 this.viewer.scene.remove(this.#model.group)
                 disposeTree(this.#model.group)
             }
-            this.#model = { type: this.#profile.type, group: this.#profile.type === "arm" ? null : standInBox() }
+            this.#model = { type: this.profile.type, group: this.profile.type === "arm" ? null : standInBox() }
             if (this.#model.group) {
                 this.viewer.scene.add(this.#model.group)
             }
@@ -443,13 +334,6 @@ export class ViewerApp {
         } else {
             this.viewer.topDown(new THREE.Vector3(), 20)
         }
-    }
-
-    #updateDriveCandidates() {
-        const topics = this.connection.status.get().topics
-        const onBridge = topics.filter((topic) => topic.type === "geometry_msgs.Twist").map((topic) => topic.name)
-        this.drive.setRunning(this.runs.state.get().blueprints, onBridge)
-        this.arm.setRunning(this.runs.state.get().blueprints, topics.filter((topic) => topic.type === "sensor_msgs.JointState").map((topic) => topic.name))
     }
 }
 

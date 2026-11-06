@@ -89,12 +89,17 @@ export class NamedLocations {
                 this.state.set(list)
             }
         })
+        const ask = () => subscription.ready().then(() => this.#put(REQUEST_KEY, stringBytes(""))).catch(() => {})
         let state = connection.status.get().state
+        // made after the page connected (the 3D chunk loads after driving works): ask now
+        if (state === "connected") {
+            ask()
+        }
         connection.status.subscribe(() => {
             const next = connection.status.get().state
             // each (re)connect asks for the snapshot once its subscription is up, so the answer can't miss it
             if (next === "connected" && state !== "connected") {
-                subscription.ready().then(() => this.#put(REQUEST_KEY, stringBytes(""))).catch(() => {})
+                ask()
             }
             state = next
         })

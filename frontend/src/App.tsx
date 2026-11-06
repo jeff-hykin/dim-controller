@@ -6,6 +6,7 @@
 import { watchLayoutDrops } from "./core/layoutFiles.ts"
 import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { ViewerApp } from "./core/app.ts"
+import type { DriveCore } from "./core/driveCore.ts"
 import { Store, useStore } from "./core/store.ts"
 import { TopBar } from "./ui/TopBar.tsx"
 import { KeyOverlay } from "./ui/KeyOverlay.tsx"
@@ -43,14 +44,14 @@ declare global {
     }
 }
 
-export function App() {
+export function App({ core }: { core?: DriveCore }) {
     const host = useRef<HTMLDivElement>(null)
     const [app, setApp] = useState<ViewerApp | null>(null)
     const mobile = useMobile()
     useLockedViewport(mobile)
 
     useEffect(() => {
-        const created = new ViewerApp(host.current!)
+        const created = new ViewerApp(host.current!, core)
         window.__lv = created
         setApp(created)
         // DimThemeProvider applies Desktop's skin and fires `dimos-react-theme` on every change

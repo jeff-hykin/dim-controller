@@ -123,7 +123,8 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
     max-height: calc(100vh - var(--lv-bar-h) - 24px - var(--dim-inset-bottom)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
 .mobile .record-options { bottom: auto; top: calc(56px + env(safe-area-inset-top)); max-height: calc(100vh - 72px - env(safe-area-inset-top)); }
 .mobile .record-options { left: 8px; right: 8px; width: auto; }
-.mobile .record-extra, .mobile .record-control .record-label { display: none; }
+.mobile .record-extra, .mobile .record-control .record-label:not(.record-pending) { display: none; }
+.record-toggle.pending .record-dot { animation: none; opacity: 0.5; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 9px; }
 
 /* ── the workspace (ui/Workspace.tsx): every panel absolutely placed in one layer, by zone; docked panels meet edge to
@@ -1257,3 +1258,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app.desktop .lv-panel.zone-left { border-right-width: 2px; border-color: var(--border-strong); }
 .app.desktop .lv-panel.zone-right { border-left-width: 2px; border-color: var(--border-strong); }
 .app.desktop .lv-panel.zone-left, .app.desktop .lv-panel.zone-right, .app.desktop .lv-panel.zone-stage { border-bottom-width: 2px; border-color: var(--border-strong); }
+/* ui/BootShell.tsx: the page while the 3D chunk loads (the keys already drive) */
+.boot-shell { position: fixed; inset: 0; background: var(--bg); }
+.boot-shell-stage { position: absolute; inset: 0 0 var(--lv-bar-h) 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-dim, var(--text)); }
+.boot-shell-hint { font-size: 12px; opacity: 0.7; }
