@@ -9,9 +9,10 @@ import type { MeshStyle } from "./meshStyle.ts"
 
 export type PointStyle = "voxel" | "splat" | "disc" | "square"
 export type CubeShade = "soft" | "sky" | "outline" | "bevel" | "memworld"
-export type ColorMode = "height" | "intensity" | "range" | "solid" | "clear"
+export type ColorMode = "height" | "intensity" | "range" | "solid" | "clear" | "glass"
 /** the color choices a point layer offers ("clear": see-through grey boxes, core/render/clearVoxels.ts) */
-export const COLOR_MODES: [ColorMode, string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"], ["clear", "clear"]]
+// ("glass": height colors on see-through cubes with bright edges, dimos-react's; /global_map's default)
+export const COLOR_MODES: [ColorMode, string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"], ["clear", "clear"], ["glass", "glass"]]
 
 /** A point layer's look (its settings); "default" style follows Settings → Rendering. */
 export interface PointLook {

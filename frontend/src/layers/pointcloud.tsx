@@ -576,6 +576,8 @@ registerLayer<CloudSettings>({
             ...DEFAULTS.look,
             gradient: defaultGradient(topic),
             ...(isMap(topic) ? { size: 0.1 } : {}),
+            // the global map in glass, so the robot, its paths and the named locations inside it show through
+            ...(lastName(topic) === "global_map" ? { colorMode: "glass" as const } : {}),
             // a graph's nodes read as balls, not voxels
             ...(lastName(topic) === "nodes" ? { style: "disc" as const } : {}),
         },

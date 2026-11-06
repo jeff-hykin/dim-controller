@@ -33,7 +33,7 @@ export function PointLookEditor({ look, onChange }: { look: PointLook; onChange:
                                 <button type="button" key={name} title={name} data-canvas-preview className={`gradient-swatch ${look.gradient === name ? "on" : ""}`} style={{ background: gradientCss(name) }} onClick={() => set({ gradient: name })} />
                             ))}
                         </div>
-                        {look.colorMode === "height" && (
+                        {(look.colorMode === "height" || look.colorMode === "glass") && (
                             <Field inline label="Axis">
                                 <Select value={String(look.axis)} options={[["2", "z (height)"], ["0", "x"], ["1", "y"]]} onChange={(axis) => set({ axis: Number(axis) as PointLook["axis"] })} />
                             </Field>
