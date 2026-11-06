@@ -7,7 +7,7 @@ planning and an mcap recorder. A [dimOS Desktop](https://github.com/dimensionalO
 ![Controller: camera as the main view, the map and 3D view on the left, status and settings on the right](docs/desktop.jpg)
 
 ```sh
-dimos-desktop install https://github.com/jeff-hykin/dim-controller
+dimos-desktop install https://github.com/dimensionalOS/dim-controller
 ```
 
 Open **Controller** from Desktop's rail while a blueprint (sim, replay or robot) runs. Topics show up as they flow;

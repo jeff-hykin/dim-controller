@@ -29,7 +29,7 @@ restart() {
 }
 
 if [ ! -d "$app_dir" ]; then
-    echo "dim-controller isn't installed here ($app_dir): dimos-desktop install https://github.com/jeff-hykin/dim-controller" >&2
+    echo "dim-controller isn't installed here ($app_dir): dimos-desktop install https://github.com/dimensionalOS/dim-controller" >&2
     exit 1
 fi
 
