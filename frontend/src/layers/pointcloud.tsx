@@ -4,7 +4,7 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { applyLook, GRADIENTS, makePointMaterial } from "dimos-react/three"
+import { applyLook, GRADIENTS, makePointMaterial, RAMPS } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
@@ -14,6 +14,7 @@ import { Field, Select, Slider, Toggle } from "dimos-react"
 import { useStore } from "../core/store.ts"
 import { addCameraColor, CameraDepthPass, type CameraUniforms, setCameraModel } from "dimos-react/three"
 import { CameraFeed } from "../core/render/cameraFeed.ts"
+import { ClearVoxels } from "../core/render/clearVoxels.ts"
 import { isImage, pickDefault } from "../core/cameraChoice.ts"
 import { isDepthTopic } from "../core/video.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
@@ -64,10 +65,12 @@ const SPLAT_BUDGET = 3_000_000
 /** cloud topic → its default gradient: each new cloud takes the first one no other has yet (memworld first), so two clouds
  * read apart without anyone picking colors; only a cloud with no saved look uses it */
 const defaultGradients = new Map<string, string>()
+/** A ramp whose low end is near black draws a cloud's lowest band (usually the floor) as a black hole, so clouds aren't given one unasked. */
+const startsBright = (name: string) => Math.max(...[1, 3, 5].map((at) => parseInt(RAMPS[name][0][1].slice(at, at + 2), 16))) >= 0x80
 function defaultGradient(topic: Topic): string {
     if (!defaultGradients.has(topic.key)) {
         const used = [...defaultGradients.values()]
-        const ordered = [DEFAULTS.look.gradient, ...GRADIENTS.filter((name) => name !== DEFAULTS.look.gradient)]
+        const ordered = [DEFAULTS.look.gradient, ...GRADIENTS.filter((name) => name !== DEFAULTS.look.gradient && startsBright(name))]
         defaultGradients.set(topic.key, ordered.find((name) => !used.includes(name)) ?? ordered[defaultGradients.size % ordered.length])
     }
     return defaultGradients.get(topic.key)!
@@ -79,6 +82,8 @@ const FRAME_RECHECK_MS = 30_000
 class CloudLayer {
     readonly root = new THREE.Group()
     #points: THREE.Points
+    /** the "clear" color's see-through boxes, a child of the points so they're placed and hidden with them */
+    #boxes: ClearVoxels
     #geometry = new THREE.BufferGeometry()
     #material: THREE.ShaderMaterial
     #capacity = 0
@@ -119,6 +124,13 @@ class CloudLayer {
         this.#points.frustumCulled = false
         this.#points.matrixAutoUpdate = false
         this.root.add(this.#points)
+        this.#boxes = new ClearVoxels(this.#points)
+        const retheme = () => {
+            this.#boxes.theme()
+            this.context.viewer.requestRender()
+        }
+        addEventListener("dimos-react-theme", retheme)
+        this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
             const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
@@ -153,7 +165,23 @@ class CloudLayer {
         applyLook(this.#material, this.#look(), this.#range)
         this.#syncSplatBudget()
         this.#syncCamera()
+        this.#syncBoxes()
         this.context.viewer.requestRender()
+    }
+
+    /** "clear": the points' own shader is hidden and each kept point is a box instead; any other color draws no boxes. */
+    #syncBoxes() {
+        const look = this.#settings.get().look
+        const clear = look.colorMode === "clear"
+        this.#material.visible = !clear
+        if (!clear) {
+            this.#boxes.empty()
+            return
+        }
+        const times = this.#geometry.getAttribute("aTime").array as Float32Array
+        const window = this.#material.uniforms.uWindow.value as number
+        const now = performance.now() / 1000
+        this.#boxes.place(this.#geometry.getAttribute("position").array, this.#filled, look.size, window < 0 ? undefined : (index) => now - times[index] <= window)
     }
 
     #cameraSettings(): CameraColorSettings {
@@ -289,6 +317,7 @@ class CloudLayer {
         this.#filled = 0
         this.#rangeSeen = false
         this.#geometry.setDrawRange(0, 0)
+        this.#boxes.empty()
         this.context.viewer.requestRender()
     }
 
@@ -365,6 +394,7 @@ class CloudLayer {
         this.#material.uniforms.uSensor.value.setFromMatrixPosition(placement)
         this.#geometry.setDrawRange(0, this.#filled)
         this.#syncSplatBudget()
+        this.#syncBoxes()
         this.#updateRange(positions, intensity, placement)
         this.#cameraDirty = true
         this.context.viewer.noteData(timestamp)
@@ -478,6 +508,7 @@ class CloudLayer {
         setCloudRate(this.topic.key, null)
         this.#feed?.dispose()
         this.#cameraPass.dispose()
+        this.#boxes.dispose()
         this.#geometry.dispose()
         this.#material.dispose()
     }
@@ -545,6 +576,8 @@ registerLayer<CloudSettings>({
             ...DEFAULTS.look,
             gradient: defaultGradient(topic),
             ...(isMap(topic) ? { size: 0.1 } : {}),
+            // the global map in glass, so the robot, its paths and the named locations inside it show through
+            ...(lastName(topic) === "global_map" ? { colorMode: "glass" as const } : {}),
             // a graph's nodes read as balls, not voxels
             ...(lastName(topic) === "nodes" ? { style: "disc" as const } : {}),
         },

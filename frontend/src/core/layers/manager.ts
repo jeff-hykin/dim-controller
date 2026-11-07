@@ -5,6 +5,7 @@ import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
 import { type Connection, parseKey, type Topic } from "../transport.ts"
 import { FILE_REQUEST, urdfSource } from "../urdfSource.ts"
+import { SCENE_INFO, simSceneSource } from "../simSceneSource.ts"
 import type * as THREE from "three"
 import type { TfTree } from "dimos-react/three"
 import type { TfHistory } from "../tfHistory.ts"
@@ -55,10 +56,34 @@ export class LayerManager {
         }
         this.paused.subscribe(watchUrdf)
         watchUrdf()
+        // a sim that answers the UrdfManager way (no /scene_info) is listed under /scene_info once its scene has come
+        const sim = simSceneSource(connection)
+        let releaseSim: (() => void) | null = null
+        const watchSim = () => {
+            if (this.paused.get().paused) {
+                releaseSim?.()
+                releaseSim = null
+            } else {
+                releaseSim ??= sim.acquire()
+            }
+        }
+        this.paused.subscribe(watchSim)
+        watchSim()
         const modelTopic = parseKey(FILE_REQUEST)!
-        const sync = () => this.#sync(urdf.state.get().description ? [...connection.status.get().topics, modelTopic] : connection.status.get().topics)
+        const simTopic = parseKey(SCENE_INFO)!
+        const sync = () => {
+            const topics = [...connection.status.get().topics]
+            if (urdf.state.get().description) {
+                topics.push(modelTopic)
+            }
+            if (sim.state.get().data && !topics.some((topic) => topic.key === simTopic.key)) {
+                topics.push(simTopic)
+            }
+            this.#sync(topics)
+        }
         connection.status.subscribe(sync)
         urdf.state.subscribe(sync)
+        sim.state.subscribe(sync)
         // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
         this.#enabled.subscribe(() => {
             for (const entry of this.entries.get().list) {

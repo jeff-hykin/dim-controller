@@ -5,6 +5,9 @@
 import { Store } from "./store.ts"
 import type { Connection, LiveHandle, SubscribeOptions } from "./transport.ts"
 
+/** a wrap()ped connection's own connection, for what's kept per connection (core/simSceneSource.ts) */
+export const UNWRAPPED = Symbol("unwrapped connection")
+
 /** a held subscription's callback; `release()` forgets what it holds (it unsubscribed) */
 export type Gated<T> = ((message: T) => void) & { release(): void }
 
@@ -57,7 +60,7 @@ export class MessageHold {
         }
     }
 
-    /** `connection` with every subscription made through it gated (everything else is the connection's own). */
+    /** `connection` with every subscription made through it gated (everything else is the connection's own; UNWRAPPED is it). */
     wrap(connection: Connection): Connection {
         const subscribe = (key: string, options: SubscribeOptions, onMessage: Parameters<Connection["subscribe"]>[2]): LiveHandle => {
             const gated = this.gate(options.delivery === "reliable", onMessage)
@@ -71,6 +74,9 @@ export class MessageHold {
             get(target, property) {
                 if (property === "subscribe") {
                     return subscribe
+                }
+                if (property === UNWRAPPED) {
+                    return target
                 }
                 const value = Reflect.get(target, property, target)
                 return typeof value === "function" ? value.bind(target) : value

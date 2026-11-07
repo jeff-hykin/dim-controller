@@ -22,7 +22,19 @@ export interface DepthImage {
     data: Uint16Array | Float32Array | Uint8Array
 }
 
-export const isDepthTopic = (topic: Topic) => /depth/i.test(topic.name)
+/** a camera sent as H.264/H.265 frames: zenoh-gateway (zenoh-dimos-codecs >= 0.3.13) decodes each keyframe and sends it as video */
+export const COMPRESSED_VIDEO = "foxglove_msgs.CompressedVideo"
+
+export const isDepthTopic = (topic: Topic) => topic.type !== COMPRESSED_VIDEO && /depth/i.test(topic.name)
+
+/** the gateway encoding a camera topic is subscribed with: its picture, or the lossless depth encoding */
+function encodingOf(topic: Topic): string {
+    if (topic.type === COMPRESSED_VIDEO) {
+        return "dimos_lcm_compressed_video"
+    }
+    const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos_lcm_compressed_" : "dimos_lcm_"
+    return `${prefix}${isDepthTopic(topic) ? "depth" : "image"}`
+}
 
 /**
  * Whether a camera panel holds its stream: only while it's on screen. Collapsed (minimized), off screen (a shut
@@ -32,6 +44,11 @@ export const isDepthTopic = (topic: Topic) => /depth/i.test(topic.name)
 export function panelStreams(slot: { hidden: boolean; collapsed: boolean } | undefined, pageHidden: boolean): boolean {
     return !!slot && !slot.hidden && !slot.collapsed && !pageHidden
 }
+
+/** a camera view with no new picture for this long says "slow / stopped link" and drops its fps (Settings: cameraStallS) */
+export const STALL_MS = 1000
+/** stalled this long while on screen, the camera subscribes afresh (a stream lost in a reconnect or a source swap never comes back on its own), then again less and less often while it stays stalled (Settings: cameraReconnectS) */
+export const RESUBSCRIBE_MS = 3000
 
 /** a hidden tab keeps its cameras this long by default (Settings → Cameras), so switching away and back finds the picture still there */
 export const HIDDEN_GRACE_MS = 60_000
@@ -110,7 +127,7 @@ interface Source {
     /** the options the bridge subscription runs with now */
     options: SubscribeOptions
     /** the bridge subscription: calling it stops it, `update` changes its options in place */
-    stop: (() => void) & Partial<Pick<LiveHandle, "update" | "watchVideoLatency" | "videoLatency">>
+    stop: (() => void) & Partial<Pick<LiveHandle, "update" | "watchVideoLatency" | "videoLatency" | "problem">>
     /** camera panels' <video> elements timing its frames (core/videoLatency.ts), each with what stops it on the running subscription */
     watched: Map<HTMLVideoElement, () => void>
     video: Store<VideoState>
@@ -178,17 +195,16 @@ export class VideoSources {
                 frame.set({ frameId })
             }
         }
-        const prefix = topic.type === "sensor_msgs.CompressedImage" ? "dimos_lcm_compressed_" : "dimos_lcm_"
         let frames = 0
         let since = performance.now()
         source.stop = isDepthTopic(topic)
-            ? this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}depth` }, (message) => {
+            ? this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: encodingOf(topic) }, (message) => {
                 noteFrame(message)
                 if (message.decoded) {
                     depth.set({ image: message.decoded as DepthImage })
                 }
             })
-            : this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: `${prefix}image` }, (message) => {
+            : this.connection.subscribe(topic.key, { delivery: "latest", ...source.options, encoding: encodingOf(topic) }, (message) => {
                 noteFrame(message)
                 frames++
                 const now = performance.now()
@@ -208,6 +224,11 @@ export class VideoSources {
         for (const element of source.watched.keys()) {
             source.watched.set(element, source.stop.watchVideoLatency?.(element) ?? (() => {}))
         }
+    }
+
+    /** Why `topic`'s stream shows nothing (refused, or frames the gateway can't encode), else null. */
+    problem(topic: Topic): string | null {
+        return this.#sources.get(topic.key)?.stop.problem?.() ?? null
     }
 
     /** Drops `topic`'s subscription and opens it again (a fresh transceiver): a stalled stream's way back. */

@@ -21,6 +21,8 @@ export type LiveHandle = (() => void) & {
     ready(): Promise<void>
     watchVideoLatency(element: HTMLVideoElement): () => void
     videoLatency(windowMs?: number): VideoLatency | null
+    /** why nothing comes: the gateway refused it, or can't encode what arrives (its lastEncodingError); else null */
+    problem(): string | null
 }
 
 export interface Topic {
@@ -304,7 +306,7 @@ export class Connection {
         }
         // the app's own option changes show in Bandwidth Consumers as its defaults
         const update = (changes: SubscriptionUpdate) => subscription.update(changes).finally(() => this.#refreshConsumers())
-        return Object.assign(unsubscribe, { update, ready: () => subscription.ready(), watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs) })
+        return Object.assign(unsubscribe, { update, ready: () => subscription.ready(), watchVideoLatency: (element: HTMLVideoElement) => subscription.watchVideoLatency(element), videoLatency: (windowMs?: number) => subscription.videoLatency(windowMs), problem: () => subscription.problem })
     }
 
     /** The page's drops per second since the last stats poll (`secs` ago), and each stream's link drops (#sampleDrops). */
@@ -434,6 +436,11 @@ export class LiveSubscription {
     /** why the gateway refused or ended it, else null */
     get rejection(): string | null {
         return this.#handle?.state === "rejected" ? this.#handle.rejectionReason : null
+    }
+    /** the rejection, else the gateway's last error encoding what arrives (a frame it can't decode is skipped) */
+    get problem(): string | null {
+        const stats = this.#handle?.gatewayStats?.stats
+        return this.rejection ?? (Number(stats?.encodingErrors ?? 0) > 0 && stats?.lastEncodingError ? String(stats.lastEncodingError) : null)
     }
     /** The app's change (zenoh-gateway >= 0.5.1: in place); a refused update throws, so the caller can resubscribe. */
     async update(changes: SubscriptionUpdate) {

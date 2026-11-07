@@ -19,7 +19,7 @@ export interface StreamOverride {
     priorityOffset?: number
     /** 0 keeps quality and drops Hz, 1 keeps Hz and drops quality (gateway default 0.5) */
     qualityToHzTradeoff?: number
-    /** "latest" (most recent: newest only, never resent) or "reliable" (every message, in order, never shrunk) */
+    /** "latest" (most recent: newest only, never resent) or "reliable" (every message, in order; shrunk only after every other stream) */
     delivery?: "latest" | "reliable"
     maxHz?: number
     /** video only (the gateway refuses it on a data channel), bits/s */
@@ -65,9 +65,8 @@ export function defaultBandwidthPriority(type: string, name = ""): number | unde
 }
 export const DEFAULT_TRADEOFF = 0.5
 
-/** the − / + range of an override's priorityOffset; PRIORITY_LAST yields everything before any other stream gives up anything */
+/** the lowest override priorityOffset (no highest): PRIORITY_LAST yields everything before any other stream gives up anything */
 export const PRIORITY_LAST = -4
-export const PRIORITY_MAX = 3
 
 /** A bandwidthPriority as a level (log2): the default 1 is 0, 0 is PRIORITY_LAST. */
 export const levelOf = (priority: number) => (priority <= 0 ? PRIORITY_LAST : Math.round(Math.log2(priority)))
@@ -80,8 +79,8 @@ export function priorityLabel(level: number): string {
     return level > 0 ? `+${level}` : `${level}`
 }
 
-/** One step up (+1) or down (−1) from an offset, kept within PRIORITY_LAST..PRIORITY_MAX. */
-export const stepPriority = (offset: number, direction: 1 | -1) => Math.max(PRIORITY_LAST, Math.min(PRIORITY_MAX, offset + direction))
+/** One step up (+1) or down (−1) from an offset, never below PRIORITY_LAST. */
+export const stepPriority = (offset: number, direction: 1 | -1) => Math.max(PRIORITY_LAST, offset + direction)
 
 /** The bandwidthPriority a stream runs with: the page's, moved by the viewer's offset. */
 export function offsetPriority(base: number | undefined, offset: number): number {

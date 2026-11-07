@@ -1,13 +1,18 @@
-// Rendering choices that apply to every point layer: the default point style (a layer can override it), cube shading, and the
+// Rendering choices that apply to every point layer: the default point style (a layer can override it), cube shading, how
+// meshes draw (meshStyle.ts: solid or wireframe, for the simulated world and the robot model), and the
 // automatic fallback that swaps splats for cubes when they can't keep up. The materials themselves are dimos-react's.
 import type * as THREE from "three"
 
 import type { Viewer } from "dimos-react/three"
 import { persistentStore, Store } from "../store.ts"
+import type { MeshStyle } from "./meshStyle.ts"
 
 export type PointStyle = "voxel" | "splat" | "disc" | "square"
 export type CubeShade = "soft" | "sky" | "outline" | "bevel" | "memworld"
-export type ColorMode = "height" | "intensity" | "range" | "solid"
+export type ColorMode = "height" | "intensity" | "range" | "solid" | "clear" | "glass"
+/** the color choices a point layer offers ("clear": see-through grey boxes, core/render/clearVoxels.ts) */
+// ("glass": height colors on see-through cubes with bright edges, dimos-react's; /global_map's default)
+export const COLOR_MODES: [ColorMode, string][] = [["height", "by height"], ["intensity", "by intensity"], ["range", "by distance"], ["solid", "solid"], ["clear", "clear"], ["glass", "glass"]]
 
 /** A point layer's look (its settings); "default" style follows Settings → Rendering. */
 export interface PointLook {
@@ -26,7 +31,7 @@ export interface PointLook {
 }
 
 // v2: the default moved from glow to cubes, and a stored "glow" from before that shouldn't hide the new default
-export const rendering = persistentStore<{ pointStyle: PointStyle; cubeShade: CubeShade }>("lv.rendering.v2", { pointStyle: "voxel", cubeShade: "soft" })
+export const rendering = persistentStore<{ pointStyle: PointStyle; cubeShade: CubeShade; meshStyle: MeshStyle; wireframeColor: string }>("lv.rendering.v2", { pointStyle: "voxel", cubeShade: "soft", meshStyle: "solid", wireframeColor: "#ffb84d" })
 
 /** Set while splats are being drawn as cubes because frames took longer than FRAME_BUDGET_MS for a while. */
 export const splatFallback = new Store<{ active: boolean; frameMs: number }>({ active: false, frameMs: 0 })
@@ -37,9 +42,10 @@ export function resolveStyle(style: PointStyle | "default"): PointStyle {
     return chosen === "splat" && splatFallback.get().active ? "voxel" : chosen
 }
 
-/** The look dimos-react's applyLook takes: the style resolved, the global cube shading added. */
+/** The look dimos-react's applyLook takes: the style resolved, the global cube shading added ("clear" hides the points'
+ * own shader, so it keeps the height coloring there). */
 export function materialLook(look: PointLook) {
-    return { ...look, style: resolveStyle(look.style), cubeShade: rendering.get().cubeShade }
+    return { ...look, style: resolveStyle(look.style), colorMode: look.colorMode === "clear" ? "height" as const : look.colorMode, cubeShade: rendering.get().cubeShade }
 }
 
 export const FRAME_BUDGET_MS = 16

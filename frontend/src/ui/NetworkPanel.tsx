@@ -10,11 +10,12 @@ import { Fragment, type PointerEvent as ReactPointerEvent, type ReactNode, type 
 import { assignSlots, averageOf, breakdown, CONTROL, HEARTBEAT, type NetSample, nearestIndex, netSummary, niceCeil, OTHER, RESENT, RTP_HEADERS, stackOf, type StreamShare, streamTable } from "../core/netHistory.ts"
 import { useStore } from "../core/store.ts"
 import { type Consumer, parseKey } from "../core/transport.ts"
-import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf, PRIORITY_LAST, PRIORITY_MAX, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
+import { bandwidthOverrides, DEFAULT_PRIORITY, DEFAULT_TRADEOFF, heatOf, levelOf, PRIORITY_LAST, priorityLabel, setOverride, stepPriority, type StreamOverride } from "../core/bandwidth.ts"
 import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { Spread } from "./Spread.tsx"
 import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
+import { RenderStats } from "./RenderStats.tsx"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
 const SLOT_COUNT = 7
@@ -181,19 +182,19 @@ function effectiveOf(consumer: Consumer | undefined, override: StreamOverride | 
         offset: override?.priorityOffset ?? 0,
         // the page's own priority for it, as a level (0: zenoh-gateway's default)
         baseLevel: levelOf(base.bandwidthPriority ?? DEFAULT_PRIORITY),
-        // the gateway reserves a reliable stream at its measured rate and never shrinks it, so its priority does nothing
+        // the gateway shrinks a reliable stream only once every other is at 0, then by priority among the reliable ones
         reliable: !video && (override?.delivery ?? base.delivery) === "reliable",
     }
 }
 
-function PriorityStepper({ streamKey, offset, baseLevel, disabled }: { streamKey: string; offset: number; baseLevel: number; disabled: boolean }) {
+function PriorityStepper({ streamKey, offset, baseLevel, reliable }: { streamKey: string; offset: number; baseLevel: number; reliable: boolean }) {
     const name = streamName(streamKey)
     const level = offset <= PRIORITY_LAST ? PRIORITY_LAST : baseLevel + offset
     return (
-        <span className={`net-priority ${offset !== 0 ? "set" : ""}`} title={disabled ? "reliable: the gateway never shrinks it, so priority doesn't apply" : `priority ${priorityLabel(level)}: the page gives it ${priorityLabel(baseLevel)}, ${offset ? `you moved it ${priorityLabel(offset)}` : "as set"} (0: zenoh-gateway's default; when the link is short, each step up halves what it gives up, each step down doubles it; "last" gives up first)`}>
-            <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={disabled || offset <= PRIORITY_LAST} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, -1) })}>−</button>
+        <span className={`net-priority ${offset !== 0 ? "set" : ""}`} title={`priority ${priorityLabel(level)}: the page gives it ${priorityLabel(baseLevel)}, ${offset ? `you moved it ${priorityLabel(offset)}` : "as set"} (0: zenoh-gateway's default; when the link is short, each step up halves what it gives up, each step down doubles it; "last" gives up first${reliable ? "; reliable: gives up only once every other stream is at 0, then by priority among the reliable ones" : ""})`}>
+            <button type="button" className="net-step" aria-label={`Lower ${name}'s priority`} disabled={offset <= PRIORITY_LAST} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, -1) })}>−</button>
             <span className="net-priority-value" data-testid="net-priority">{priorityLabel(level)}</span>
-            <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} disabled={disabled || offset >= PRIORITY_MAX} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, 1) })}>+</button>
+            <button type="button" className="net-step" aria-label={`Raise ${name}'s priority`} onClick={() => setOverride(streamKey, { priorityOffset: stepPriority(offset, 1) })}>+</button>
         </span>
     )
 }
@@ -216,7 +217,7 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
             <div className="net-settings-body">
                 <label className="net-field">
                     <span className="net-field-name">Priority {appText(`${priorityLabel(levelOf(base.bandwidthPriority ?? DEFAULT_PRIORITY))} from the default`)}</span>
-                    <PriorityStepper streamKey={streamKey} offset={offset} baseLevel={baseLevel} disabled={reliable} />
+                    <PriorityStepper streamKey={streamKey} offset={offset} baseLevel={baseLevel} reliable={reliable} />
                 </label>
                 <div className="net-field wide">
                     <span className="net-field-name">Quality ↔ frequency {appText(String(base.qualityToHzTradeoff ?? DEFAULT_TRADEOFF))}</span>
@@ -243,7 +244,7 @@ function StreamSettings({ streamKey, consumer, override, onClose }: { streamKey:
                         onChange={(value) => !video && setOverride(streamKey, { delivery: value as "latest" | "reliable" })}
                         aria-disabled={video}
                     />
-                    <span className="net-field-note">{video ? "video is always the most recent frame" : delivery === "reliable" ? "every message, in order; never shrunk (priority doesn't apply)" : "newest only, never resent; may be thinned"}</span>
+                    <span className="net-field-note">{video ? "video is always the most recent frame" : delivery === "reliable" ? "every message, in order; shrunk only after every other stream, then by priority" : "newest only, never resent; may be thinned"}</span>
                 </div>
                 <label className="net-field">
                     <span className="net-field-name">Max rate {appText(base.maxHz === undefined ? "source rate" : `${base.maxHz} Hz`)}</span>
@@ -327,7 +328,7 @@ function ConsumersTable({ table, slots, consumers, drops, latency }: { table: St
                                     </td>
                                     <td className="net-col-video">{measured && <LatencyToggle streamKey={row.key} measured={measured} open={open} onToggle={() => toggle(row.key)} />}</td>
                                     <td className={`net-col-drops ${(drops[row.key]?.perSecond ?? 0) > 0 ? "dropping" : ""}`} title={drops[row.key] ? `${drops[row.key].total} dropped since subscribing` : "no gateway counts for it"}>{drops[row.key]?.perSecond ?? "·"}</td>
-                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} baseLevel={baseLevel} disabled={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
+                                    <td className="net-col-priority">{controllable ? <PriorityStepper streamKey={row.key} offset={offset} baseLevel={baseLevel} reliable={reliable} /> : <span className="net-priority" title="not a subscription this page makes: zenoh-gateway's default priority"><span className="net-step-spacer" /><span className="net-priority-value" data-testid="net-priority">{priorityLabel(0)}</span><span className="net-step-spacer" /></span>}</td>
                                     <td className="net-col-gear">{controllable && <button type="button" className={`net-icon-button ${tags.includes("tuned") ? "set" : ""}`} aria-label={`${streamName(row.key)} settings`} onClick={() => setEditing(row.key)}><Icon name="settings" size={15} /></button>}</td>
                                 </tr>
                                 {open && (
@@ -511,6 +512,10 @@ export function NetworkPanel({ app, onGlass }: { app: ViewerApp; onGlass: () => 
                 />
             </div>
             <ConsumersTable table={table} slots={slots} consumers={consumers} drops={drops} latency={latencyOf} />
+            <section className="net-table net-render-section">
+                <h4>Render <span className="dim">· this browser's viewer</span></h4>
+                <RenderStats app={app} />
+            </section>
             <details className="net-about">
                 <summary>About these numbers</summary>
                 <p>

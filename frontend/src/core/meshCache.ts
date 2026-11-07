@@ -1,6 +1,7 @@
 // Mesh and splat files kept in IndexedDB across reloads, the 200 used most recently. A URDF names each file as a URL
 // carrying its content hash (`package://pkg/mesh.stl?hash=<sha256>`): an entry is keyed by the URL without its query
-// and used only while its hash is the one the URDF names, so nothing stale is ever drawn. Names without a hash aren't cached.
+// and used only while its hash is the one the URDF names, so nothing stale is ever drawn. A name without one is
+// stored under the URDF text's hash instead (core/urdfSource.ts).
 // When each was last used is kept apart from the file, so marking a read doesn't rewrite a 30 MB file, and reads are
 // read-only transactions, which run side by side.
 const DB_NAME = "dim-controller-files"

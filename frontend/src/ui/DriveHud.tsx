@@ -1,8 +1,9 @@
 // Driving on screen (no arming: keys and sticks always drive). Desktop: the profile's keys lighting up as they're held,
 // over the main view while held (ui/KeyOverlay.tsx). Phone: two thumbs, a left stick that translates (forward/back, plus strafe for profiles
-// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), STOP and boost, and above STOP
+// that strafe) and a right stick that turns (plus up/down for profiles with a vertical axis), each with its speed's − / + fixed
+// above it (driving left, turning right), STOP and boost, and above STOP
 // a profile's joint control (ui/JointControl.tsx). Both show the agent's commands (POST api/drive), dry runs included.
-import { disengagedShort, disengagedText } from "./barStatus.ts"
+import { disengagedBanner, disengagedShort, disengagedText } from "./barStatus.ts"
 import { profileAxes } from "../core/gamepad.ts"
 import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
@@ -15,6 +16,8 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { popoverPosition } from "./panelDrag.ts"
 import { JointHud } from "./JointControl.tsx"
+import { Icon } from "./icons.tsx"
+import { DrivingSpeed, MaxLatencyInput, TurningSpeed } from "./DrivePanel.tsx"
 
 /** Driving disengaged by the link watch: why, and Reconnect (the only way to drive again). */
 export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
@@ -29,7 +32,25 @@ export function DisengagedNotice({ app, halt }: { app: ViewerApp; halt: DriveHal
     )
 }
 
-/** The phone's version: one pill over the top of the sticks (it takes no room, so STOP never moves); a tap reconnects. */
+/** The desktop's: floating over the panels, above the bar, so it can't be missed (the full reason is the tooltip); its cog
+ * shows Settings' max latency right there, to raise it on a slow link. */
+export function DisengagedBanner({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
+    const [editing, setEditing] = useState(false)
+    return (
+        <div className="drive-halt-banner" role="alert" data-testid="drive-halt-banner" title={disengagedText(halt)}>
+            <span>{disengagedBanner(halt)}</span>
+            {editing && <label className="drive-halt-threshold">Max latency <MaxLatencyInput app={app} /></label>}
+            <Button className="dr-btn--icon drive-halt-cog" data-testid="drive-halt-cog" pressed={editing} title="Max latency (Settings → Driving)" aria-label="Max latency setting" onClick={() => setEditing(!editing)}>
+                <Icon name="settings" size={15} />
+            </Button>
+            <Button className="reconnect-button" data-testid="reconnect-button" disabled={halt.reconnecting} onClick={() => app.reconnect()}>
+                {halt.reconnecting ? "Reconnecting…" : "Reconnect"}
+            </Button>
+        </div>
+    )
+}
+
+/** The phone's version: one pill over the top of the sticks, in place of the speeds (it takes no room, so STOP never moves); a tap reconnects. */
 function DisengagedPill({ app, halt }: { app: ViewerApp; halt: DriveHalt }) {
     const text = halt.reconnecting ? "Reconnecting…" : `${disengagedShort(halt)}${halt.reason === "latency" ? " lag" : ""} · Reconnect`
     return (
@@ -77,7 +98,15 @@ export function DriveHud({ app, mobile }: { app: ViewerApp; mobile: boolean }) {
                         thumbJoy("left", x, y)
                     }}
                 />
-                {state.halt && <DisengagedPill app={app} halt={state.halt} />}
+                {/* disengaged, the pill takes the speeds' row (nothing drives until Reconnect), so the two never overlap */}
+                {state.halt
+                    ? <DisengagedPill app={app} halt={state.halt} />
+                    : (
+                        <>
+                            <div className="hud-speed left" data-testid="hud-driving-speed"><DrivingSpeed app={app} /></div>
+                            <div className="hud-speed right" data-testid="hud-turning-speed"><TurningSpeed app={app} /></div>
+                        </>
+                    )}
                 <div className="hud-center">
                     {app.profile.joint && <JointHud app={app} />}
                     <Badge className="hud-note" data-testid="drive-readout">

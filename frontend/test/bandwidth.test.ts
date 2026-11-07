@@ -25,8 +25,8 @@ Deno.test("what changes in place is an update (null back to the default); delive
     assertEquals(withChanges({ maxHz: 2, encodeOptions: { quality: 1 } }, { maxHz: null, encodeOptions: { quality: 0.5 } }), { encodeOptions: { quality: 0.5 } })
 })
 
-Deno.test("a priority offset is levels on top of the page's own priority: +1 doubles it, last gives up first", () => {
-    assertEquals([stepPriority(0, 1), stepPriority(0, -1), stepPriority(3, 1), stepPriority(PRIORITY_LAST, -1)], [1, -1, 3, PRIORITY_LAST])
+Deno.test("a priority offset is levels on top of the page's own priority: +1 doubles it, no ceiling, last gives up first", () => {
+    assertEquals([stepPriority(0, 1), stepPriority(0, -1), stepPriority(3, 1), stepPriority(9, 1), stepPriority(PRIORITY_LAST, -1)], [1, -1, 4, 10, PRIORITY_LAST])
     assertEquals([PRIORITY_LAST, -2, 0, 1, 3].map(priorityLabel), ["last", "-2", "0", "+1", "+3"])
     // the main camera (the default 1) at +1 runs at 2; a side camera (0.5) at +1 runs at the main camera's 1
     assertEquals(applyOverride({ bandwidthPriority: 1 }, { priorityOffset: 1 }).bandwidthPriority, 2)

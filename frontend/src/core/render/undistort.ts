@@ -77,8 +77,8 @@ export class UndistortCanvas {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     }
 
-    /** Draws one picture (a playing video or a canvas) undistorted, at the source's own size. */
-    draw(source: HTMLVideoElement | HTMLCanvasElement, model: CameraModel) {
+    /** Draws one picture (a playing video, a canvas or a decoded JPEG) undistorted, at the source's own size. */
+    draw(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap, model: CameraModel) {
         const width = source instanceof HTMLVideoElement ? source.videoWidth : source.width
         const height = source instanceof HTMLVideoElement ? source.videoHeight : source.height
         if (!width || !height) {

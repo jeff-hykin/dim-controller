@@ -1,6 +1,7 @@
 // The joint control (a profile's `joint`; core/baseJoint.ts): the picked joint and its position, a select to pick
 // another, and ▲ / ▼ held to jog it. Phone: a chip and two hold buttons between the sticks; desktop: the R/F keys
-// and the 3D view's joint control section with the speed and the topic. With no joint state it says so.
+// and the 3D view's joint control section with the speed and the topic. With no joint state the section says so (the phone's
+// control hides).
 import { useEffect, useRef } from "react"
 import type { ViewerApp } from "../core/app.ts"
 import { jogPicked, movableJoints, pickJoint } from "../core/baseJoint.ts"
@@ -88,9 +89,13 @@ function JointPicker({ app, joint }: { app: ViewerApp; joint: ReturnType<typeof 
     )
 }
 
-/** Phone: the chip over ▲ ▼, in the column between the sticks. */
+/** Phone: the chip over ▲ ▼, in the column between the sticks; hidden until there's a joint to move. */
 export function JointHud({ app }: { app: ViewerApp }) {
     const joint = useJoint(app)
+    // no joints to move (no JointState yet): nothing to jog, so the column between the sticks stays clear
+    if (!joint.picked) {
+        return null
+    }
     return (
         <div className={`joint-hud ${joint.jogging ? "jogging" : ""}`} data-testid="joint-hud">
             <JointPicker app={app} joint={joint} />

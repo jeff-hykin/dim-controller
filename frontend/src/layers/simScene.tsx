@@ -1,6 +1,8 @@
-// A simulated world (dimos.scene_data.v1): a SceneData module answers a request on /scene_data_request with the
-// world's bodies, geoms, meshes, height fields, textures and lights on /scene_data. This layer asks until one answers,
-// builds the world once, and moves the bodies that move (the scripted movers) by their TF frames.
+// A simulated world: built once a sim answers, its bodies that move (the scripted movers) moved by their TF frames. A sim
+// answers the UrdfManager way (core/simSceneSource.ts: "sim_scene.json" on /render_file_request, a dimos.scene_data.v2
+// index naming STL and PNG files, all on /file_info; the layer manager shows this layer once one has come). An older sim
+// says it's there on /scene_info and answers /scene_data_request with the whole world inline (dimos.scene_data.v1) on
+// /scene_data: this layer asks that too until a scene comes.
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { disposeTree } from "../core/layers/helpers.ts"
@@ -8,14 +10,17 @@ import { decode, encode } from "../core/lcm/lcm.ts"
 import { Store, useStore } from "../core/store.ts"
 import { dimosKey, type Publisher, type Topic } from "../core/transport.ts"
 import { Field, Slider, Toggle } from "dimos-react"
-import { buildScene, type SceneData } from "../core/sceneData.ts"
+import { buildScene, type SceneData, sceneFileNames } from "../core/sceneData.ts"
+import { simSceneSource } from "../core/simSceneSource.ts"
 import { SimLighting } from "../core/simLighting.ts"
 import { bladeCount, isSoftwareRenderer, probeRendererName, windTime } from "../core/grass.ts"
 import { readLocal, writeLocal } from "../core/videoQuality.ts"
+import { rendering } from "../core/render/rendering.ts"
+import { applyMeshStyle } from "../core/render/meshStyle.ts"
 
 export const SCENE_DATA = dimosKey("/scene_data", "std_msgs.String")
 export const SCENE_DATA_REQUEST = dimosKey("/scene_data_request", "std_msgs.String")
-/** how often to ask until a SceneData module answers (the sim may start after the page) */
+/** how often to ask an older sim until it answers (the sim may start after the page) */
 const ASK_EVERY_MS = 3000
 
 export interface SimSceneSettings {
@@ -71,19 +76,39 @@ class SimSceneLayer {
     readonly root = new THREE.Group()
     #scene: ReturnType<typeof buildScene> | null = null
     #id: string | null = null
-    #stop: () => void
+    /** the TF frame the scene's coordinates are in (its scene_data's `frame`) */
+    #frame = "world"
+    #stops: (() => void)[] = []
     #asking: ReturnType<typeof setInterval>
     #requests: Publisher | null = null
     #unsubscribeGrass: () => void
+    #unsubscribeRendering: () => void
     #lighting: SimLighting
+    #source: ReturnType<typeof simSceneSource>
 
     constructor(readonly context: LayerContext, readonly topic: Topic, readonly settings: Store<SimSceneSettings>) {
         this.#lighting = new SimLighting(context.viewer.renderer)
+        // the layer manager keeps it asking
+        this.#source = simSceneSource(context.connection)
         // scene coordinates are the world frame; the layer root is re-placed in the view's fixed frame every frame
         this.root.matrixAutoUpdate = false
         settings.subscribe(() => this.#applySettings())
         this.#unsubscribeGrass = grassSettings().subscribe(() => this.#applySettings())
-        this.#stop = context.connection.subscribe(SCENE_DATA, { delivery: "reliable" }, (message) => {
+        this.#unsubscribeRendering = rendering.subscribe(() => this.#applySettings())
+        // a v2 scene: drawn when it comes, again as each of its files does
+        let shown: { data: SceneData | null; filesVersion: number } = { data: null, filesVersion: -1 }
+        const fromSource = () => {
+            const { data, filesVersion, problem } = this.#source.state.get()
+            if (problem) {
+                context.setStatus({ problem })
+            }
+            if (data && (data !== shown.data || filesVersion !== shown.filesVersion)) {
+                shown = { data, filesVersion }
+                this.#show(data)
+            }
+        }
+        this.#stops.push(this.#source.state.subscribe(fromSource))
+        this.#stops.push(context.connection.subscribe(SCENE_DATA, { delivery: "reliable" }, (message) => {
             let data: SceneData
             try {
                 data = JSON.parse(String(decode("std_msgs.String", message.bytes).data)) as SceneData
@@ -95,12 +120,14 @@ class SimSceneLayer {
                 return
             }
             this.#show(data)
-        })
+        }))
         context.setStatus({ info: "asking for the scene", problem: null })
+        fromSource()
         this.#ask()
         this.#asking = setInterval(() => this.#ask(), ASK_EVERY_MS)
     }
 
+    /** an older sim's scene, asked for until a scene (of either kind) is here */
     #ask() {
         if (this.#scene) {
             return
@@ -122,14 +149,16 @@ class SimSceneLayer {
             this.root.remove(this.#scene.root)
             disposeTree(this.#scene.root)
         }
-        this.#scene = buildScene(data)
+        this.#scene = buildScene(data, this.#source.files)
         this.#id = data.id
+        this.#frame = data.frame || "world"
         this.root.add(this.#scene.root)
         this.#lighting.light(this.#scene.root)
         this.#applySettings()
         const geoms = data.bodies.reduce((count, body) => count + body.geoms.length, 0)
         const movers = data.bodies.filter((body) => body.mocap).length
-        this.#info = `${data.id} · ${data.bodies.length} bodies · ${geoms} geoms · ${Object.keys(data.meshes).length} meshes${movers ? ` · ${movers} moving` : ""}`
+        const { loaded, wanted } = sceneFileNames(data).length ? this.#source.progress() : { loaded: 0, wanted: 0 }
+        this.#info = `${data.id} · ${data.bodies.length} bodies · ${geoms} geoms · ${Object.keys(data.meshes).length} meshes${movers ? ` · ${movers} moving` : ""}${loaded < wanted ? ` · ${loaded}/${wanted} files` : ""}`
         this.#status()
         this.context.viewer.requestRender()
     }
@@ -153,6 +182,8 @@ class SimSceneLayer {
             material.depthWrite = alpha >= 1
             mesh.visible = lowestZ(mesh) <= cutAbove
         })
+        const { meshStyle, wireframeColor } = rendering.get()
+        applyMeshStyle(scene.root, meshStyle, wireframeColor)
         for (const light of scene.lights) {
             light.visible = lights
         }
@@ -178,7 +209,7 @@ class SimSceneLayer {
                 ? ` · grass off: software GPU (${gpu()})`
                 : " · grass off"
         }
-        this.context.setStatus({ info: this.#info + note, problem: null, frame: "world" })
+        this.context.setStatus({ info: this.#info + note, problem: null, frame: this.#frame })
     }
 
     update(frame: { fixedFrame: string; now: number }) {
@@ -192,7 +223,7 @@ class SimSceneLayer {
             windTime.value = frame.now / 1000
             this.context.viewer.requestRender()
         }
-        const world = this.context.tf.lookup("world", frame.fixedFrame)
+        const world = this.context.tf.lookup(this.#frame, frame.fixedFrame)
         if (world) {
             if (!this.root.matrix.equals(world)) {
                 this.root.matrix.copy(world)
@@ -200,12 +231,12 @@ class SimSceneLayer {
                 this.context.viewer.requestRender()
             }
         }
-        // movers: their TF frame (world -> body) wins over the pose they started at
+        // movers: their TF frame (scene frame -> body) wins over the pose they started at
         for (const [name, group] of scene.bodies) {
             if (!group.userData.mocap) {
                 continue
             }
-            const pose = this.context.tf.lookup(name, "world")
+            const pose = this.context.tf.lookup(name, this.#frame)
             if (pose) {
                 const before = group.position.clone()
                 pose.decompose(group.position, group.quaternion, group.scale)
@@ -219,7 +250,8 @@ class SimSceneLayer {
     dispose() {
         clearInterval(this.#asking)
         this.#unsubscribeGrass()
-        this.#stop()
+        this.#unsubscribeRendering()
+        this.#stops.forEach((stop) => stop())
         this.#requests?.close()
         if (this.#scene) {
             disposeTree(this.#scene.root)
@@ -265,7 +297,7 @@ registerLayer<SimSceneSettings>({
     id: "sim-scene",
     label: "Simulated world",
     types: ["std_msgs.String"],
-    // a SceneData module says it's there on /scene_info (1 Hz); /scene_data itself only publishes when asked
+    // an older sim's /scene_info, or the same key the layer manager adds once a v2 scene has come
     names: ["/scene_info"],
     defaults: { opacity: 1, cutAbove: 2.5, lights: false, shadows: true },
     create: (context, topic, settings) => new SimSceneLayer(context, topic, settings),

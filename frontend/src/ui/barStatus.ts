@@ -87,6 +87,11 @@ export function disengagedText(halt: Pick<DriveHalt, "reason" | "latencyMs" | "m
         : `Disengaged: latency ${halt.latencyMs !== null ? `${halt.latencyMs} ms > ` : "over "}${halt.maxMs} ms max. Reconnect to drive.`
 }
 
+/** The desktop's floating banner over the panels ("Controls disconnected, too much latency"), beside its Reconnect. */
+export function disengagedBanner(halt: Pick<DriveHalt, "reason">): string {
+    return `Controls disconnected, ${halt.reason === "lost" ? "link lost" : "too much latency"}`
+}
+
 /** The same, a few words (a chip, a Status row). */
 export function disengagedShort(halt: Pick<DriveHalt, "reason" | "latencyMs" | "maxMs">): string {
     return halt.reason === "lost" ? "Disengaged · link lost" : `Disengaged · ${halt.latencyMs !== null ? `${halt.latencyMs} ms` : `over ${halt.maxMs} ms`}`

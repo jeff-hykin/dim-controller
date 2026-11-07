@@ -1,6 +1,6 @@
 [package]
 name = "dimos-app-server"
-version = "0.4.8"
+version = "0.4.20"
 edition = "2021"
 description = "Controller's backend for dimOS Desktop: serves the page, drives the robot and records topics to mcap"
 
@@ -22,7 +22,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "fs", "process"] }
 tokio-util = { version = "0.7", features = ["io"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br"] }
 # zenoh-gateway (Desktop's) pins 1.6.2: 1.7.0 through 1.10.1 deadlock answering the admin space
 zenoh = { version = "=1.6.2", default-features = false, features = ["transport_tcp", "transport_udp"] }
 zune-core = "0.5.3"

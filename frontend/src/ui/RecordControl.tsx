@@ -64,7 +64,7 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                     <Button
                         size="sm"
                         variant={active ? "danger" : "default"}
-                        className={`record-toggle ${active ? "recording" : ""}`}
+                        className={`record-toggle ${active ? "recording" : ""} ${busy ? "pending" : ""}`}
                         pressed={active}
                         title={status.unavailable ?? (error ? `${label}: ${error}` : label)}
                         aria-label={label}
@@ -73,10 +73,13 @@ export function RecordControl({ app }: { app: ViewerApp }) {
                         onClick={toggle}
                     >
                         <span className="record-dot" />
-                        {active
+                        {active && busy
+                            // stopping shows the moment it's pressed (the backend flushes and closes the file after): no clock running on beside it
+                            ? <span className="record-label record-pending" data-testid="record-stopping">Stopping…</span>
+                            : active
                             ? (
                                 <span className="record-live" data-testid="record-live">
-                                    <span className="record-label">{busy ? "Stopping…" : "Stop recording"}</span>
+                                    <span className="record-label">Stop recording</span>
                                     <Text mono className="record-clock">{formatClock(status.recording.seconds)}</Text>
                                     <Text mono className="record-extra">· {formatBytes(status.recording.bytes)}</Text>
                                 </span>

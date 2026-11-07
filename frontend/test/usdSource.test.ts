@@ -13,7 +13,7 @@ import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
 import { IDBFactory } from "npm:fake-indexeddb@6.0.0"
 import { Store } from "../src/core/store.ts"
 import type { Connection, ConnectionState } from "../src/core/transport.ts"
-import { resetCacheConnection } from "../src/core/meshCache.ts"
+import { cachedFile, resetCacheConnection } from "../src/core/meshCache.ts"
 import { decode } from "../src/core/lcm/lcm.ts"
 import { FILE_INFO, FILE_REQUEST, UrdfSource } from "../src/core/urdfSource.ts"
 import { installUsdParser, isUsdName, type UsdParser } from "../src/core/usd.ts"
@@ -164,6 +164,7 @@ Deno.test("a USD robot: the layer read, its mesh asked for by the plain path, dr
         assertEquals(first.description?.name, "little_arm", "the layer became the description")
         assertEquals([first.loaded, first.wanted], [1, 1])
         assertEquals(first.requests, ["*.urdf", "*.usd", MESH], "both names asked for, then the asset by the path the layer names")
+        assertEquals((await cachedFile(MESH))?.hash, HASH, "under its own content hash, not the layer's")
         // a reload: the page's connection to the database is gone, the database isn't
         resetCacheConnection()
         const second = await load()
@@ -172,14 +173,21 @@ Deno.test("a USD robot: the layer read, its mesh asked for by the plain path, dr
     })
 })
 
-Deno.test("a layer whose assets carry no hash is fetched every load, not refused", async () => {
+Deno.test("a layer whose assets carry no hash is cached under the layer's own hash, not refused", async () => {
     await withUsd(standIn(false), async () => {
         const first = await load()
         assertEquals([first.loaded, first.problem], [1, null])
+        assertEquals(first.requests, ["*.urdf", "*.usd", MESH], "nothing cached yet")
+        assertEquals((await cachedFile(MESH))?.hash === HASH, false, "nothing says what the file is, so the layer's hash keys it")
+        // a reload of the same layer: nothing identifies the file but the layer it came with, and that hasn't changed
         resetCacheConnection()
         const second = await load()
-        assertEquals(second.loaded, 1, "drawn, from the robot again")
-        assertEquals(second.requests, ["*.urdf", "*.usd", MESH], "nothing to cache by, so it's asked for again")
+        assertEquals(second.loaded, 1, "drawn again")
+        assertEquals(second.requests, ["*.urdf", "*.usd"], "from the cache, keyed by the layer's own hash")
+        // an edited layer may name edited files, so a copy kept under the old layer's hash is no longer the one it names
+        resetCacheConnection()
+        const third = await load({ layer: `${LAYER}\n# edited\n` })
+        assertEquals(third.requests, ["*.urdf", "*.usd", MESH], "asked for again")
     })
 })
 

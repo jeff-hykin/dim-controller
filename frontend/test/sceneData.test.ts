@@ -2,7 +2,7 @@
 // MuJoCo's, height fields the right way up.
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1"
 import * as THREE from "three"
-import { averageColor, buildScene, type SceneData } from "../src/core/sceneData.ts"
+import { averageColor, buildScene, type SceneData, sceneFileNames } from "../src/core/sceneData.ts"
 
 const b64 = (array: Float32Array | Uint32Array) => btoa(String.fromCharCode(...new Uint8Array(array.buffer)))
 const I: [number, number, number, number] = [0, 0, 0, 1]
@@ -118,4 +118,59 @@ Deno.test("a texture's mean color, read as sRGB", () => {
     const color = averageColor(pixels, 3).getRGB(new THREE.Color(), THREE.SRGBColorSpace)
     assertAlmostEquals(color.g, 205 / 255, 1e-4) // through linear and back
     assertAlmostEquals(color.r, 0, 1e-6)
+})
+
+Deno.test("a uniform texrepeat tiles the texture per meter of the box, as MuJoCo does", () => {
+    const pixels = btoa(String.fromCharCode(...new Uint8Array(2 * 2 * 3).fill(128)))
+    const floor: SceneData = {
+        format: "dimos.scene_data.v1",
+        id: "floor",
+        frame: "map",
+        bodies: [{
+            name: "world",
+            label: "world",
+            pos: [0, 0, 0],
+            quat: I,
+            mocap: false,
+            geoms: [
+                { name: "uniform", type: "box", size: [7, 6, 0.1], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], texture: "checker", texrepeat: [1, 1], texuniform: true },
+                { name: "per_face", type: "box", size: [7, 6, 0.1], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], texture: "checker", texrepeat: [2, 3] },
+                // MuJoCo's groundplane idiom: `type="plane" size="0 0 .05"` with a uniform material
+                { name: "ground", type: "plane", size: [0, 0, 0.05], pos: [0, 0, 0], quat: I, rgba: [1, 1, 1, 1], texture: "checker", texrepeat: [5, 5], texuniform: true },
+            ],
+            lights: [],
+        }],
+        meshes: {},
+        hfields: {},
+        textures: { checker: { width: 2, height: 2, channels: 3, pixels } },
+    }
+    const built = buildScene(floor)
+    const map = (name: string) => ((built.root.getObjectByName(name) as THREE.Mesh).material as THREE.MeshStandardMaterial).map!
+    assertEquals([map("uniform").repeat.x, map("uniform").repeat.y], [14, 12])
+    assertEquals([map("per_face").repeat.x, map("per_face").repeat.y], [2, 3])
+    assertEquals(map("uniform").wrapS, THREE.RepeatWrapping)
+    // an infinite plane has no half-extent to multiply, so it tiles over the extent it is drawn at: 0 here would
+    // stretch one texel over the whole kilometre of floor
+    const ground = map("ground")
+    assertEquals([ground.repeat.x, ground.repeat.y], [10000, 10000])
+})
+
+Deno.test("a v2 scene draws its meshes and textures from the files handed in, and leaves out a mesh not here yet", () => {
+    const v2: SceneData = {
+        ...structuredClone(scene),
+        format: "dimos.scene_data.v2",
+        meshes: { tri: { file: "sim_scene/meshes/tri.stl" } },
+        textures: { floor: { file: "sim_scene/textures/floor.png", width: 1, height: 1, channels: 3 } },
+    }
+    v2.bodies[1].geoms[0].texture = "floor"
+    assertEquals(sceneFileNames(v2), ["sim_scene/meshes/tri.stl", "sim_scene/textures/floor.png"])
+    const empty = buildScene(v2).bodies.get("terrain")!
+    assertEquals(empty.getObjectByName("tri"), undefined)
+    assertEquals(((empty.getObjectByName("ground") as THREE.Mesh).material as THREE.MeshStandardMaterial).map, null)
+    const tri = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3))
+    const files = { geometries: new Map([["sim_scene/meshes/tri.stl", tri]]), pixels: new Map([["sim_scene/textures/floor.png", new Uint8Array([10, 200, 30, 255])]]) }
+    const full = buildScene(v2, files).bodies.get("terrain")!
+    assertEquals((full.getObjectByName("tri") as THREE.Mesh).geometry, tri)
+    const map = ((full.getObjectByName("ground") as THREE.Mesh).material as THREE.MeshStandardMaterial).map as THREE.DataTexture
+    assertEquals([...(map.image.data as Uint8Array)], [10, 200, 30, 255])
 })

@@ -6,7 +6,7 @@ import * as THREE from "three"
 import { LabelPool } from "dimos-react/three"
 import { Store } from "./store.ts"
 import type { ViewerApp } from "./app.ts"
-import { MAP_FRAME, type NamedLocations, renamedLocation, withLocation, withoutLocation } from "./namedLocations.ts"
+import { type NamedLocations, renamedLocation, withLocation, withoutLocation } from "./namedLocations.ts"
 
 export interface LocationLabel {
     id: string
@@ -104,16 +104,17 @@ export class LocationLabels {
         this.#text.end()
     }
 
-    /** `point` in `frame`, re-expressed in map (the frame the module's list is in) through TF. */
-    #toMap(point: THREE.Vector3, frame: string): [number, number, number] {
-        if (frame === MAP_FRAME) {
-            return point.toArray()
+    /** `point` in `frame`, re-expressed through TF in the frame the module's list is in (as is, while the list is empty: the module re-expresses it). */
+    #inListFrame(point: THREE.Vector3, frame: string): { frame_id: string; position: [number, number, number] } {
+        const target = this.named.frame ?? frame
+        if (frame === target) {
+            return { frame_id: target, position: point.toArray() }
         }
-        const transform = this.app.tf.lookup(frame, MAP_FRAME)
+        const transform = this.app.tf.lookup(frame, target)
         if (!transform) {
-            throw new Error(`no transform from ${frame} to ${MAP_FRAME} yet`)
+            throw new Error(`no transform from ${frame} to ${target} yet`)
         }
-        return point.clone().applyMatrix4(transform).toArray()
+        return { frame_id: target, position: point.clone().applyMatrix4(transform).toArray() }
     }
 
     #taken(name: string) {
@@ -126,7 +127,7 @@ export class LocationLabels {
     async create(text: string, point: THREE.Vector3, frame = this.app.viewer.fixedFrame): Promise<{ recorded: boolean }> {
         if (this.toModule) {
             this.#taken(text)
-            await this.named.publish(withLocation(this.named.current, { label: text, frame_id: MAP_FRAME, position: this.#toMap(point, frame), orientation: [0, 0, 0, 1] }))
+            await this.named.publish(withLocation(this.named.current, { label: text, ...this.#inListFrame(point, frame), orientation: [0, 0, 0, 1] }))
             return { recorded: false }
         }
         const response = await fetch(url("api/labels"), {

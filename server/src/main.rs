@@ -102,8 +102,19 @@ fn settings_file() -> Option<PathBuf> {
 }
 
 /// The page itself is always revalidated: it names the hashed assets of its build, and the nix store's 1970 mtimes
-/// otherwise let a browser keep an old page (and the old app) for good after an update.
-async fn revalidate_html(mut response: axum::response::Response) -> axum::response::Response {
+/// otherwise let a browser keep an old page (and the old app) for good after an update. Vite's assets/ are named by
+/// their content hash, so a browser keeps those for good without asking again (a new build names new files).
+async fn revalidate_html(
+    uri: axum::http::Uri,
+    mut response: axum::response::Response,
+) -> axum::response::Response {
+    if response.status().is_success() && uri.path().contains("/assets/") {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+        return response;
+    }
     let html = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -167,8 +178,12 @@ async fn main() -> Result<()> {
     let app = api::routes()
         .router
         .with_state(api)
-        .fallback_service(tower_http::services::ServeDir::new(&frontend).fallback(
-            tower_http::services::ServeFile::new(frontend.join("index.html")),
+        // the page's own files only, compressed: its JS is MBs, most of the load time over a robot's Wi-Fi or a phone's
+        // tailnet link (the API's event streams and recording downloads stay as they are)
+        .fallback_service(tower_http::compression::Compression::new(
+            tower_http::services::ServeDir::new(&frontend).fallback(
+                tower_http::services::ServeFile::new(frontend.join("index.html")),
+            ),
         ))
         .layer(axum::middleware::map_response(revalidate_html));
     // Desktop stops an app server with SIGTERM to its process group

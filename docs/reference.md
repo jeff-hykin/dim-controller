@@ -56,14 +56,15 @@ both, and replaces the robot type's stand-in model while it's drawn ([layers/rob
   and collisions) by dimos-react's USD parser, so nothing below this — the layer, the arm view, IK, mesh loading —
   knows which one came. Neither is waited for; the first to answer wins. A layer names its meshes by plain path and
   carries each one's content hash beside it in standard USD `assetInfo` (`string version = "sha256:…"`), which dimos
-  refuses to serve a subtree without; a layer from elsewhere with no hashes loads too, its meshes simply fetched every
-  load. A build whose pinned dimos-react predates the parser asks only for `*.urdf`
+  refuses to serve a subtree without; a layer from elsewhere with no hashes loads too, its meshes cached under the
+  layer's own hash instead. A build whose pinned dimos-react predates the parser asks only for `*.urdf`
   ([core/usd.ts](../frontend/src/core/usd.ts)).
 - **Cached by hash.** A mesh named `package://<pkg>/<path>?hash=<sha256>` is kept in IndexedDB (the 200 used most
   recently, keyed by the name without its query) and used with no request while its hash is the URDF's; otherwise it's
   asked for as `<name as the URDF gives it>&have=<the cached copy's hash>` (no `&have=` with nothing cached). The
   publisher answers unless `have` is current, its reply's uri carrying the current `?hash=`, which is what gets
-  cached. A name without `?hash=` is asked for on every load and never cached ([core/meshCache.ts](../frontend/src/core/meshCache.ts)).
+  cached. A name without `?hash=` is cached under the hash of the description's own text instead, so a reload draws
+  it from the cache and it goes stale only when the description changes ([core/meshCache.ts](../frontend/src/core/meshCache.ts)).
   A USD layer's `assetInfo` hash does the same job for the same cache, keyed by the plain path: only the `?hash=` form
   can carry `&have=`, since a USD asset is served by the exact path the layer named. A file whose bytes don't match a
   `sha256:` hash is drawn but not cached.

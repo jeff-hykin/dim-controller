@@ -105,6 +105,10 @@ impl Options {
 /// The most messages per second `key` is recorded at (None = every message).
 /// Every dimos topic: what a recording takes in unless it's given keys.
 const BUS: &str = "dimos/**";
+/// dimos's named locations (dimos/mapping/relocalization): the whole list, which its module sends only on a change or
+/// when asked, so every recording takes it in and asks for it at the start (a recording is a premap with its locations)
+const NAMED_LOCATIONS_KEY: &str = "dimos/named_locations/visualization_msgs.InteractiveMarkerUpdate";
+const NAMED_LOCATIONS_REQUEST_KEY: &str = "dimos/named_locations_request/std_msgs.String";
 
 /// Whether the recorder panel has `key`'s topic unticked (lv.record.topics; default ticked).
 fn unticked(store: &Store, key: &str) -> bool {
@@ -204,6 +208,8 @@ pub struct State {
     /// the app's settings, where `Options` live (shared with api.rs)
     pub settings: Arc<Store>,
     zenoh_connect: String,
+    /// also find the local dimos on loopback (the server always; tests with their own endpoint don't)
+    scout_loopback: bool,
     session: AsyncMutex<Option<zenoh::Session>>,
     active: AsyncMutex<Option<Active>>,
     meter: AsyncMutex<Option<Meter>>,
@@ -244,8 +250,9 @@ pub fn split_key(key: &str) -> Option<(String, String)> {
 
 impl State {
     /// With settings of its own that aren't saved (tests); the app uses `with_settings`.
+    /// The tests': an endpoint given is the only link (no loopback scouting, so a dimos running here stays out of them).
     pub fn new(record_dir: PathBuf, zenoh_connect: String) -> Self {
-        Self::with_settings(record_dir, zenoh_connect, Arc::new(Store::load(None)))
+        Self { scout_loopback: false, ..Self::with_settings(record_dir, zenoh_connect, Arc::new(Store::load(None))) }
     }
 
     pub fn with_settings(record_dir: PathBuf, zenoh_connect: String, settings: Arc<Store>) -> Self {
@@ -253,6 +260,7 @@ impl State {
             record_dir,
             settings,
             zenoh_connect,
+            scout_loopback: true,
             session: AsyncMutex::new(None),
             active: AsyncMutex::new(None),
             meter: AsyncMutex::new(None),
@@ -280,23 +288,24 @@ impl State {
             return Ok(open.clone());
         }
         let mut config = zenoh::Config::default();
-        let settings: Vec<(&str, String)> = if !self.zenoh_connect.is_empty() {
-            // an explicit endpoint is the whole story: no multicast scouting of the LAN
-            vec![
-                ("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?),
-                ("scouting/multicast/enabled", "false".into()),
-            ]
-        } else {
-            // the local dimos, the way its own sessions find each other: scouting and links on loopback only. zenoh's
-            // default scouts every interface and meshes with any peer on the LAN or tailnet, whose queryables and
-            // link resets then take this session's RPC queries (dimos/rpc/...) with them
-            // (a local peer that meshes wider would otherwise gossip its remote peers here to be dialed)
-            vec![
-                ("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#.into()),
-                ("scouting/multicast/interface", serde_json::to_string(LOOPBACK_INTERFACE)?),
-                ("scouting/gossip/autoconnect", r#"{ router: [], peer: [] }"#.into()),
-            ]
-        };
+        // the local dimos, the way its own sessions find each other: scouting and links on loopback only. zenoh's
+        // default scouts every interface and meshes with any peer on the LAN or tailnet, whose queryables and
+        // link resets then take this session's RPC queries (dimos/rpc/...) with them
+        // (a local peer that meshes wider would otherwise gossip its remote peers here to be dialed)
+        let mut settings: Vec<(&str, String)> = vec![
+            ("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#.into()),
+            ("scouting/multicast/interface", serde_json::to_string(LOOPBACK_INTERFACE)?),
+            ("scouting/gossip/autoconnect", r#"{ router: [], peer: [] }"#.into()),
+        ];
+        if !self.zenoh_connect.is_empty() {
+            // Desktop's endpoint (on a robot, its own zenoh) as well, not instead: the run's workers find each other on
+            // loopback and peers don't route for peers, so a session on the endpoint alone hears only what's published
+            // through it (on the M20 GOS: the dog's topics, none of the run's own, e.g. /named_locations, the maps, the cameras)
+            settings.push(("connect/endpoints", serde_json::to_string(&[&self.zenoh_connect])?));
+            if !self.scout_loopback {
+                settings.push(("scouting/multicast/enabled", "false".into()));
+            }
+        }
         for (key, value) in settings {
             config
                 .insert_json5(key, &value)
@@ -398,7 +407,12 @@ impl State {
             logs: tailer,
             asks: asks.clone(),
         };
-        let keys = keys.map_or_else(|| vec![BUS.to_string()], with_answers);
+        let mut keys = keys.map_or_else(|| vec![BUS.to_string()], with_answers);
+        // (a start naming no keys records nothing, named locations included)
+        let named_locations = !keys.is_empty() && !unticked(&self.settings, NAMED_LOCATIONS_KEY);
+        if named_locations {
+            keys.push(NAMED_LOCATIONS_KEY.to_string());
+        }
         for key in keys {
             if !covered(&started.keys, &key) && started.keys.insert(key.clone()) {
                 match self.subscribe(&recorder, &asks, &started.seen, &key).await {
@@ -409,6 +423,9 @@ impl State {
                     }
                 }
             }
+        }
+        if named_locations {
+            let _ = self.session().await?.put(NAMED_LOCATIONS_REQUEST_KEY, asks::encode_string("")).await;
         }
         let status = recorder.status();
         *active = Some(started);
@@ -1075,6 +1092,39 @@ mod tests {
             .map(|message| message.unwrap().channel.topic.clone())
             .collect();
         assert_eq!(topics, vec!["/test_cmd"; 5]);
+        robot.close().await.unwrap();
+    }
+
+    /// Named locations are sent only on a change or when asked: a recording of other keys still asks at its start, so the
+    /// file holds the list (and can be a premap with its locations).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_recording_asks_for_the_named_locations() {
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let mut config = zenoh::Config::default();
+        config.insert_json5("listen/endpoints", &format!(r#"["tcp/127.0.0.1:{port}"]"#)).unwrap();
+        config.insert_json5("scouting/multicast/enabled", "false").unwrap();
+        let robot = zenoh::open(config).await.unwrap();
+        // the module: each request answered with its list (the bytes don't matter here)
+        let answers = robot.clone();
+        let _module = robot
+            .declare_subscriber(NAMED_LOCATIONS_REQUEST_KEY)
+            .callback(move |_| {
+                let answers = answers.clone();
+                tokio::spawn(async move { answers.put(NAMED_LOCATIONS_KEY, b"the list".to_vec()).await.unwrap() });
+            })
+            .await
+            .unwrap();
+        let dir = temp_dir("named_locations");
+        let state = Arc::new(State::new(dir.clone(), format!("tcp/127.0.0.1:{port}")));
+        let app = crate::api::test_router(state.clone());
+        let (status, body) = call(&app, "POST", "/api/recorder/start", r#"{"keys":["dimos/test_cmd/geometry_msgs.Twist"],"name":"named.mcap"}"#).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        let (status, body) = call(&app, "POST", "/api/recorder/stop", "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let bytes = std::fs::read(dir.join("named.mcap")).unwrap();
+        let topics: Vec<String> = mcap::MessageStream::new(&bytes).unwrap().map(|message| message.unwrap().channel.topic.clone()).collect();
+        assert_eq!(topics, vec!["/named_locations"]);
         robot.close().await.unwrap();
     }
 

@@ -1,9 +1,9 @@
 // Which image topic a camera panel shows: the one the viewer picked when it's on the bus, else the profile's preferred
 // camera. A saved panel whose topic isn't on the bus (another blueprint, a sim instead of the robot) follows along.
 import type { Topic } from "./transport.ts"
-import { isDepthTopic } from "./video.ts"
+import { COMPRESSED_VIDEO, isDepthTopic } from "./video.ts"
 
-export const isImage = (topic: Topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage"
+export const isImage = (topic: Topic) => topic.type === "sensor_msgs.Image" || topic.type === "sensor_msgs.CompressedImage" || topic.type === COMPRESSED_VIDEO
 
 /** The camera to show first: the profile's preferred names in order, else the first color image, else any image. */
 export function pickDefault(preferred: string[], topics: Topic[], exclude: Set<string> = new Set()): Topic | null {

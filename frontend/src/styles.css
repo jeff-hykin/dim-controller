@@ -123,7 +123,8 @@ h3.dr-h3 { display: block; margin: 14px 0 6px; }
     max-height: calc(100vh - var(--lv-bar-h) - 24px - var(--dim-inset-bottom)); overflow: auto; padding: 8px 14px 14px; box-shadow: var(--shadow-lg); }
 .mobile .record-options { bottom: auto; top: calc(56px + env(safe-area-inset-top)); max-height: calc(100vh - 72px - env(safe-area-inset-top)); }
 .mobile .record-options { left: 8px; right: 8px; width: auto; }
-.mobile .record-extra, .mobile .record-control .record-label { display: none; }
+.mobile .record-extra, .mobile .record-control .record-label:not(.record-pending) { display: none; }
+.record-toggle.pending .record-dot { animation: none; opacity: 0.5; }
 .mobile .record-control .record-split > .record-toggle { padding: 0 9px; }
 
 /* ── the workspace (ui/Workspace.tsx): every panel absolutely placed in one layer, by zone; docked panels meet edge to
@@ -550,7 +551,7 @@ h3.dr-h3.first { margin-top: 4px; }
 /* phone: two thumb zones filling the bottom of the screen, STOP between them (ui/Joystick.tsx). The zones take the
    thumb anywhere (the stick centers where it lands); nothing under them scrolls or zooms. */
 .drive-hud.mobile { left: 0; right: 0; bottom: var(--dim-inset-bottom); transform: none; border-radius: 0; padding: 0 0 env(safe-area-inset-bottom);
-    display: grid; grid-template-columns: 1fr 104px 1fr; align-items: stretch; gap: 0; height: min(40vh, 330px);
+    --hud-center: 104px; display: grid; grid-template-columns: 1fr var(--hud-center) 1fr; align-items: stretch; gap: 0; height: min(40vh, 330px);
     background: none; border: 0; box-shadow: none; backdrop-filter: none; pointer-events: none; touch-action: none;
     --stick: clamp(112px, min(33vw, 26vh), 160px); --stick-white: color-mix(in srgb, var(--fg) 40%, transparent); }
 /* a browser without color-mix (Chrome before 111, e.g. an Android 16 phone's Chrome 108) drops the declarations that use
@@ -558,6 +559,14 @@ h3.dr-h3.first { margin-top: 4px; }
 .drive-hud.mobile > .stick-zone, .hud-center > * { pointer-events: auto; }
 /* the column between the sticks only takes taps on its buttons (a camera can sit above them) */
 .drive-hud.mobile > .hud-center { pointer-events: none; }
+/* the speeds' − / +, fixed over each stick's column at the HUD's top (driving left, turning right); taps there don't drive */
+.drive-hud.mobile > .hud-speed { position: absolute; top: 4px; z-index: 1; width: calc((100% - var(--hud-center)) / 2); display: flex; justify-content: center; pointer-events: none; }
+.drive-hud.mobile > .hud-speed > .speed-stepper { pointer-events: auto; touch-action: manipulation; background: color-mix(in srgb, var(--card) 80%, transparent); border-radius: var(--radius, 8px); }
+.drive-hud.mobile > .hud-speed.left { left: 0; }
+.drive-hud.mobile > .hud-speed.right { right: 0; }
+.drive-hud.mobile > .hud-speed .speed-stepper { gap: 0; }
+.drive-hud.mobile > .hud-speed .dr-btn--icon { width: 30px; height: 34px; min-width: 0; padding: 0; }
+.drive-hud.mobile > .hud-speed .speed-value { min-width: 0; padding: 0 2px; white-space: nowrap; font-size: 10.5px; }
 .stick-zone { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; min-width: 0; }
 .dr-thumbstick-base { position: absolute; left: 50%; top: 55%; width: var(--stick); height: var(--stick); transform: translate(-50%, -50%); border-radius: 50%;
     border: 1px solid var(--border-strong); background: var(--card);
@@ -587,10 +596,13 @@ h3.dr-h3.first { margin-top: 4px; }
 /* landscape phone (useMobile.ts PHONE_LANDSCAPE): the main view fills the screen and the sticks lie over its lower
    corners, the center column stays narrow */
 @media (orientation: landscape) and (max-height: 520px) {
-    .drive-hud.mobile { height: min(62vh, 260px); --stick: clamp(104px, 38vh, 150px); grid-template-columns: 1fr min(30vw, 260px) 1fr; }
+    .app.mobile { --phone-hud-h: min(62vh, 260px); }
+    .drive-hud.mobile { height: var(--phone-hud-h); --stick: clamp(104px, 38vh, 150px); --hud-center: min(30vw, 260px); }
     /* the touch zone hugs the stick, so a drag in the main view above it orbits instead of driving */
     .drive-hud.mobile > .stick-zone { align-self: end; height: calc(var(--stick) + 16px); margin-bottom: 25px; }
     .dr-thumbstick-base { top: 50%; }
+    /* the main view runs under the sticks here: what it waits for sits in the strip above them, not under STOP */
+    .mobile .zone-stage .drive-hint .drive-hint-waiting { top: calc((100% - var(--phone-hud-h) - var(--dim-inset-bottom, 0px)) / 2); }
     .hud-center { padding-bottom: 8px; gap: 6px; }
     .app .drive-hud.mobile .stop-button { height: 44px; width: min(100%, 150px); }
     .app .drive-hud.mobile .boost-button { height: 32px; width: min(100%, 150px); }
@@ -609,8 +621,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .dr-select, .mobile .dr-input { font-size: 16px; } /* iOS zooms into anything smaller */
 .mobile .panel-tools .dr-select { font-size: 16px; }
 
-.stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(76px + var(--dim-inset-bottom)); z-index: 9; font-size: 11px; padding: 6px 9px; pointer-events: none; }
-.mobile .stats-overlay { bottom: auto; top: calc(56px + env(safe-area-inset-top)); }
+.net-render { font-size: 11px; line-height: 1.5; color: var(--muted-fg); }
 
 /* ── status panel ── */
 .status-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -843,6 +854,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .headless > .panel-tools > .panel-info { flex: 1 1 auto; }
 /* the view switch (ui/PhoneCorners.tsx): what the main view shows */
 .view-switch.dr-btn--icon { width: auto; gap: 2px; padding: 0 6px 0 9px; }
+.view-switch-label { margin-left: 4px; font-size: 13px; font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .view-menu .quality-about { font-family: var(--mono); overflow-wrap: anywhere; }
 
 /* ── Steam Deck banner (ui/SteamDeckBanner.tsx): over the top of the main view ── */
@@ -973,6 +985,9 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .action-bar { position: absolute; z-index: 8; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .action-bar-scroll { display: flex; gap: 6px; overflow-x: auto; min-width: 0; scrollbar-width: none; padding: 2px; }
 .action-bar-scroll::-webkit-scrollbar { display: none; }
+/* a finger scrolls the buttons sideways (the page's locked viewport is touch-action: none; ui/useMobile.ts lets it through), and the last one can come in from the edge */
+.action-bar-scroll { touch-action: pan-x; }
+.action-bar-scroll::after { content: ""; flex: none; width: 40vw; }
 .action-button-wrap { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .action-bar .dr-btn { flex: none; background: color-mix(in srgb, var(--card) 85%, transparent); backdrop-filter: blur(6px); }
 .action-bar-toggle.dr-btn--icon, .action-bar-edit.dr-btn--icon { width: 32px; height: 32px; padding: 0; }
@@ -1063,17 +1078,31 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .main-bar-side.right { justify-content: flex-end; }
 .main-bar-middle { display: flex; justify-content: center; }
 .main-bar .record-control { position: static; }
-.main-bar .dr-btn:not(.top-stop):not(.top-settings):not(.record-split > *), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
+.main-bar .dr-btn:not(.top-stop):not(.top-settings):not(.reconnect-button):not(.record-split > *), .main-bar .bar-chip:not(.bar-link) { border-color: transparent; background: transparent; box-shadow: none; }
 .main-bar .record-control .record-split > .dr-btn { background: transparent; }
 .main-bar .top-settings { background: transparent; border-color: var(--border-strong); }
 .main-bar .bar-chip.bar-link { background: transparent; } /* framed, over the bar's gray */
-.main-bar .dr-btn:not(.top-stop):hover, .main-bar .bar-button:hover { background: var(--hover); }
+.main-bar .dr-btn:not(.top-stop):not(.reconnect-button):hover, .main-bar .bar-button:hover { background: var(--hover); }
 .main-bar .top-settings { margin-left: 4px; }
 .app .main-bar .dr-btn.top-stop { display: inline-flex; align-items: center; gap: 10px; height: 32px; padding: 0 16px; flex: none; font: 800 14px var(--sans); letter-spacing: 0.12em;
     color: var(--primary-fg); background: var(--lv-stop); border-color: var(--lv-stop); }
 .app .main-bar .dr-btn.top-stop:hover { background: var(--lv-stop-hover); }
 .top-stop .lv-kbd { color: var(--primary-fg); background: color-mix(in srgb, var(--bg) 25%, transparent); border-color: color-mix(in srgb, var(--primary-fg) 40%, transparent); }
 .main-bar .drive-halt { display: flex; align-items: center; gap: 8px; font: 12px var(--sans); color: var(--warn); }
+/* the desktop's disengaged banner (ui/DriveHud.tsx): floats over the panels just above the bar, as loud as the phone's pill */
+.drive-halt-banner { position: absolute; left: 50%; bottom: calc(100% + 16px); transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 14px;
+    padding: 8px 8px 8px 18px; border-radius: 999px; white-space: nowrap; font: 700 14px var(--sans); color: var(--primary-fg); background: var(--lv-stop);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); animation: reconnect-pulse 1.4s infinite; pointer-events: auto; }
+.app .main-bar .drive-halt-banner .reconnect-button { height: 32px; padding: 0 16px; border-radius: 999px; font: 700 13px var(--sans); color: var(--lv-stop);
+    background: var(--primary-fg); border-color: var(--primary-fg); }
+.app .main-bar .drive-halt-banner .reconnect-button:hover { background: color-mix(in srgb, var(--primary-fg) 85%, var(--lv-stop)); }
+.app .main-bar .drive-halt-banner .reconnect-button:disabled { opacity: 0.75; }
+.app .main-bar .drive-halt-banner .drive-halt-cog { width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--primary-fg); background: transparent;
+    border-color: color-mix(in srgb, var(--primary-fg) 45%, transparent); border-radius: 999px; }
+.app .main-bar .drive-halt-banner .drive-halt-cog:hover, .app .main-bar .drive-halt-banner .drive-halt-cog[aria-pressed="true"] { background: color-mix(in srgb, var(--primary-fg) 18%, transparent); }
+.drive-halt-threshold { display: flex; align-items: center; gap: 8px; font: 600 12px var(--sans); }
+.drive-halt-threshold .number { width: 110px; }
+@keyframes reconnect-pulse { 50% { box-shadow: 0 6px 24px rgb(0 0 0 / 0.45), 0 0 0 5px color-mix(in srgb, var(--lv-stop) 35%, transparent); } }
 .top-settings { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .count-badge { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
     background: var(--primary); color: var(--primary-fg); font: 700 10.5px var(--mono); border: 2px solid var(--card); border-radius: var(--radius-pill, 9px); pointer-events: none; }
@@ -1239,3 +1268,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .app.desktop .lv-panel.zone-left { border-right-width: 2px; border-color: var(--border-strong); }
 .app.desktop .lv-panel.zone-right { border-left-width: 2px; border-color: var(--border-strong); }
 .app.desktop .lv-panel.zone-left, .app.desktop .lv-panel.zone-right, .app.desktop .lv-panel.zone-stage { border-bottom-width: 2px; border-color: var(--border-strong); }
+/* ui/BootShell.tsx: the page while the 3D chunk loads (the keys already drive) */
+.boot-shell { position: fixed; inset: 0; background: var(--bg); }
+.boot-shell-stage { position: absolute; inset: 0 0 var(--lv-bar-h) 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-dim, var(--text)); }
+.boot-shell-hint { font-size: 12px; opacity: 0.7; }

@@ -23,6 +23,8 @@ function fileInfo(uri: string, data: Uint8Array): Uint8Array {
 
 function fakeConnection(state: ConnectionState["state"] = "connected") {
     const requests: string[] = []
+    /** each subscription's options by key */
+    const options = new Map<string, unknown>()
     /** what went to the older dimos's /file_request */
     const legacyRequests: string[] = []
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
@@ -37,8 +39,9 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
     const connection = {
         client: state === "connected" ? client : null,
         status,
-        subscribe(key: string, _options: unknown, onMessage: (message: { bytes: Uint8Array }) => void) {
+        subscribe(key: string, subscribeOptions: unknown, onMessage: (message: { bytes: Uint8Array }) => void) {
             handlers.set(key, onMessage)
+            options.set(key, subscribeOptions)
             return () => handlers.delete(key)
         },
     }
@@ -48,7 +51,7 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
         status.update({ state: to })
     }
     const robotDescription = (xml: string) => handlers.get("dimos/robot_description/std_msgs.String")!({ bytes: encode("std_msgs.String", { data: xml }) })
-    return { connection: connection as unknown as Connection, requests, legacyRequests, urdf, robotDescription, connect }
+    return { connection: connection as unknown as Connection, requests, legacyRequests, urdf, robotDescription, connect, options }
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -136,5 +139,25 @@ Deno.test("a dimos without /render_file_request: an empty /file_request asks, /r
     const asked = legacyRequests.length
     await wait(600)
     assertEquals(legacyRequests.length, asked, "no more once it came")
+    release()
+})
+
+Deno.test("meshes come unreliably: one that hasn't landed is asked for again every meshRetryMs until it does", async () => {
+    const { connection, requests, urdf, options } = fakeConnection()
+    assertEquals((options.get(FILE_INFO) as { delivery?: string } | undefined)?.delivery, undefined)
+    const source = new UrdfSource(connection)
+    source.meshRetryMs = 0
+    const release = source.acquire()
+    assertEquals((options.get(FILE_INFO) as { delivery: string }).delivery, "latest")
+    urdf(`<?xml version="1.0"?><robot name="r"><link name="base_link"><visual><geometry><mesh filename="package://p/body.stl"/></geometry></visual></link></robot>`)
+    await wait(50)
+    const asks = () => requests.filter((request) => request === "package://p/body.stl").length
+    assertEquals(asks(), 1)
+    // the 1 s tick re-asks once meshRetryMs has passed
+    await wait(1100)
+    assertEquals(asks(), 2)
+    source.meshRetryMs = 60000
+    await wait(1100)
+    assertEquals(asks(), 2, "not again before meshRetryMs")
     release()
 })

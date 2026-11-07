@@ -6,12 +6,11 @@ import { useStore } from "../core/store.ts"
 import { profiles } from "../profile/index.ts"
 import { RobotIcon } from "./RobotIcon.tsx"
 import { armShading } from "./armShading.ts"
-import { Button, Disclosure, Field, Heading, NumberInput, Select, TextInput, Toggle } from "dimos-react"
+import { Button, ColorSwatch, Disclosure, Field, Heading, Select, TextInput, Toggle } from "dimos-react"
 import { useState } from "react"
 import { GamepadModal } from "./GamepadModal.tsx"
 import { gamepadSettings } from "../core/gamepad.ts"
 import { JOY_HZ, JOY_TOPIC, JOY_TYPE, joySettings } from "../core/joy.ts"
-import { maxLatencyOf } from "../core/linkWatch.ts"
 import { DriveKeyboardFold, DrivePanel, DriveProfileFold } from "./DrivePanel.tsx"
 import { SettingsFold, SettingsGroup, SettingsLink } from "./SettingsGroup.tsx"
 import { LAYOUT_SUFFIX, pickLayoutFile, saveLayoutFile } from "../core/layoutFiles.ts"
@@ -22,7 +21,10 @@ import { useTfFrames } from "./useTfFrames.ts"
 import { CamerasIn3dToggle } from "./ScenePanel.tsx"
 import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
+import { MESH_STYLES, type MeshStyle } from "../core/render/meshStyle.ts"
 import { Stepper } from "./Stepper.tsx"
+import { RESUBSCRIBE_MS, STALL_MS } from "../core/video.ts"
+import { MESH_RETRY_MS } from "../core/urdfSource.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
     const robot = useStore(app.robot)
@@ -40,14 +42,13 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
                     <SettingsFold title="Joystick topic" persistKey="lv.settings.advanced.joy">
                         <JoySettingsFields />
                     </SettingsFold>
-                    <SettingsFold title="Link safety" persistKey="lv.settings.advanced.link">
-                        <Field inline className="set-row" label="Max latency" hint="Over this latency, or when the link drops, driving stops until you press Reconnect.">
-                            <MaxLatencyInput app={app} />
-                        </Field>
-                    </SettingsFold>
                     <DriveProfileFold app={app} />
                 </>
             )}
+            {robot.type === "arm" && <h4 className="set-group-title set-advanced-title">Advanced</h4>}
+            <SettingsFold title="Robot model" persistKey="lv.settings.advanced.robotModel">
+                <RobotModelFields app={app} />
+            </SettingsFold>
             <SettingsGroup title="Layout" data-layout-files="">
                 <SettingsLink icon="download" label="Save layout" note={`panels, cameras and plots as a ${LAYOUT_SUFFIX} file`} onClick={() => saveLayoutFile()} />
                 <SettingsLink icon="upload" label="Load layout…" note={`or drop a ${LAYOUT_SUFFIX} file anywhere`} onClick={pickLayoutFile} />
@@ -56,7 +57,7 @@ export function SettingsPanel({ app }: { app: ViewerApp }) {
     )
 }
 
-/** The 3D view's cog: following, cameras in 3D, then how it draws (point style, cubes, the robot model, the view cube, stats). */
+/** The 3D view's cog: following, cameras in 3D, then how it draws (point style, cubes, meshes, the robot model, the view cube, stats). */
 export function SceneSettings({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     const render = useStore(rendering)
@@ -81,15 +82,26 @@ export function SceneSettings({ app }: { app: ViewerApp }) {
                     onChange={(cubeShade: string) => rendering.update({ cubeShade: cubeShade as CubeShade })}
                 />
             </Field>
+            <Field inline label="Meshes" title="how the simulated world and the robot model draw: solid, or wireframe (each mesh's edges, its faces hidden)">
+                <Select
+                    data-testid="mesh-style"
+                    aria-label="Meshes"
+                    value={render.meshStyle}
+                    options={MESH_STYLES}
+                    onChange={(meshStyle: string) => rendering.update({ meshStyle: meshStyle as MeshStyle })}
+                />
+            </Field>
+            {render.meshStyle === "wireframe" && (
+                <Field inline label="Wireframe color"><ColorSwatch value={render.wireframeColor} onChange={(wireframeColor: string) => rendering.update({ wireframeColor })} /></Field>
+            )}
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
             <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
-            <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to pan · Shift+drag or right-drag to orbit · scroll or pinch to zoom.</p>
         </div>
     )
 }
 
-/** A camera panel's cog: how long a hidden tab keeps its cameras. */
+/** A camera panel's cog: how long a hidden tab keeps its cameras, when one says it's slow and when it reconnects. */
 export function CameraSettings({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     return (
@@ -97,8 +109,24 @@ export function CameraSettings({ app }: { app: ViewerApp }) {
             <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
                 <Stepper label="Keep when hidden" min={0} max={300} step={15} value={view.cameraHiddenGraceS ?? 60} format={(seconds) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS) => app.settings.update({ cameraHiddenGraceS })} />
             </Field>
+            <Field inline label="Slow link after" title="a camera with no new picture for this long says &quot;slow / stopped link&quot; over the view; raise it for a camera that sends pictures rarely (e.g. one per keyframe)">
+                <Stepper label="Slow link after" min={0.5} max={30} step={0.5} value={view.cameraStallS ?? STALL_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(cameraStallS) => app.settings.update({ cameraStallS })} />
+            </Field>
+            <Field inline label="Reconnect after" title="a camera with no new picture for this long subscribes afresh (then less and less often, up to 10x this, while it stays dark)">
+                <Stepper label="Reconnect after" min={1} max={60} step={1} value={view.cameraReconnectS ?? RESUBSCRIBE_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(cameraReconnectS) => app.settings.update({ cameraReconnectS })} />
+            </Field>
             <p className="hint">Latency vs quality, fit / fill and undistort are on the camera itself.</p>
         </div>
+    )
+}
+
+/** Settings → Advanced → Robot model: how often a mesh that hasn't landed is asked for again (they come unreliably) */
+function RobotModelFields({ app }: { app: ViewerApp }) {
+    const view = useStore(app.settings)
+    return (
+        <Field inline className="set-row" label="Re-ask missing meshes" title="the robot's meshes come unreliably: one the URDF names that hasn't landed is asked for again this often (a big mesh on a slow link needs longer than it takes to arrive, or it keeps restarting)">
+            <Stepper label="Re-ask missing meshes" min={5} max={Infinity} step={5} value={view.meshRetryS ?? MESH_RETRY_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(meshRetryS) => app.settings.update({ meshRetryS })} />
+        </Field>
     )
 }
 
@@ -142,22 +170,6 @@ function JoySettingsFields() {
 }
 
 /** Settings → Max latency: saved on Enter or leaving the field, so "1" on the way to "1500" never holds driving */
-function MaxLatencyInput({ app }: { app: ViewerApp }) {
-    const saved = maxLatencyOf(useStore(app.settings).maxLatencyMs)
-    return (
-        <NumberInput
-            className="number"
-            aria-label="Max latency (ms)"
-            data-testid="max-latency"
-            min={1}
-            step={100}
-            unit="ms"
-            value={saved}
-            onChange={(value) => app.settings.update({ maxLatencyMs: Math.round(value) })}
-        />
-    )
-}
-
 /** the TF frame the 3D camera follows: the robot's by default, or any frame in the tree (refreshed while shown) */
 function FollowFramePicker({ app, frames }: { app: ViewerApp; frames: string[] }) {
     const view = useStore(app.settings)

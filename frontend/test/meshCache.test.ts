@@ -56,10 +56,10 @@ function meshInfo(uri: string, data: Uint8Array): Uint8Array {
 }
 
 const URI = "package://p/body.stl?hash=abc"
-const URDF = `<?xml version="1.0"?><robot name="r"><link name="base_link"><visual><geometry><mesh filename="${URI}"/></geometry></visual></link></robot>`
+const urdfNaming = (uri: string, name = "r") => `<?xml version="1.0"?><robot name="${name}"><link name="base_link"><visual><geometry><mesh filename="${uri}"/></geometry></visual></link></robot>`
 
 /** a page load: a UrdfSource on a fake connection, the URDF sent, the robot answering each /render_file_request with the file */
-async function load() {
+async function load(uri = URI, urdf = urdfNaming(uri)) {
     const requests: string[] = []
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
     const connection = {
@@ -68,8 +68,8 @@ async function load() {
                 put(bytes: Uint8Array) {
                     const asked = new TextDecoder().decode(bytes)
                     if (asked.includes("package://")) {
-                        requests.push(URI)
-                        const meshFile = meshInfo(URI, stl())
+                        requests.push(uri)
+                        const meshFile = meshInfo(uri, stl())
                         setTimeout(() => handlers.get(FILE_INFO)?.({ bytes: meshFile }))
                     }
                 },
@@ -84,7 +84,7 @@ async function load() {
     } as unknown as Connection
     const source = new UrdfSource(connection)
     const release = source.acquire()
-    handlers.get(FILE_INFO)!({ bytes: meshInfo("*.urdf", new TextEncoder().encode(URDF)) })
+    handlers.get(FILE_INFO)!({ bytes: meshInfo("*.urdf", new TextEncoder().encode(urdf)) })
     for (let tries = 0; tries < 100 && source.state.get().meshesLoaded < 1; tries++) {
         await wait(20)
     }
@@ -114,6 +114,17 @@ Deno.test({ name: "a file that came on the first load is drawn from the cache on
         resetCacheConnection()
         const second = await load()
         assertEquals(second, { requests: [], loaded: 1 })
+    })
+})
+
+Deno.test({ name: "a file named without a hash is cached under the URDF's text: the same URDF draws it from the cache, a changed one asks" }, async () => {
+    await withIndexedDb(async () => {
+        const unhashed = "package://p/body.stl"
+        assertEquals(await load(unhashed), { requests: [unhashed], loaded: 1 })
+        resetCacheConnection()
+        assertEquals(await load(unhashed), { requests: [], loaded: 1 })
+        resetCacheConnection()
+        assertEquals(await load(unhashed, urdfNaming(unhashed, "edited")), { requests: [unhashed], loaded: 1 })
     })
 })
 

@@ -6,13 +6,15 @@
 // more than one publisher. A dimos without UrdfManager's /render_file_request (dimos main for now) has
 // /robot_description's XML (an empty /file_request has it sent now) and meshes asked for on /file_request: both are
 // asked until a description comes, and its meshes go where it came from. Subscribed only while something uses it
-// (acquire).
+// (acquire). Replies come unreliably (most recent): the description names every file, so one not loaded is asked for
+// again every meshRetryMs (Settings → Advanced → Robot model) until it lands.
 //
-// A file the description identifies by content is kept in IndexedDB (core/meshCache.ts) and used with no request
-// while its hash is the one the description names; one with no hash is asked for each load, uncached. The two
-// descriptions say it differently: a URDF names the file `path.stl?hash=<sha256>` (and an outdated copy is asked for
-// as `&have=<the cached hash>`, which only that form can carry), a USD layer names the plain path and carries the
-// hash beside it in standard `assetInfo` (core/usd.ts), which dimos will not serve a subtree without.
+// Every file is kept in IndexedDB (core/meshCache.ts) and used with no request while its hash is the one the
+// description names. What identifies it differs: a URDF names the file `path.stl?hash=<sha256>` (and an outdated copy
+// is asked for as `&have=<the cached hash>`, which only that form can carry), a USD layer names the plain path and
+// carries the hash beside it in standard `assetInfo` (core/usd.ts), which dimos will not serve a subtree without. A
+// file the description identifies neither way is cached under the hash of the description's own text, so it is still
+// cached but goes stale only when the description changes (dimos's UrdfManager dropped ?hash= on 10-23).
 //
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
@@ -36,10 +38,11 @@ export const FILE_INFO = dimosKey("/file_info/**", "files.File")
 /** the same bytes under the older dimos's type name */
 export const LEGACY_FILE_INFO = dimosKey("/file_info/**", "files.MeshFile")
 /** files asked for at once: one reply can be several MB, so two at a time keep the link for driving and video (and a
- * burst of them loses some on the way, each then waiting out MESH_RETRY_MS) */
+ * burst of them loses some on the way, each then asked for again after meshRetryMs) */
 const MESHES_IN_FLIGHT = 2
-/** a mesh asked for this long ago without a reply is asked for again (an 8 MB STL over a 2 Mbit/s link takes ~30 s) */
-const MESH_RETRY_MS = 60000
+/** the default for how long a mesh asked for without a reply waits before it's asked for again (an 8 MB STL over a
+ * 2 Mbit/s link takes ~30 s: on a link that slow, raise it in Settings or the big ones keep restarting) */
+export const MESH_RETRY_MS = 10000
 /** a splat file is tens of MB (a 1.2M-splat home's SPZ is ~27 MB, ~2 min at 2 Mbit/s): asking again sooner would send it twice */
 const SPLAT_RETRY_MS = 600000
 /** the URDF is asked for this often until it comes: the first can go out before the subscription is open */
@@ -85,6 +88,8 @@ export class UrdfSource {
     #asked = new Map<string, number>()
     /** URI → the hash of the copy in the cache that isn't current (sent as &have=) */
     #have = new Map<string, string>()
+    /** sha256 of the description's text: the hash a file it identifies no other way is cached under */
+    #descriptionHash = ""
     #failed = new Set<string>()
     /** URIs being decoded (a splat file decodes in a worker) */
     #decoding = new Set<string>()
@@ -99,6 +104,8 @@ export class UrdfSource {
     #drawnRanks = new Set<number>()
     /** while asking for the URDF fast: the re-ask timer, and when asking slows to the 1 s tick */
     #descriptionAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
+    /** a mesh asked for this long ago without a reply is asked for again (Settings → Advanced → Robot model) */
+    meshRetryMs = MESH_RETRY_MS
 
     constructor(readonly connection: Connection) {}
 
@@ -108,7 +115,7 @@ export class UrdfSource {
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onRobotDescription(message.bytes)))
             for (const key of [FILE_INFO, LEGACY_FILE_INFO]) {
-                this.#stops.push(this.connection.subscribe(key, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onFile(message.bytes)))
+                this.#stops.push(this.connection.subscribe(key, { delivery: "latest", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onFile(message.bytes)))
             }
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
             let state = this.connection.status.get().state
@@ -225,6 +232,7 @@ export class UrdfSource {
             this.#meshRequestKey = requestKey
             this.#asked.clear()
             this.#have.clear()
+            this.#descriptionHash = ""
             this.#failed.clear()
             this.#cacheChecked = false
             const ranks = fileRanks(description)
@@ -232,12 +240,9 @@ export class UrdfSource {
             this.#descriptionAt = performance.now()
             this.#ranks = ranks
             this.#drawnRanks.clear()
-            const hashed = this.#files.filter((uri) => this.#hashOf(uri).hash).length
-            meshLog(`${kind}: ${this.#files.length} files, ${hashed} with a hash (cacheable)`)
-            if (asUsd && hashed < this.#files.length) {
-                // a layer from somewhere other than dimos may name assets with no assetInfo hash: said once, not per mesh
-                meshLog(`${this.#files.length - hashed} of this layer's files carry no assetInfo hash: fetched every load, uncached`)
-            }
+            const named = this.#files.filter((uri) => splitHash(uri).hash).length
+            const beside = this.#files.filter((uri) => !splitHash(uri).hash && this.#assetHashes.has(uri)).length
+            meshLog(`${kind}: ${this.#files.length} files, ${named} hashed in their name, ${beside} in assetInfo, the rest cached under the ${kind}'s`)
             this.state.update({ description, meshesWanted: meshUris(description).length, problem: null })
             this.#count()
             this.#loadCached(description)
@@ -248,11 +253,13 @@ export class UrdfSource {
 
     /**
      * What the description says this file's content is, for the cache: a URDF's `?hash=` in the name, or a USD
-     * layer's `assetInfo` hash beside the plain path. `base` is the cache's key either way.
+     * layer's `assetInfo` hash beside the plain path. One it identifies neither way falls back to the hash of the
+     * description's own text, so it is cached too and goes stale only when the description changes. `base` is the
+     * cache's key either way.
      */
     #hashOf(uri: string): { base: string; hash: string | null } {
         const { base, hash } = splitHash(uri)
-        return { base, hash: hash ?? this.#assetHashes.get(uri) ?? null }
+        return { base, hash: hash ?? this.#assetHashes.get(uri) ?? (this.#descriptionHash || null) }
     }
 
     #loaded = (uri: string) => this.geometries.has(uri) || this.splats.has(uri)
@@ -284,7 +291,7 @@ export class UrdfSource {
         this.#asked.delete(uri)
         meshLog(`got ${file.uri.split("/").pop()?.split("?")[0]} (${(file.data.byteLength / 1e6).toFixed(1)} MB) ${this.#since()}`)
         const known = this.#hashOf(uri)
-        // only a file the description identifies by content is cached; the reply's own hash wins when it carries one
+        // the reply's own hash wins when it carries one: the file may have changed since the description was made
         if (known.hash) {
             this.#store(known.base, reply.hash ?? known.hash, file.data.slice())
         }
@@ -339,9 +346,14 @@ export class UrdfSource {
     async #loadCached(description: RobotDescription) {
         const loads: Promise<unknown>[] = []
         const counts = { hit: 0, hitBytes: 0, stale: 0, missing: 0 }
+        const descriptionHash = await textHash(this.#text)
+        if (this.state.get().description !== description) {
+            return
+        }
+        this.#descriptionHash = descriptionHash
         await Promise.all(this.#files.map(async (uri) => {
             const { base, hash } = this.#hashOf(uri)
-            if (!hash || this.#loaded(uri)) {
+            if (this.#loaded(uri)) {
                 return
             }
             const cached = await cachedFile(base)
@@ -370,6 +382,9 @@ export class UrdfSource {
         this.#cacheChecked = true
         meshLog(`cache: ${counts.hit} hits (${(counts.hitBytes / 1e6).toFixed(1)} MB), ${counts.stale} outdated, ${counts.missing} not cached; looked up ${this.#since()}`)
         this.#askForMeshes()
+        if (!loads.length) {
+            return
+        }
         // a cached copy that didn't decode is asked for now
         await Promise.all(loads)
         this.#askForMeshes()
@@ -398,7 +413,7 @@ export class UrdfSource {
         }
         const now = Date.now()
         for (const [uri, at] of this.#asked) {
-            if (now - at > (isSplatName(uri) ? SPLAT_RETRY_MS : MESH_RETRY_MS)) {
+            if (now - at > (isSplatName(uri) ? Math.max(SPLAT_RETRY_MS, this.meshRetryMs) : this.meshRetryMs)) {
                 this.#asked.delete(uri)
             }
         }
@@ -463,4 +478,18 @@ export function urdfSource(connection: Connection): UrdfSource {
         sources.set(connection, source)
     }
     return source
+}
+
+/** The text's SHA-256, or its 64-bit FNV-1a over plain http (crypto.subtle is only there in a secure context): a cache key either way */
+async function textHash(text: string): Promise<string> {
+    const bytes = new TextEncoder().encode(text)
+    if (!globalThis.crypto?.subtle) {
+        let hash = 0xcbf29ce484222325n
+        for (const byte of bytes) {
+            hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n)
+        }
+        return `fnv1a64-${hash.toString(16).padStart(16, "0")}`
+    }
+    const digest = await crypto.subtle.digest("SHA-256", bytes)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
