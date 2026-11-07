@@ -266,7 +266,7 @@ export class UrdfSource {
     async #loadCached(description: RobotDescription) {
         const loads: Promise<unknown>[] = []
         const counts = { hit: 0, hitBytes: 0, stale: 0, missing: 0 }
-        const xmlHash = await sha256(this.#xml)
+        const xmlHash = await textHash(this.#xml)
         if (this.state.get().description !== description) {
             return
         }
@@ -397,7 +397,16 @@ export function urdfSource(connection: Connection): UrdfSource {
     return source
 }
 
-async function sha256(text: string): Promise<string> {
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+/** The text's SHA-256, or its 64-bit FNV-1a over plain http (crypto.subtle is only there in a secure context): a cache key either way */
+async function textHash(text: string): Promise<string> {
+    const bytes = new TextEncoder().encode(text)
+    if (!globalThis.crypto?.subtle) {
+        let hash = 0xcbf29ce484222325n
+        for (const byte of bytes) {
+            hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n)
+        }
+        return `fnv1a64-${hash.toString(16).padStart(16, "0")}`
+    }
+    const digest = await crypto.subtle.digest("SHA-256", bytes)
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
