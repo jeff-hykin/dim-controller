@@ -45,6 +45,11 @@ export function panelStreams(slot: { hidden: boolean; collapsed: boolean } | und
     return !!slot && !slot.hidden && !slot.collapsed && !pageHidden
 }
 
+/** a camera view with no new picture for this long says "slow / stopped link" and drops its fps (Settings: cameraStallS) */
+export const STALL_MS = 1000
+/** stalled this long while on screen, the camera subscribes afresh (a stream lost in a reconnect or a source swap never comes back on its own), then again less and less often while it stays stalled (Settings: cameraReconnectS) */
+export const RESUBSCRIBE_MS = 3000
+
 /** a hidden tab keeps its cameras this long by default (Settings → Cameras), so switching away and back finds the picture still there */
 export const HIDDEN_GRACE_MS = 60_000
 let hiddenGraceMs = HIDDEN_GRACE_MS

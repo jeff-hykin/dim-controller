@@ -39,6 +39,10 @@ export interface ViewSettings {
     viewCube: boolean
     /** how long a hidden tab keeps its cameras subscribed (s; unset: 60) */
     cameraHiddenGraceS?: number
+    /** a camera with no new picture for this long says "slow / stopped link" (s; unset: 1) */
+    cameraStallS?: number
+    /** a camera with no new picture for this long subscribes afresh, then less and less often (s; unset: 3) */
+    cameraReconnectS?: number
     /** a robot model file asked for without a reply is asked for again after this long (s; unset: 10) */
     meshRetryS?: number
 }

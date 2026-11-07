@@ -8,7 +8,7 @@ import { createPortal } from "react-dom"
 import type { ViewerApp } from "../core/app.ts"
 import { persistentStore, useStore } from "../core/store.ts"
 import { parseKey, type Topic } from "../core/transport.ts"
-import { type DepthImage, isDepthTopic, pageVisibility, panelStreams } from "../core/video.ts"
+import { type DepthImage, isDepthTopic, pageVisibility, panelStreams, RESUBSCRIBE_MS, STALL_MS } from "../core/video.ts"
 import { cameraTabs, isImage, pickDefault as pickPreferred, retargetPanels } from "../core/cameraChoice.ts"
 import { overlayTypeFor } from "../core/layers/registry.ts"
 import { decode } from "../core/lcm/lcm.ts"
@@ -35,8 +35,6 @@ import { bandwidthOverrides, setOverride } from "../core/bandwidth.ts"
 import { cameraId, isCamera, workspace } from "./workspace.ts"
 import type { CameraActions } from "./useCommands.ts"
 
-/** a camera view with no new picture for this long says "slow / stopped link" and drops its fps */
-const STALL_MS = 1000
 /** a browser that can't read the video back undistorts the camera's JPEGs, this many a second (each is a whole JPEG over the data channel) */
 const JPEG_UNDISTORT_HZ = 10
 
@@ -48,8 +46,6 @@ async function jpegCanvas(app: ViewerApp, topic: Topic): Promise<HTMLCanvasEleme
     return canvas
 }
 
-/** stalled this long while on screen, the camera subscribes afresh (a stream lost in a reconnect or a source swap never comes back on its own), then again less and less often while it stays stalled */
-const RESUBSCRIBE_MS = 3000
 
 export interface PanelState {
     id: number
@@ -225,6 +221,11 @@ function CameraPanel({ app, panel, topics, onChange }: {
     const open = panelStreams(slot, pageHidden)
     const pausedRef = useRef(paused)
     pausedRef.current = paused
+    const { cameraStallS, cameraReconnectS } = useStore(app.settings)
+    const stallMs = useRef(STALL_MS)
+    stallMs.current = (cameraStallS ?? STALL_MS / 1000) * 1000
+    const resubscribeMs = useRef(RESUBSCRIBE_MS)
+    resubscribeMs.current = (cameraReconnectS ?? RESUBSCRIBE_MS / 1000) * 1000
 
     // the stream (shared with a 3D projection of the same topic), only while the panel is open
     useEffect(() => {
@@ -279,7 +280,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         }
     }, [app, topic?.key, open])
 
-    // no new picture for STALL_MS: drop the fps and say so over the view
+    // no new picture for the stall time: drop the fps and say so over the view
     useEffect(() => {
         const element = video.current
         if (!topic || !open) {
@@ -296,9 +297,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
         if (!depth && element) {
             frameCallback = element.requestVideoFrameCallback(painted)
         }
-        // (a camera that stays dark is retried less and less often: 3 s, 6 s, ... 30 s, back to 3 s once a picture shows)
+        // (a camera that stays dark is retried less and less often: 3 s, 6 s, ... 30 s by default, back to the first once a picture shows)
         let retriedAt = performance.now()
-        let retryEvery = RESUBSCRIBE_MS
+        let retryEvery = resubscribeMs.current
         // back from a hidden tab (it paints nothing while hidden): the stall clock starts again
         const onVisibility = () => {
             if (!document.hidden) {
@@ -321,17 +322,17 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 decodedFrames = decoded
                 lastPaint.current = Math.max(lastPaint.current, now)
             }
-            if (now - drewAt > STALL_MS) {
+            if (now - drewAt > stallMs.current) {
                 lastPaint.current = retriedAt = now
             }
-            setStalled(now - lastPaint.current > STALL_MS)
+            setStalled(now - lastPaint.current > stallMs.current)
             if (lastPaint.current > retriedAt) {
-                retryEvery = RESUBSCRIBE_MS
+                retryEvery = resubscribeMs.current
                 setReconnecting(false)
             }
-            if (now - lastPaint.current > RESUBSCRIBE_MS && now - retriedAt > retryEvery && !document.hidden && !pausedRef.current) {
+            if (now - lastPaint.current > resubscribeMs.current && now - retriedAt > retryEvery && !document.hidden && !pausedRef.current) {
                 retriedAt = now
-                retryEvery = Math.min(retryEvery * 2, 10 * RESUBSCRIBE_MS)
+                retryEvery = Math.min(retryEvery * 2, 10 * resubscribeMs.current)
                 setReconnecting(true)
                 console.warn(`[cameras] ${topic.name}: no picture for ${((now - lastPaint.current) / 1000).toFixed(1)} s; resubscribing`)
                 app.video.resubscribe(topic)

@@ -23,6 +23,7 @@ import { CUBE_SHADES } from "dimos-react/three"
 import type { CubeShade, PointStyle } from "../core/render/rendering.ts"
 import { MESH_STYLES, type MeshStyle } from "../core/render/meshStyle.ts"
 import { Stepper } from "./Stepper.tsx"
+import { RESUBSCRIBE_MS, STALL_MS } from "../core/video.ts"
 import { MESH_RETRY_MS } from "../core/urdfSource.ts"
 
 export function SettingsPanel({ app }: { app: ViewerApp }) {
@@ -101,13 +102,19 @@ export function SceneSettings({ app }: { app: ViewerApp }) {
     )
 }
 
-/** A camera panel's cog: how long a hidden tab keeps its cameras. */
+/** A camera panel's cog: how long a hidden tab keeps its cameras, when one says it's slow and when it reconnects. */
 export function CameraSettings({ app }: { app: ViewerApp }) {
     const view = useStore(app.settings)
     return (
         <div className="settings-panel camera-settings">
             <Field inline label="Keep when hidden" title="a hidden tab (another tab, a minimized window) keeps its cameras subscribed this long, so coming back finds the picture still there; 0 drops them at once (saves bandwidth)">
                 <Stepper label="Keep when hidden" min={0} max={300} step={15} value={view.cameraHiddenGraceS ?? 60} format={(seconds) => (seconds ? `${seconds} s` : "off")} onChange={(cameraHiddenGraceS) => app.settings.update({ cameraHiddenGraceS })} />
+            </Field>
+            <Field inline label="Slow link after" title="a camera with no new picture for this long says &quot;slow / stopped link&quot; over the view; raise it for a camera that sends pictures rarely (e.g. one per keyframe)">
+                <Stepper label="Slow link after" min={0.5} max={30} step={0.5} value={view.cameraStallS ?? STALL_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(cameraStallS) => app.settings.update({ cameraStallS })} />
+            </Field>
+            <Field inline label="Reconnect after" title="a camera with no new picture for this long subscribes afresh (then less and less often, up to 10x this, while it stays dark)">
+                <Stepper label="Reconnect after" min={1} max={60} step={1} value={view.cameraReconnectS ?? RESUBSCRIBE_MS / 1000} format={(seconds) => `${seconds} s`} onChange={(cameraReconnectS) => app.settings.update({ cameraReconnectS })} />
             </Field>
             <p className="hint">Latency vs quality, fit / fill and undistort are on the camera itself.</p>
         </div>
