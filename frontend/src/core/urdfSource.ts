@@ -1,11 +1,19 @@
-// The robot's URDF and its meshes from dimos's UrdfManager, one per page, shared by the robot model layer and the arm
-// view: the URDF asked for as `*.urdf` on /render_file_request (on subscribing, on every connect, and every second until it
-// comes) and each mesh asked for by the full path the URDF names; every reply comes on /file_info, a name ending in .urdf
-// being the URDF (replies come in any order, possibly from more than one publisher). A dimos without UrdfManager's
-// /render_file_request (dimos main for now) has /robot_description's XML (an empty /file_request has it sent now) and meshes
-// asked for on /file_request: both are asked until a URDF comes, and its meshes go where it came from. Subscribed only while
-// something uses it (acquire). A mesh named with ?hash=<sha256> is kept in IndexedDB (core/meshCache.ts) and asked for
-// with `&have=<the cached hash>` only when that isn't the URDF's; one without a hash is asked for each load, uncached.
+// The robot's description and its meshes from dimos's UrdfManager or UsdManager, one per page, shared by the robot
+// model layer and the arm view: the description asked for as `*.urdf` and `*.usd` on /render_file_request (on
+// subscribing, on every connect, and every second until it comes) and each mesh asked for by the full path the
+// description names; every reply comes on /file_info, a name ending in .urdf being a URDF and one ending in .usd or
+// .usda a USD layer (whichever answers first wins; neither is waited for). Replies come in any order, possibly from
+// more than one publisher. A dimos without UrdfManager's /render_file_request (dimos main for now) has
+// /robot_description's XML (an empty /file_request has it sent now) and meshes asked for on /file_request: both are
+// asked until a description comes, and its meshes go where it came from. Subscribed only while something uses it
+// (acquire).
+//
+// A file the description identifies by content is kept in IndexedDB (core/meshCache.ts) and used with no request
+// while its hash is the one the description names; one with no hash is asked for each load, uncached. The two
+// descriptions say it differently: a URDF names the file `path.stl?hash=<sha256>` (and an outdated copy is asked for
+// as `&have=<the cached hash>`, which only that form can carry), a USD layer names the plain path and carries the
+// hash beside it in standard `assetInfo` (core/usd.ts), which dimos will not serve a subtree without.
+//
 // Splat files (core/splats.ts) come the same way and are kept apart from the meshes.
 import type * as THREE from "three"
 import { decode, encode } from "./lcm/lcm.ts"
@@ -15,6 +23,7 @@ import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/t
 import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
 import type { RobotDescription } from "./robotDescription.ts"
+import { isUsdName, USD_REQUEST, usdAssetHashes, usdParser } from "./usd.ts"
 
 export const FILE_REQUEST = dimosKey("/render_file_request", "std_msgs.String")
 /** the older dimos's: the URDF on /robot_description, meshes asked for on /file_request */
@@ -58,7 +67,14 @@ export class UrdfSource {
     readonly geometries = new Map<string, THREE.BufferGeometry>()
     /** loaded splat files by URI, likewise */
     readonly splats = new Map<string, SplatAsset>()
-    #xml = ""
+    /** the description's text as it came (URDF XML or a USD layer), so the same one isn't parsed twice */
+    #text = ""
+    /** a USD layer's `assetInfo` hashes: the file's path as the layer names it → "sha256:…" (empty for a URDF) */
+    #assetHashes = new Map<string, string>()
+    /** said once: a USD layer came that this build can't read */
+    #saidNoUsd = false
+    /** which kind of description is in use: the first that came, the other kind then being ignored */
+    #kind: "URDF" | "USD" | null = null
     #users = 0
     #stops: (() => void)[] = []
     /** request publishers by key */
@@ -78,11 +94,11 @@ export class UrdfSource {
     /** the URDF's files in the order they're wanted (fileRanks) */
     #files: string[] = []
     /** for the console: when the URDF came (performance.now()), each file's rank, the ranks logged as drawn */
-    #urdfAt = 0
+    #descriptionAt = 0
     #ranks = new Map<string, number>()
     #drawnRanks = new Set<number>()
     /** while asking for the URDF fast: the re-ask timer, and when asking slows to the 1 s tick */
-    #urdfAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
+    #descriptionAsk: { timer: ReturnType<typeof setInterval>; until: number } | null = null
 
     constructor(readonly connection: Connection) {}
 
@@ -92,18 +108,18 @@ export class UrdfSource {
             // the model loads once, behind everything live
             this.#stops.push(this.connection.subscribe(ROBOT_DESCRIPTION, { delivery: "latest" }, (message) => this.#onRobotDescription(message.bytes)))
             for (const key of [FILE_INFO, LEGACY_FILE_INFO]) {
-                this.#stops.push(this.connection.subscribe(key, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onMesh(message.bytes)))
+                this.#stops.push(this.connection.subscribe(key, { delivery: "reliable", compress: "zstd", priority: Priority.BACKGROUND, bandwidthPriority: 0.2 }, (message) => this.#onFile(message.bytes)))
             }
             this.#timer = setInterval(() => this.#askForMeshes(), 1000)
             let state = this.connection.status.get().state
             this.#stops.push(this.connection.status.subscribe(() => {
                 const now = this.connection.status.get().state
                 if (now === "connected" && state !== "connected" && state !== "degraded") {
-                    this.#askForUrdf()
+                    this.#askForDescription()
                 }
                 state = now
             }))
-            this.#askForUrdf()
+            this.#askForDescription()
         }
         let released = false
         return () => {
@@ -114,7 +130,7 @@ export class UrdfSource {
             if (--this.#users === 0) {
                 this.#stops.splice(0).forEach((stop) => stop())
                 clearInterval(this.#timer!)
-                this.#stopAskingForUrdf()
+                this.#stopAskingForDescription()
                 this.#requests.forEach((publisher) => publisher.close())
                 this.#requests.clear()
                 this.#asked.clear()
@@ -122,32 +138,38 @@ export class UrdfSource {
         }
     }
 
-    /** Asks for the URDF now, again every URDF_ASK_MS for URDF_ASK_FOR_MS (then the 1 s tick asks) until it comes. */
-    #askForUrdf() {
-        this.#stopAskingForUrdf()
+    /** Asks for the description now, again every URDF_ASK_MS for URDF_ASK_FOR_MS (then the 1 s tick asks) until it comes. */
+    #askForDescription() {
+        this.#stopAskingForDescription()
         const ask = () => {
-            if (Date.now() > this.#urdfAsk!.until) {
-                this.#stopAskingForUrdf()
+            if (Date.now() > this.#descriptionAsk!.until) {
+                this.#stopAskingForDescription()
                 return
             }
-            this.#putUrdfRequest()
+            this.#putDescriptionRequests()
         }
-        this.#urdfAsk = { timer: setInterval(ask, URDF_ASK_MS), until: Date.now() + URDF_ASK_FOR_MS }
+        this.#descriptionAsk = { timer: setInterval(ask, URDF_ASK_MS), until: Date.now() + URDF_ASK_FOR_MS }
         ask()
     }
 
-    #putUrdfRequest() {
+    /** Both names at once: UrdfManager answers *.urdf, UsdManager *.usd, and whichever answers first is the robot's. */
+    #putDescriptionRequests() {
         try {
-            this.#publisher(FILE_REQUEST)?.put(encode("std_msgs.String", { data: URDF_REQUEST }))
+            const requests = this.#publisher(FILE_REQUEST)
+            requests?.put(encode("std_msgs.String", { data: URDF_REQUEST }))
+            // nothing can be done with a layer this build can't read, so it isn't asked for
+            if (usdParser()) {
+                requests?.put(encode("std_msgs.String", { data: USD_REQUEST }))
+            }
             this.#publisher(LEGACY_FILE_REQUEST)?.put(encode("std_msgs.String", { data: "" }))
         } catch {
             // not open yet: the next one goes
         }
     }
 
-    #stopAskingForUrdf() {
-        clearInterval(this.#urdfAsk?.timer)
-        this.#urdfAsk = null
+    #stopAskingForDescription() {
+        clearInterval(this.#descriptionAsk?.timer)
+        this.#descriptionAsk = null
     }
 
     #publisher(key: string): Publisher | null {
@@ -160,21 +182,46 @@ export class UrdfSource {
 
     #onRobotDescription(bytes: Uint8Array) {
         try {
-            this.#onUrdf(String(decode("std_msgs.String", bytes).data ?? ""), LEGACY_FILE_REQUEST)
+            this.#onDescription(String(decode("std_msgs.String", bytes).data ?? ""), LEGACY_FILE_REQUEST)
         } catch (error) {
             this.state.update({ problem: `/robot_description isn't a std_msgs.String: ${error}` })
         }
     }
 
-    #onUrdf(xml: string, requestKey: string) {
-        this.#stopAskingForUrdf()
-        // nothing yet (or an empty one) isn't a URDF
-        if (xml === this.#xml || !xml) {
+    /**
+     * A description that arrived, as a URDF or as a USD layer: the same RobotDescription either way, so only the
+     * parsing and where the files' hashes come from differ. `name` is what the reply was called, which decides
+     * nothing on its own — the layer's own `#usda` header does.
+     */
+    #onDescription(text: string, requestKey: string, name = "") {
+        this.#stopAskingForDescription()
+        // nothing yet (or an empty one) isn't a description
+        if (text === this.#text || !text) {
+            return
+        }
+        const usd = usdParser()
+        const asUsd = usd ? usd.isUsda(text) : false
+        if (!asUsd && isUsdName(name)) {
+            // a layer this build can't read (another page asked for it, or its dimos-react predates the parser):
+            // nothing is wrong with the page, the URDF request is still out, so this is one console line and no more
+            if (!this.#saidNoUsd) {
+                this.#saidNoUsd = true
+                meshLog(usd ? `${name} came but has no #usda header: ignored` : `${name} came, but this build's dimos-react has no USD parser: ignored`)
+            }
+            return
+        }
+        const kind = asUsd ? "USD" : "URDF"
+        if (this.#kind && this.#kind !== kind) {
+            // a blueprint running both managers answers both names: the one that got here first is the robot's, and
+            // swapping descriptions would throw away everything loaded for nothing (they describe the same robot)
+            meshLog(`${kind} came after ${this.#kind}: ignored, the first description is the one in use`)
             return
         }
         try {
-            const description = parseUrdf(xml)
-            this.#xml = xml
+            const description = asUsd ? usd!.parseUsda(text) : parseUrdf(text)
+            this.#text = text
+            this.#kind = kind
+            this.#assetHashes = asUsd ? usdAssetHashes(text, usd!) : new Map()
             this.#meshRequestKey = requestKey
             this.#asked.clear()
             this.#have.clear()
@@ -182,21 +229,35 @@ export class UrdfSource {
             this.#cacheChecked = false
             const ranks = fileRanks(description)
             this.#files = meshUris(description).sort((a, b) => ranks.get(a)! - ranks.get(b)!)
-            this.#urdfAt = performance.now()
+            this.#descriptionAt = performance.now()
             this.#ranks = ranks
             this.#drawnRanks.clear()
-            meshLog(`URDF: ${this.#files.length} files, ${this.#files.filter((uri) => splitHash(uri).hash).length} with a hash (cacheable)`)
+            const hashed = this.#files.filter((uri) => this.#hashOf(uri).hash).length
+            meshLog(`${kind}: ${this.#files.length} files, ${hashed} with a hash (cacheable)`)
+            if (asUsd && hashed < this.#files.length) {
+                // a layer from somewhere other than dimos may name assets with no assetInfo hash: said once, not per mesh
+                meshLog(`${this.#files.length - hashed} of this layer's files carry no assetInfo hash: fetched every load, uncached`)
+            }
             this.state.update({ description, meshesWanted: meshUris(description).length, problem: null })
             this.#count()
             this.#loadCached(description)
         } catch (error) {
-            this.state.update({ problem: `the URDF: ${error}` })
+            this.state.update({ problem: `the ${kind}: ${error}` })
         }
+    }
+
+    /**
+     * What the description says this file's content is, for the cache: a URDF's `?hash=` in the name, or a USD
+     * layer's `assetInfo` hash beside the plain path. `base` is the cache's key either way.
+     */
+    #hashOf(uri: string): { base: string; hash: string | null } {
+        const { base, hash } = splitHash(uri)
+        return { base, hash: hash ?? this.#assetHashes.get(uri) ?? null }
     }
 
     #loaded = (uri: string) => this.geometries.has(uri) || this.splats.has(uri)
 
-    #onMesh(bytes: Uint8Array) {
+    #onFile(bytes: Uint8Array) {
         const description = this.state.get().description
         let file: ReturnType<typeof decodeMeshFile>
         try {
@@ -205,14 +266,15 @@ export class UrdfSource {
             this.state.update({ problem: `/file_info: ${error}` })
             return
         }
-        if (file.uri.endsWith(".urdf")) {
-            this.#onUrdf(new TextDecoder().decode(file.data), FILE_REQUEST)
+        if (file.uri.endsWith(".urdf") || isUsdName(file.uri)) {
+            this.#onDescription(new TextDecoder().decode(file.data), FILE_REQUEST, file.uri)
             return
         }
         if (!description) {
             return
         }
-        // the URDF's name for it: the same URL, its ?hash= possibly newer than the URDF's (the file changed since)
+        // the description's name for it: the same URL, its ?hash= possibly newer than the description's (the file
+        // changed since). A USD layer names the plain path, so there its name and the reply's are the same string.
         const reply = splitHash(file.uri)
         const uri = meshUris(description).find((each) => each === file.uri || (reply.hash && splitHash(each).base === reply.base))
         // another page's reply, or one already loaded
@@ -220,12 +282,33 @@ export class UrdfSource {
             return
         }
         this.#asked.delete(uri)
-        meshLog(`got ${file.uri.split("/").pop()?.split("?")[0]} (${(file.data.byteLength / 1e6).toFixed(1)} MB) ${this.#sinceUrdf()}`)
-        if (reply.hash && splitHash(uri).hash) {
-            storeFile(reply.base, reply.hash, file.data.slice())
+        meshLog(`got ${file.uri.split("/").pop()?.split("?")[0]} (${(file.data.byteLength / 1e6).toFixed(1)} MB) ${this.#since()}`)
+        const known = this.#hashOf(uri)
+        // only a file the description identifies by content is cached; the reply's own hash wins when it carries one
+        if (known.hash) {
+            this.#store(known.base, reply.hash ?? known.hash, file.data.slice())
         }
         this.#load(uri, file.data)
         this.#askForMeshes()
+    }
+
+    /**
+     * Caches a file under the hash the description gave it, checking the bytes first when that hash says what it is
+     * (`sha256:<hex>`, the form USD's assetInfo carries): a file that changed since the description was made would
+     * otherwise be kept under the old file's hash and drawn from the cache for every later load. A URDF's bare
+     * `?hash=` value doesn't say what it is of, so it's taken as given.
+     */
+    async #store(base: string, hash: string, data: Uint8Array) {
+        const [algorithm, hex] = hash.split(":")
+        if (algorithm === "sha256" && hex && globalThis.crypto?.subtle) {
+            const digest = await crypto.subtle.digest("SHA-256", data as unknown as ArrayBuffer)
+            const got = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+            if (got !== hex) {
+                meshLog(`${base.split("/").pop()} isn't what the description says it is (sha256 ${got.slice(0, 12)}…, not ${hex.slice(0, 12)}…): drawn, not cached`)
+                return
+            }
+        }
+        storeFile(base, hash, data)
     }
 
     /** Turns a file's bytes into a mesh or splats (splats decode off the main thread). */
@@ -239,7 +322,7 @@ export class UrdfSource {
             } else {
                 this.geometries.set(uri, meshGeometry(uri, data))
             }
-            meshLog(`decoded ${uri.split("/").pop()?.split("?")[0]} in ${Math.round(performance.now() - started)} ms, ${this.#sinceUrdf()}`)
+            meshLog(`decoded ${uri.split("/").pop()?.split("?")[0]} in ${Math.round(performance.now() - started)} ms, ${this.#since()}`)
         } catch (error) {
             this.#failed.add(uri)
             this.state.update({ problem: error instanceof StaleBuildError ? error.message : `${uri}: ${error}` })
@@ -251,13 +334,13 @@ export class UrdfSource {
         return true
     }
 
-    /** Looks every hashed file up in the cache at once, using each whose hash is the URDF's as soon as it's read (the
-     * robot's first); the rest are asked for (an outdated copy's hash as &have=) once every lookup is done. */
+    /** Looks every hashed file up in the cache at once, using each whose hash is the description's as soon as it's read
+     * (the robot's first); the rest are asked for (an outdated copy's hash as &have=) once every lookup is done. */
     async #loadCached(description: RobotDescription) {
         const loads: Promise<unknown>[] = []
         const counts = { hit: 0, hitBytes: 0, stale: 0, missing: 0 }
         await Promise.all(this.#files.map(async (uri) => {
-            const { base, hash } = splitHash(uri)
+            const { base, hash } = this.#hashOf(uri)
             if (!hash || this.#loaded(uri)) {
                 return
             }
@@ -272,7 +355,11 @@ export class UrdfSource {
                 loads.push(this.#load(uri, cached.data).then((loaded) => loaded || this.#failed.delete(uri)))
             } else if (cached) {
                 counts.stale++
-                this.#have.set(uri, cached.hash)
+                // only a name that already carries a query can carry &have= as well: dimos serves a USD layer's
+                // assets by the exact path the layer named, and anything appended makes it no longer that path
+                if (splitHash(uri).hash) {
+                    this.#have.set(uri, cached.hash)
+                }
             } else {
                 counts.missing++
             }
@@ -281,7 +368,7 @@ export class UrdfSource {
             return
         }
         this.#cacheChecked = true
-        meshLog(`cache: ${counts.hit} hits (${(counts.hitBytes / 1e6).toFixed(1)} MB), ${counts.stale} outdated, ${counts.missing} not cached; looked up ${this.#sinceUrdf()}`)
+        meshLog(`cache: ${counts.hit} hits (${(counts.hitBytes / 1e6).toFixed(1)} MB), ${counts.stale} outdated, ${counts.missing} not cached; looked up ${this.#since()}`)
         this.#askForMeshes()
         // a cached copy that didn't decode is asked for now
         await Promise.all(loads)
@@ -296,15 +383,15 @@ export class UrdfSource {
             const files = this.#files.filter((uri) => this.#ranks.get(uri) === rank)
             if (files.length && !this.#drawnRanks.has(rank) && files.every(this.#loaded)) {
                 this.#drawnRanks.add(rank)
-                meshLog(`${name} ready (${files.length} files) ${this.#sinceUrdf()}`)
+                meshLog(`${name} ready (${files.length} files) ${this.#since()}`)
             }
         }
     }
 
     #askForMeshes() {
         const description = this.state.get().description
-        if (!description && this.#users && !this.#urdfAsk) {
-            this.#putUrdfRequest()
+        if (!description && this.#users && !this.#descriptionAsk) {
+            this.#putDescriptionRequests()
         }
         if (!description || !this.connection.client || !this.#users || !this.#cacheChecked) {
             return
@@ -321,7 +408,7 @@ export class UrdfSource {
             const have = this.#have.get(uri)
             try {
                 requests.put(encode("std_msgs.String", { data: have ? `${uri}&have=${have}` : uri }))
-                meshLog(`asked for ${uri.split("/").pop()?.split("?")[0]}${have ? " (cached copy outdated)" : ""} ${this.#sinceUrdf()}`)
+                meshLog(`asked for ${uri.split("/").pop()?.split("?")[0]}${have ? " (cached copy outdated)" : ""} ${this.#since()}`)
                 this.#asked.set(uri, now)
             } catch {
                 // not open yet: the next tick asks
@@ -330,7 +417,7 @@ export class UrdfSource {
         }
     }
 
-    #sinceUrdf = () => `${Math.round(performance.now() - this.#urdfAt)} ms after the URDF`
+    #since = () => `${Math.round(performance.now() - this.#descriptionAt)} ms after the description`
 
     /** a layer instance starts or stops drawing the model */
     drawing(change: 1 | -1) {

@@ -40,7 +40,7 @@ to the fixed frame is not drawn; the layer list says why.
 | `tf2_msgs.TFMessage` | frame axes, names and parent links |
 | `sensor_msgs.Image`, `CompressedImage` | camera panels; optionally projected into 3D (frustum + picture, from `CameraInfo`) |
 | `vision_msgs.Detection2DArray`, `Detection2D`, `BoundingBox2DArray` | boxes over a camera panel |
-| `files.File` on `/file_info` (or `std_msgs.String` on `/robot_description`) | the robot's own model from its URDF (below) |
+| `files.File` on `/file_info` (or `std_msgs.String` on `/robot_description`) | the robot's own model from its URDF or USD layer (below) |
 
 **Robot model (URDF).** When a blueprint runs dimos's `UrdfManager`, the robot is drawn from its URDF, for any robot:
 the URDF is asked for as `*.urdf` on `/render_file_request`, then each mesh by the name the URDF gives it, and each
@@ -51,11 +51,22 @@ visuals at their URDF origins. The layer ("Robot model (URDF)") turns on by itse
 both, and replaces the robot type's stand-in model while it's drawn ([layers/robotModel.tsx](../frontend/src/layers/robotModel.tsx),
 [core/urdfSource.ts](../frontend/src/core/urdfSource.ts)).
 
+- **USD as well as URDF.** `*.usd` is asked for beside `*.urdf`, and whichever a robot answers is the description:
+  dimos's `UsdManager` answers with its stage as a `.usda` layer, read into the same model (its links, joints, visuals
+  and collisions) by dimos-react's USD parser, so nothing below this — the layer, the arm view, IK, mesh loading —
+  knows which one came. Neither is waited for; the first to answer wins. A layer names its meshes by plain path and
+  carries each one's content hash beside it in standard USD `assetInfo` (`string version = "sha256:…"`), which dimos
+  refuses to serve a subtree without; a layer from elsewhere with no hashes loads too, its meshes simply fetched every
+  load. A build whose pinned dimos-react predates the parser asks only for `*.urdf`
+  ([core/usd.ts](../frontend/src/core/usd.ts)).
 - **Cached by hash.** A mesh named `package://<pkg>/<path>?hash=<sha256>` is kept in IndexedDB (the 200 used most
   recently, keyed by the name without its query) and used with no request while its hash is the URDF's; otherwise it's
   asked for as `<name as the URDF gives it>&have=<the cached copy's hash>` (no `&have=` with nothing cached). The
   publisher answers unless `have` is current, its reply's uri carrying the current `?hash=`, which is what gets
   cached. A name without `?hash=` is asked for on every load and never cached ([core/meshCache.ts](../frontend/src/core/meshCache.ts)).
+  A USD layer's `assetInfo` hash does the same job for the same cache, keyed by the plain path: only the `?hash=` form
+  can carry `&have=`, since a USD asset is served by the exact path the layer named. A file whose bytes don't match a
+  `sha256:` hash is drawn but not cached.
 - **Gaussian splats.** A visual whose mesh is a splat file (`.spz`, `.splat`, `.ksplat`, `.sog`, or a `.ply` with
   `f_dc_0`/`scale_0` properties) arrives the same way and is drawn with [Spark](https://sparkjs.dev) at the link's pose,
   its URDF origin and scale applied ([core/splats.ts](../frontend/src/core/splats.ts); Spark draws on three's WebGL
