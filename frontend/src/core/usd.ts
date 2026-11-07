@@ -17,8 +17,8 @@ export interface UsdParser {
     isUsda(text: string): boolean
     /** the layer as the same RobotDescription parseUrdf gives; throws when the text is not a USD layer */
     parseUsda(text: string): RobotDescription
-    /** every asset path the layer names, as it authored them */
-    usdaMeshUris(text: string): string[]
+    /** every asset path the layer names, as it authored them (the app reads them off the description instead) */
+    usdaMeshUris?(text: string): string[]
     /**
      * Each asset path (as authored) to the content hash the layer identifies it by: USD's own
      * `assetInfo = { string version = "sha256:<hex>" }`. A path the layer leaves unhashed is absent.
@@ -40,7 +40,7 @@ export function isUsdName(name: string): boolean {
 }
 
 const fromBundle = three as unknown as Partial<UsdParser>
-let parser: UsdParser | null = typeof fromBundle.isUsda === "function" && typeof fromBundle.parseUsda === "function" && typeof fromBundle.usdaMeshUris === "function" ? fromBundle as UsdParser : null
+let parser: UsdParser | null = typeof fromBundle.isUsda === "function" && typeof fromBundle.parseUsda === "function" ? fromBundle as UsdParser : null
 
 /** The USD parser this build has, or null when its dimos-react predates it (then nothing asks for USD). */
 export function usdParser(): UsdParser | null {
