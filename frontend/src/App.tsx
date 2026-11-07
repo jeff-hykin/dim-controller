@@ -25,7 +25,6 @@ import { useGamepad } from "./ui/useGamepad.ts"
 import { SteamDeckBanner } from "./ui/SteamDeckBanner.tsx"
 import { ArmHud } from "./ui/ArmHud.tsx"
 import { useLockedViewport, useMobile } from "./ui/useMobile.ts"
-import { StatsOverlay } from "./ui/StatsOverlay.tsx"
 import { SceneMenu } from "./ui/SceneMenu.tsx"
 import { ScenePanel } from "./ui/ScenePanel.tsx"
 import { SnapshotGallery } from "./ui/SnapshotGallery.tsx"
@@ -102,7 +101,6 @@ export function App({ core }: { core?: DriveCore }) {
                 {app && <ActionBar api={api} />}
                 {app && <GlassWindow app={app} />}
                 {app && <Overlays app={app} api={api} cameras={cameraActions} />}
-                {app && <StatsOverlay app={app} />}
                 <SteamDeckBanner />
                 {app && <SceneMenu app={app} />}
                 {app && <SettingsDrawer app={app} api={api} />}

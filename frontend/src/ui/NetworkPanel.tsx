@@ -15,6 +15,7 @@ import { Button, NumberInput, Segmented, Slider, Toggle } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { Spread } from "./Spread.tsx"
 import { gatewayVideoLatency, type GatewayVideoLatency, latencyStages, slowestVideo, spreadText, type VideoLatency } from "../core/videoLatency.ts"
+import { RenderStats } from "./RenderStats.tsx"
 
 /** colour slots (styles.css --net-1..7); a stream past them is drawn with "other" */
 const SLOT_COUNT = 7
@@ -511,6 +512,10 @@ export function NetworkPanel({ app, onGlass }: { app: ViewerApp; onGlass: () => 
                 />
             </div>
             <ConsumersTable table={table} slots={slots} consumers={consumers} drops={drops} latency={latencyOf} />
+            <section className="net-table net-render-section">
+                <h4>Render <span className="dim">· this browser's viewer</span></h4>
+                <RenderStats app={app} />
+            </section>
             <details className="net-about">
                 <summary>About these numbers</summary>
                 <p>

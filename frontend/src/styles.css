@@ -621,8 +621,7 @@ html.locked-viewport, html.locked-viewport body { touch-action: none; overscroll
 .mobile .dr-select, .mobile .dr-input { font-size: 16px; } /* iOS zooms into anything smaller */
 .mobile .panel-tools .dr-select { font-size: 16px; }
 
-.stats-overlay { position: absolute; left: calc(12px + var(--dim-inset-left)); bottom: calc(76px + var(--dim-inset-bottom)); z-index: 9; font-size: 11px; padding: 6px 9px; pointer-events: none; }
-.mobile .stats-overlay { bottom: auto; top: calc(56px + env(safe-area-inset-top)); }
+.net-render { font-size: 11px; line-height: 1.5; color: var(--muted-fg); }
 
 /* ── status panel ── */
 .status-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }

@@ -96,7 +96,6 @@ export function SceneSettings({ app }: { app: ViewerApp }) {
             )}
             <Field inline label="Robot model" title="the robot's URDF when it publishes one, else a box at its pose (an arm is drawn by its TF frames)"><Toggle value={view.robotModel !== false} onChange={(robotModel: any) => app.settings.update({ robotModel })} /></Field>
             <Field inline label="View cube" title="a cube in the 3D view's top-right corner: click a face, edge or corner to look from there, drag it to orbit"><Toggle value={view.viewCube === true} onChange={(viewCube: any) => app.settings.update({ viewCube })} /></Field>
-            <Field inline label="Stats"><Toggle value={view.showStats} onChange={(showStats: any) => app.settings.update({ showStats })} /></Field>
             <p className="hint">Drag to pan · Shift+drag or right-drag to orbit · scroll or pinch to zoom.</p>
         </div>
     )

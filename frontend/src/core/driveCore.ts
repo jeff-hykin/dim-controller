@@ -28,7 +28,6 @@ export interface ViewSettings {
     followFrame: string
     /** following, the camera turns with the followed frame's heading (yaw only: the world stays level) */
     followTurns: boolean
-    showStats: boolean
     /** the robot type's stand-in model at the robot's pose */
     robotModel: boolean
     /** driving holds (Reconnect on the drive panel) once the control link's latency goes over this (ms) */
@@ -48,7 +47,7 @@ export interface ViewSettings {
 }
 
 export class DriveCore {
-    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", followTurns: true, showStats: false, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: true })
+    readonly settings = persistentStore<ViewSettings>("lv.view", { profile: "", fixedFrame: "", follow: true, followFrame: "", followTurns: true, robotModel: true, maxLatencyMs: DEFAULT_MAX_LATENCY_MS, camerasIn3d: false, viewCube: true })
     /** the robot type in use and why (auto, or picked in Settings) */
     readonly robot: Store<{ type: RobotType; auto: boolean; reason: string }>
     readonly connection: Connection
