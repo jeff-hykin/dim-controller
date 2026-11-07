@@ -1,0 +1,179 @@
+#usda 1.0
+(
+    defaultPrim = "little_arm"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "little_arm"
+{
+    def Xform "base_link" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+        displayName = "base_link"
+    )
+    {
+        def Cube "visual_0"
+        {
+            double size = 1
+            float3 xformOp:scale = (0.1, 0.1, 0.02)
+            matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+            uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+        }
+
+        def Xform "upper_arm" (
+            prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+            displayName = "upper_arm"
+        )
+        {
+            matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0.02, 1) )
+            uniform token[] xformOpOrder = ["xformOp:transform"]
+
+            def Mesh "visual_0" (
+                assetInfo = {
+                    asset identifier = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+                    string version = "sha256:f58fac8359d3cd2936682d4730f955acd5f899a224d343337d7acdb3f3e124a6"
+                }
+                prepend references = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+            )
+            {
+                float3 xformOp:scale = (1, 1, 1)
+                matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+                uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+            }
+
+            def Xform "little_arm"
+            {
+                def Xform "base_link" (
+                    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+                    displayName = "right/base_link"
+                )
+                {
+                    def Cube "visual_0"
+                    {
+                        double size = 1
+                        float3 xformOp:scale = (0.1, 0.1, 0.02)
+                        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+                        uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+                    }
+
+                    def Xform "upper_arm" (
+                        prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+                        displayName = "right/upper_arm"
+                    )
+                    {
+                        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0.02, 1) )
+                        uniform token[] xformOpOrder = ["xformOp:transform"]
+
+                        def Mesh "visual_0" (
+                            assetInfo = {
+                                asset identifier = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+                                string version = "sha256:f58fac8359d3cd2936682d4730f955acd5f899a224d343337d7acdb3f3e124a6"
+                            }
+                            prepend references = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+                        )
+                        {
+                            float3 xformOp:scale = (1, 1, 1)
+                            matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+                            uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+                        }
+                    }
+                }
+
+                def Scope "joints"
+                {
+                    def PhysicsRevoluteJoint "shoulder" (
+                        displayName = "right/shoulder"
+                    )
+                    {
+                        uniform token physics:axis = "Z"
+                        rel physics:body0 = </little_arm/base_link/upper_arm/little_arm/base_link/upper_arm/little_arm/base_link>
+                        rel physics:body1 = </little_arm/base_link/upper_arm/little_arm/base_link/upper_arm/little_arm/base_link/upper_arm>
+                        point3f physics:localPos0 = (0, 0, 0.02)
+                        point3f physics:localPos1 = (0, 0, 0)
+                        quatf physics:localRot0 = (1, 0, 0, 0)
+                        quatf physics:localRot1 = (1, 0, 0, 0)
+                        float physics:lowerLimit = -89.95438
+                        float physics:upperLimit = 89.95438
+                    }
+                }
+            }
+        }
+
+        def Xform "little_arm"
+        {
+            def Xform "base_link" (
+                prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+                displayName = "left/base_link"
+            )
+            {
+                def Cube "visual_0"
+                {
+                    double size = 1
+                    float3 xformOp:scale = (0.1, 0.1, 0.02)
+                    matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+                    uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+                }
+
+                def Xform "upper_arm" (
+                    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+                    displayName = "left/upper_arm"
+                )
+                {
+                    matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0.02, 1) )
+                    uniform token[] xformOpOrder = ["xformOp:transform"]
+
+                    def Mesh "visual_0" (
+                        assetInfo = {
+                            asset identifier = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+                            string version = "sha256:f58fac8359d3cd2936682d4730f955acd5f899a224d343337d7acdb3f3e124a6"
+                        }
+                        prepend references = @/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl@
+                    )
+                    {
+                        float3 xformOp:scale = (1, 1, 1)
+                        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )
+                        uniform token[] xformOpOrder = ["xformOp:scale", "xformOp:transform"]
+                    }
+                }
+            }
+
+            def Scope "joints"
+            {
+                def PhysicsRevoluteJoint "shoulder" (
+                    displayName = "left/shoulder"
+                )
+                {
+                    uniform token physics:axis = "Z"
+                    rel physics:body0 = </little_arm/base_link/little_arm/base_link/little_arm/base_link>
+                    rel physics:body1 = </little_arm/base_link/little_arm/base_link/little_arm/base_link/upper_arm>
+                    point3f physics:localPos0 = (0, 0, 0.02)
+                    point3f physics:localPos1 = (0, 0, 0)
+                    quatf physics:localRot0 = (1, 0, 0, 0)
+                    quatf physics:localRot1 = (1, 0, 0, 0)
+                    float physics:lowerLimit = -89.95438
+                    float physics:upperLimit = 89.95438
+                }
+            }
+        }
+    }
+
+    def Scope "joints"
+    {
+        def PhysicsRevoluteJoint "shoulder" (
+            displayName = "shoulder"
+        )
+        {
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </little_arm/base_link>
+            rel physics:body1 = </little_arm/base_link/upper_arm>
+            point3f physics:localPos0 = (0, 0, 0.02)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -89.95438
+            float physics:upperLimit = 89.95438
+        }
+    }
+}
+
+

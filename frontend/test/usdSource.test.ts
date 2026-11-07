@@ -110,7 +110,7 @@ async function withUsd(parser: UsdParser | null, run: () => Promise<void>) {
 }
 
 /** a page load: a UrdfSource on a fake connection, the layer sent as the reply to `*.usd`, each asset served once */
-async function load({ served = true } = {}) {
+async function load({ served = true, layer = LAYER, mesh = MESH } = {}) {
     const requests: string[] = []
     const handlers = new Map<string, (message: { bytes: Uint8Array }) => void>()
     const connection = {
@@ -124,9 +124,9 @@ async function load({ served = true } = {}) {
                     }
                     requests.push(asked)
                     if (asked === "*.usd") {
-                        setTimeout(() => handlers.get(FILE_INFO)?.({ bytes: fileInfo("*.usd", new TextEncoder().encode(LAYER)) }))
-                    } else if (asked === MESH && served) {
-                        const reply = fileInfo(MESH, stl())
+                        setTimeout(() => handlers.get(FILE_INFO)?.({ bytes: fileInfo("*.usd", new TextEncoder().encode(layer)) }))
+                    } else if (asked === mesh && served) {
+                        const reply = fileInfo(mesh, stl())
                         setTimeout(() => handlers.get(FILE_INFO)?.({ bytes: reply }))
                     }
                 },
@@ -180,6 +180,20 @@ Deno.test("a layer whose assets carry no hash is fetched every load, not refused
         const second = await load()
         assertEquals(second.loaded, 1, "drawn, from the robot again")
         assertEquals(second.requests, ["*.urdf", "*.usd", MESH], "nothing to cache by, so it's asked for again")
+    })
+})
+
+Deno.test("three robots in one layer sharing one mesh: the file is asked for once", async () => {
+    // fixtures/three_arms.usda is a real grafted scene: one arm plus a "left/…" and a "right/…" copy of it, its assets
+    // renamed to the public paths publish_usd_assets hands out. The three name one file between them (51 references to
+    // 17 files on a scene of m20s), so a page that asked per mount point would fetch the same megabytes three times.
+    await withUsd(standIn(), async () => {
+        const layer = Deno.readTextFileSync(new URL("./fixtures/three_arms.usda", import.meta.url))
+        const mesh = "/dimos/assets/little_arm/base_link/upper_arm/visual_0/arm.stl"
+        assertEquals(layer.split(`references = @${mesh}@`).length - 1, 3, "the fixture is three mounts of one file")
+        const first = await load({ layer, mesh })
+        assertEquals([first.loaded, first.wanted], [1, 1], "one file wanted and loaded, not three")
+        assertEquals(first.requests.filter((request) => request === mesh).length, 1, "asked for once")
     })
 })
 
