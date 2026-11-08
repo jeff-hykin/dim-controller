@@ -88,8 +88,10 @@ class RobotModelLayer {
         this.#model.setTextures(textures ?? true)
         this.#model.setSplatCutAbove(splatCutAbove ?? 2.5)
         this.root.add(this.#model.root)
-        // A scene states how it is lit; the viewer's own lighting is a guess for when nothing does.
+        // A scene states how it is lit and how it wants to be shown; the viewer's own are guesses for when
+        // nothing does.
         this.context.viewer.setSceneLights?.(this.#kinematics.description.lights)
+        this.context.viewer.setSceneLook?.(this.#kinematics.description.look)
         this.#applyMeshStyle()
         this.#tfVersion = -1
         this.context.viewer.requestRender()
@@ -180,8 +182,9 @@ class RobotModelLayer {
         this.#stopRendering()
         this.#release()
         this.#model?.dispose()
-        // The scene that asked for its own lighting is going: the viewer's own stands again.
+        // The scene that asked for its own lighting and look is going: the viewer's own stand again.
         this.context.viewer.setSceneLights?.(null)
+        this.context.viewer.setSceneLook?.(null)
     }
 }
 
