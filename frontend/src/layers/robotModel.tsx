@@ -82,7 +82,7 @@ class RobotModelLayer {
             return
         }
         const { opacity, display, textures, splatCutAbove } = this.settings.get()
-        this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity }, this.#source.splats)
+        this.#model = new RobotModel(this.#kinematics, this.#source.geometries, { opacity }, this.#source.splats, this.#source.textures)
         this.#model.setDisplay(display)
         this.#model.setParts(modelPartsOf(this.settings.get()))
         this.#model.setTextures(textures ?? true)

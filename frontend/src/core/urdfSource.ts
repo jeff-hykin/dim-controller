@@ -24,6 +24,7 @@ import { type Connection, dimosKey, Priority, type Publisher } from "./transport
 import { decodeMeshFile, meshGeometry, meshUris, parseUrdf } from "dimos-react/three"
 import { cachedFile, meshLog, splitHash, storeFile } from "./meshCache.ts"
 import { loadSplats, type SplatAsset, splatFileType, StaleBuildError } from "./splats.ts"
+import { imageTexture, isImage } from "./imageTexture.ts"
 import type { RobotDescription } from "./robotDescription.ts"
 import { isUsdName, USD_REQUEST, usdAssetHashes, usdParser } from "./usd.ts"
 
@@ -68,6 +69,8 @@ export class UrdfSource {
     readonly state = new Store<UrdfState>({ description: null, meshesLoaded: 0, meshesWanted: 0, meshVersion: 0, problem: null, drawing: 0, armDraws: false })
     /** loaded meshes by URI (as the URDF names them), shared by every model built from the description (never disposed by a model) */
     readonly geometries = new Map<string, THREE.BufferGeometry>()
+    /** images a material named, decoded ready to be tiled over a shape */
+    readonly textures = new Map<string, THREE.Texture>()
     /** loaded splat files by URI, likewise */
     readonly splats = new Map<string, SplatAsset>()
     /** the description's text as it came (URDF XML or a USD layer), so the same one isn't parsed twice */
@@ -262,7 +265,7 @@ export class UrdfSource {
         return { base, hash: hash ?? this.#assetHashes.get(uri) ?? (this.#descriptionHash || null) }
     }
 
-    #loaded = (uri: string) => this.geometries.has(uri) || this.splats.has(uri)
+    #loaded = (uri: string) => this.geometries.has(uri) || this.splats.has(uri) || this.textures.has(uri)
 
     #onFile(bytes: Uint8Array) {
         const description = this.state.get().description
@@ -326,6 +329,8 @@ export class UrdfSource {
         try {
             if (fileType) {
                 this.splats.set(uri, await loadSplats(data, fileType))
+            } else if (isImage(uri)) {
+                this.textures.set(uri, await imageTexture(data, uri))
             } else {
                 this.geometries.set(uri, meshGeometry(uri, data))
             }

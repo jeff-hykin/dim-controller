@@ -12,6 +12,20 @@ const originMatrix = (origin: Origin) =>
     new THREE.Matrix4().compose(new THREE.Vector3(...origin.xyz), new THREE.Quaternion(...origin.quat), new THREE.Vector3(1, 1, 1))
 
 export type DisplayMode = "visual" | "collision" | "both"
+
+/** How much of a surface one tile of its texture covers. Concrete at a couple of metres a tile
+ * reads as a slab; stretched whole over a room it is a smear. */
+const TEXTURE_TILE_METRES = 2
+
+/** How far a shape reaches across the two axes a texture is laid along. */
+function spanOf(item: DescriptionGeometry): [number, number] {
+    const scale = item.scale ?? [1, 1, 1]
+    if (item.size) {
+        return [Math.abs(item.size[0] * scale[0]), Math.abs(item.size[1] * scale[1])]
+    }
+    const across = (item.radius ?? 0.5) * 2
+    return [Math.abs(across * scale[0]), Math.abs((item.length ?? across) * scale[1])]
+}
 /** What the model draws, each shown or not: the links in no group (the robot's own), each group's links (by name;
  * unset: shown), and across those, mesh files (those of moving links and of static ones, staticLinks, apart) and Gaussian
  * splat files. */
@@ -79,7 +93,7 @@ export class RobotModel {
     readonly materials: THREE.MeshStandardMaterial[] = []
 
     /** `splats`: splat files by URI (core/urdfSource.ts), drawn where a visual names one; none for ghosts */
-    constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}, readonly splats?: Map<string, SplatAsset>) {
+    constructor(readonly kinematics: Kinematics, geometries: Map<string, THREE.BufferGeometry>, look: { color?: string; opacity?: number; collisionColor?: string } = {}, readonly splats?: Map<string, SplatAsset>, readonly textureFiles?: Map<string, THREE.Texture>) {
         const material = (color: THREE.ColorRepresentation, alpha: number) => {
             const made = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.1, transparent: alpha < 1, opacity: alpha, depthWrite: alpha >= 1 })
             this.materials.push(made)
@@ -174,6 +188,9 @@ export class RobotModel {
             mesh.receiveShadow = kind === "visual"
             mesh.userData.kind = kind
             mesh.userData.meshFile = item.type === "mesh"
+            // the picture the material named, hung on once the file is in (it arrives after the shape)
+            mesh.userData.textureUri = item.texture
+            mesh.userData.textureSpan = spanOf(item)
             mesh.userData.textured = mesh.material
             mesh.matrixAutoUpdate = false
             mesh.matrix.copy(originMatrix(item.origin))
@@ -183,6 +200,7 @@ export class RobotModel {
             group.add(mesh)
             added = true
         }
+        this.#hangTextures()
         if (added) {
             this.#applyVisibility()
             this.#applyTextures()
@@ -256,6 +274,44 @@ export class RobotModel {
     }
 
     /** Each visual mesh in its own material (URDF colours), or with textures off a flat-shaded grey at the same opacity. */
+    /**
+     * Give each shape the picture its material named, once that file has arrived.
+     *
+     * The shape is drawn before its image is fetched, so this runs on every fill rather than at
+     * build time. One tile is cloned per shape because the repeat differs: a tile stretched whole
+     * across eighteen metres of floor is a blur, so it is laid at a fixed size in metres and the
+     * shape's own extent says how many times that is.
+     */
+    #hangTextures() {
+        if (!this.textureFiles?.size) {
+            return
+        }
+        for (const link of this.links.values()) {
+            for (const object of link.children) {
+                const mesh = object as THREE.Mesh
+                const uri = mesh.userData.textureUri as string | undefined
+                if (!mesh.isMesh || !uri || mesh.userData.textureHung) {
+                    continue
+                }
+                const source = this.textureFiles.get(uri)
+                if (!source) {
+                    continue
+                }
+                const span = (mesh.userData.textureSpan as [number, number] | undefined) ?? [1, 1]
+                const tile = source.clone()
+                tile.needsUpdate = true
+                tile.repeat.set(Math.max(1, span[0] / TEXTURE_TILE_METRES), Math.max(1, span[1] / TEXTURE_TILE_METRES))
+                for (const material of [mesh.userData.textured, mesh.material] as (THREE.MeshStandardMaterial | undefined)[]) {
+                    if (material && "map" in material) {
+                        material.map = tile
+                        material.needsUpdate = true
+                    }
+                }
+                mesh.userData.textureHung = true
+            }
+        }
+    }
+
     #applyTextures() {
         this.root.traverse((object) => {
             const mesh = object as THREE.Mesh
