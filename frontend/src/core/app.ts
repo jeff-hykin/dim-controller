@@ -18,6 +18,7 @@ import type { ArmControl } from "./arm.ts"
 import { ArmManipView } from "./armManipView.ts"
 import { jointControlState } from "./jointControl.ts"
 import { MESH_RETRY_MS, urdfSource } from "./urdfSource.ts"
+import { installDebugHook } from "./debugHook.ts"
 import { Manipulation } from "./manipulation.ts"
 import { AgentLink } from "./agent.ts"
 import { LocationLabels } from "./labels.ts"
@@ -130,6 +131,8 @@ export class ViewerApp {
         }
         applyCameras()
         this.settings.subscribe(applyCameras)
+        // globalThis.__dim: read the live scene graph when a render looks wrong (core/debugHook.ts)
+        installDebugHook(this)
     }
 
     /** Reconnect (core/driveCore.ts) */

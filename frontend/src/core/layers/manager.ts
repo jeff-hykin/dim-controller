@@ -73,10 +73,21 @@ export class LayerManager {
         const simTopic = parseKey(SCENE_INFO)!
         const sync = () => {
             const topics = [...connection.status.get().topics]
-            if (urdf.state.get().description) {
+            const described = !!urdf.state.get().description
+            if (described) {
                 topics.push(modelTopic)
             }
-            if (sim.state.get().data && !topics.some((topic) => topic.key === simTopic.key)) {
+            // A sim that serves its world as a USD description serves the whole of it -- the room and
+            // every robot standing in it, one stage. Its older scene_info/scene_data path describes
+            // that same world again, and drawing both put every wall, floor and robot on screen twice,
+            // coplanar, which is what read as z-fighting. The description is the one to keep: it is
+            // what tf places, and the older path is deprecated.
+            const simTopics = topics.filter((topic) => topic.key === simTopic.key)
+            if (described) {
+                for (const stale of simTopics) {
+                    topics.splice(topics.indexOf(stale), 1)
+                }
+            } else if (sim.state.get().data && !simTopics.length) {
                 topics.push(simTopic)
             }
             this.#sync(topics)
@@ -226,6 +237,8 @@ export class LayerManager {
         }
         try {
             const instance = entry.type.create(context, entry.topic, entry.settings)
+            // so a debug read of the scene can say which layer drew a thing (core/debugHook.ts)
+            instance.root.userData.debugOwner = `${entry.type.id} ${entry.topic.key}`
             instance.root.matrixAutoUpdate = false
             this.viewer.scene.add(instance.root)
             this.#instances.set(key, instance)
