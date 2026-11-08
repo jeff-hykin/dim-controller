@@ -116,6 +116,11 @@ export class DriveCore {
     async reconnect() {
         this.drive.stop()
         if (this.drive.state.get().halt?.reason === "latency") {
+            // This path keeps the streams and only takes fresh drive publishers, so nothing else
+            // resets the measurement. Start it again here, or the silence already banked is still
+            // over the max on the very next check and driving disengages again before the operator
+            // has let go of the button -- one banner after another, each with a bigger number.
+            this.connection.resetLatency()
             this.drive.resume()
             return
         }

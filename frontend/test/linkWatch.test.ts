@@ -61,3 +61,54 @@ Deno.test("held: a stop goes out, input is ignored and nothing moves; after resu
     drive.stop()
     drive.dispose()
 })
+
+Deno.test("a lag hold acknowledged starts the measurement again, so it does not come straight back", () => {
+    // The reported latency is the silence since the RTT last moved. A starved link banks that
+    // stall, so without a reset the very next check is still over the max and the hold returns
+    // before the operator has let go -- one banner after another, each with a bigger number.
+    let rtt: number | null = 40
+    let now = 10_000
+    const connection = {
+        client: { get rttMs() { return rtt }, options: { heartbeatHz: 1 } },
+        lastRtt: { value: 40 as number | null, at: 0 },
+        latencyMs(at: number) {
+            if (this.client.rttMs !== this.lastRtt.value) {
+                this.lastRtt = { value: this.client.rttMs, at }
+            }
+            if (this.client.rttMs === null) {
+                return null
+            }
+            const silence = at - this.lastRtt.at - 1000 / this.client.options.heartbeatHz
+            return Math.max(this.client.rttMs, silence)
+        },
+        resetLatency(at: number) {
+            this.lastRtt = { value: this.client.rttMs, at }
+        },
+    }
+
+    // the link has been silent for ten seconds: well over the max, so driving is held
+    assertEquals(checkLink({ state: "connected", latencyMs: connection.latencyMs(now), maxMs: 1000, halt: null }), {
+        halt: { reason: "latency", latencyMs: 9000, maxMs: 1000 },
+    })
+
+    // Reconnect, the old way: the hold is cleared but the banked silence is not, so the next
+    // check holds again immediately with a bigger number
+    now += 100
+    assertEquals(checkLink({ state: "connected", latencyMs: connection.latencyMs(now), maxMs: 1000, halt: null }), {
+        halt: { reason: "latency", latencyMs: 9100, maxMs: 1000 },
+    })
+
+    // Reconnect, with the measurement started again: the link gets a chance to prove itself
+    connection.resetLatency(now)
+    assertEquals(checkLink({ state: "connected", latencyMs: connection.latencyMs(now), maxMs: 1000, halt: null }), null)
+
+    // and if it stays silent it holds once more, which is the one banner that should appear
+    now += 5_000
+    assertEquals(checkLink({ state: "connected", latencyMs: connection.latencyMs(now), maxMs: 1000, halt: null }), {
+        halt: { reason: "latency", latencyMs: 4000, maxMs: 1000 },
+    })
+
+    // a hold already up is never raised again, whatever the number
+    rtt = 50
+    assertEquals(checkLink({ state: "connected", latencyMs: connection.latencyMs(now), maxMs: 1000, halt: held("latency") }), null)
+})

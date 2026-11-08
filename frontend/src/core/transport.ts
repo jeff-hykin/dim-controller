@@ -258,6 +258,18 @@ export class Connection {
     }
 
     /**
+     * Measure latency again from now.
+     *
+     * Without a heartbeat change the reported latency is the silence since the RTT last moved, so a
+     * starved link carries its whole stall forward. An operator who has acknowledged a hold should be
+     * judged on what the link does next, not on the stall already banked -- otherwise the hold comes
+     * straight back, with a larger number every time.
+     */
+    resetLatency(): void {
+        this.#lastRtt = { value: this.client?.rttMs ?? null, at: performance.now() }
+    }
+
+    /**
      * Drops the gateway session and opens a new one the way the first connect does (the client's _open: a new peer,
      * every subscription and publisher re-attached, declarations remade). If that fails the client keeps retrying.
      */

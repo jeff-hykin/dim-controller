@@ -237,8 +237,10 @@ export class LayerManager {
         }
         try {
             const instance = entry.type.create(context, entry.topic, entry.settings)
-            // so a debug read of the scene can say which layer drew a thing (core/debugHook.ts)
-            instance.root.userData.debugOwner = `${entry.type.id} ${entry.topic.key}`
+            // so a debug read of the scene can say which layer drew a thing (core/debugHook.ts).
+            // Replaced rather than assigned into: a root is a THREE.Object3D and always has
+            // userData, but a layer stood up with a stand-in root in a test need not.
+            instance.root.userData = { ...instance.root.userData, debugOwner: `${entry.type.id} ${entry.topic.key}` }
             instance.root.matrixAutoUpdate = false
             this.viewer.scene.add(instance.root)
             this.#instances.set(key, instance)
