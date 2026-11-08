@@ -166,6 +166,12 @@ export class RobotModel {
                 ? this.#look.collisionColor ?? "#ff8a3d"
                 : this.#look.color ?? (item.color ? new THREE.Color(item.color[0], item.color[1], item.color[2]) : "#d9dde3")
             const mesh = new THREE.Mesh(shape, this.#material(color, kind === "collision" ? Math.min(opacity, 0.45) : opacity * (item.color?.[3] ?? 1)))
+            // A room drawn from a description has to take part in the lighting the same way the
+            // older sim-scene path did (core/sceneData.ts sets these too). Without them nothing
+            // occludes anything: a desk's recessed panel comes out brighter than its own side,
+            // because all that is left is which way a face points at the lights.
+            mesh.castShadow = kind === "visual"
+            mesh.receiveShadow = kind === "visual"
             mesh.userData.kind = kind
             mesh.userData.meshFile = item.type === "mesh"
             mesh.userData.textured = mesh.material
