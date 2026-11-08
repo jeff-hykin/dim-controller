@@ -1,4 +1,4 @@
-// UrdfSource (core/urdfSource.ts): "*.urdf" on /render_file_request asks for the URDF, on subscribing and on every connect,
+// UrdfSource (core/urdfSource.ts): "*.urdf" and "*.usd" on /render_file_request ask for the description, on subscribing and on every connect,
 // re-sent until it comes on /file_info (the first can beat the subscription), and an empty reply isn't a URDF.
 import { assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
@@ -56,11 +56,17 @@ function fakeConnection(state: ConnectionState["state"] = "connected") {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// One ask for a description is both names: it may be a URDF or a USD layer, and whichever
+// answers first wins. Asserted as a set rather than a literal list so adding a third
+// description format does not read as a behaviour change in every test below.
+const DESCRIPTION = ["*.urdf", "*.usd"]
+const isDescription = (request: string) => DESCRIPTION.includes(request)
+
 Deno.test("subscribing asks for the URDF at once, again until it comes, then not", async () => {
     const { connection, requests, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()
-    assertEquals(requests, ["*.urdf"], "asked as it subscribes")
+    assertEquals(requests, DESCRIPTION, "asked as it subscribes")
     await wait(600)
     assertEquals(requests.length >= 2, true, "asked again while none came")
     urdf(URDF)
@@ -68,7 +74,7 @@ Deno.test("subscribing asks for the URDF at once, again until it comes, then not
     const asked = requests.length
     await wait(600)
     assertEquals(requests.length, asked, "no more once it came")
-    assertEquals(requests.every((request) => request === "*.urdf"), true, "no mesh asked for: a box has none")
+    assertEquals(requests.every(isDescription), true, "no mesh asked for: a box has none")
     release()
 })
 
@@ -78,19 +84,19 @@ Deno.test("every connect asks again; a link that only dipped (degraded) doesn't"
     const release = source.acquire()
     assertEquals(requests, [], "no client yet")
     connect("connected")
-    assertEquals(requests, ["*.urdf"])
+    assertEquals(requests, DESCRIPTION)
     urdf(URDF)
     connect("degraded")
     connect("connected")
-    assertEquals(requests, ["*.urdf"])
+    assertEquals(requests, DESCRIPTION)
     connect("lost")
     connect("connected")
-    assertEquals(requests, ["*.urdf", "*.urdf"], "a reconnect asks again")
+    assertEquals(requests, [...DESCRIPTION, ...DESCRIPTION], "a reconnect asks again")
     urdf(URDF)
     release()
     connect("lost")
     connect("connected")
-    assertEquals(requests, ["*.urdf", "*.urdf"], "not once nothing uses it")
+    assertEquals(requests, [...DESCRIPTION, ...DESCRIPTION], "not once nothing uses it")
     await wait(300)
 })
 
@@ -123,7 +129,7 @@ Deno.test("the robot's meshes are asked for first: a scene fixed to the root aft
     </robot>`)
     // no IndexedDB here: every lookup comes back empty, then the first two are asked for
     await wait(50)
-    assertEquals(requests.filter((request) => request !== "*.urdf"), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
+    assertEquals(requests.filter((request) => !isDescription(request)), ["package://p/body.stl?hash=1", "package://p/leg.stl?hash=1"])
     const ranks = fileRanks(source.state.get().description!)
     assertEquals(Object.fromEntries([...ranks].map(([uri, rank]) => [uri.split("/").pop(), rank])), { "splats.spz?hash=1": 2, "tile_0.stl?hash=1": 1, "tile_1.stl?hash=1": 1, "body.stl?hash=1": 0, "leg.stl?hash=1": 0 })
     release()
