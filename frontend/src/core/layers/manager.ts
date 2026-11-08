@@ -71,9 +71,15 @@ export class LayerManager {
         watchSim()
         const modelTopic = parseKey(FILE_REQUEST)!
         const simTopic = parseKey(SCENE_INFO)!
+        // Once this page has seen a USD description, the sim serves one, and that stays true across a
+        // reconnect. Asking only whether one is parsed right now reopens the old path for the whole time
+        // a restarted sim's stage is being re-fetched -- seconds of the world drawn twice, which is the
+        // z-fighting coming back and the scene's own lighting going away until it lands.
+        let everDescribed = false
         const sync = () => {
             const topics = [...connection.status.get().topics]
-            const described = !!urdf.state.get().description
+            everDescribed ||= !!urdf.state.get().description
+            const described = everDescribed
             if (described) {
                 topics.push(modelTopic)
             }
