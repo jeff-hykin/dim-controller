@@ -4,6 +4,7 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
+import { captureClock } from "../core/captureClock.ts"
 import { applyLook, GRADIENTS, makePointMaterial, RAMPS } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
@@ -146,7 +147,14 @@ class CloudLayer {
                 this.#frameTimer = setInterval(() => this.#readFrame(), FRAME_RECHECK_MS)
             }
             if (decoded?.positions) {
-                this.#onCloud(decoded.positions, decoded.intensity, message.timestamp)
+                // Placed by when the scan was taken, not by when it got here: a cloud is big and
+                // slow next to a TF message, and the difference is a pose the robot has already
+                // moved past (core/captureClock.ts).
+                const takenAt = captureClock(this.context.connection).takenAt(
+                    message.timestamp,
+                    message.header?.stamp === undefined ? null : message.header.stamp * 1000,
+                )
+                this.#onCloud(decoded.positions, decoded.intensity, takenAt, message.timestamp)
             }
         })
         this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
@@ -321,7 +329,7 @@ class CloudLayer {
         this.context.viewer.requestRender()
     }
 
-    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number) {
+    #onCloud(positions: Float32Array, intensity: Uint8Array | undefined, timestamp: number, arrivedAt = timestamp) {
         if (this.#frame === null) {
             return // placed without its frame it would ride the wrong pose; the raw read arrives within a second
         }
@@ -397,7 +405,7 @@ class CloudLayer {
         this.#syncBoxes()
         this.#updateRange(positions, intensity, placement)
         this.#cameraDirty = true
-        this.context.viewer.noteData(timestamp)
+        this.context.viewer.noteData(arrivedAt)
     }
 
     #place(matrix: THREE.Matrix4) {
