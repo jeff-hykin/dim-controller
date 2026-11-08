@@ -304,6 +304,10 @@ export class RobotModel {
                 for (const material of [mesh.userData.textured, mesh.material] as (THREE.MeshStandardMaterial | undefined)[]) {
                     if (material && "map" in material) {
                         material.map = tile
+                        // displayColor is what to draw *instead of* the picture, for a reader that
+                        // cannot fetch it -- not a tint over it. three multiplies the two, so
+                        // leaving a slab's grey on top of its concrete renders the floor near black.
+                        material.color.setRGB(1, 1, 1)
                         material.needsUpdate = true
                     }
                 }
