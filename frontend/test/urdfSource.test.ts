@@ -1,6 +1,6 @@
 // UrdfSource (core/urdfSource.ts): "*.urdf" and "*.usd" on /render_file_request ask for the description, on subscribing and on every connect,
 // re-sent until it comes on /file_info (the first can beat the subscription), and an empty reply isn't a URDF.
-import { assertEquals } from "jsr:@std/assert@1"
+import { assert, assertEquals } from "jsr:@std/assert@1"
 import { DOMParser } from "npm:@xmldom/xmldom@0.8.10"
 import { decode, encode } from "../src/core/lcm/lcm.ts"
 import { Store } from "../src/core/store.ts"
@@ -152,7 +152,8 @@ Deno.test("meshes come unreliably: one that hasn't landed is asked for again eve
     const { connection, requests, urdf, options } = fakeConnection()
     assertEquals((options.get(FILE_INFO) as { delivery?: string } | undefined)?.delivery, undefined)
     const source = new UrdfSource(connection)
-    source.meshRetryMs = 0
+    // no re-asking yet: a 1 s tick landing in the window below would make the first ask look like two
+    source.meshRetryMs = 60000
     const release = source.acquire()
     assertEquals((options.get(FILE_INFO) as { delivery: string }).delivery, "latest")
     urdf(`<?xml version="1.0"?><robot name="r"><link name="base_link"><visual><geometry><mesh filename="package://p/body.stl"/></geometry></visual></link></robot>`)
@@ -160,10 +161,12 @@ Deno.test("meshes come unreliably: one that hasn't landed is asked for again eve
     const asks = () => requests.filter((request) => request === "package://p/body.stl").length
     assertEquals(asks(), 1)
     // the 1 s tick re-asks once meshRetryMs has passed
+    source.meshRetryMs = 0
     await wait(1100)
-    assertEquals(asks(), 2)
+    const retried = asks()
+    assert(retried > 1, `asked again after meshRetryMs (asked ${retried} times)`)
     source.meshRetryMs = 60000
     await wait(1100)
-    assertEquals(asks(), 2, "not again before meshRetryMs")
+    assertEquals(asks(), retried, "not again before meshRetryMs")
     release()
 })
