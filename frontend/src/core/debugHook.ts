@@ -108,9 +108,12 @@ export function installDebugHook(app: ViewerApp) {
             }
         },
         /**
-         * Whether tf could be recorded at capture time instead of at arrival. `withStamp` equal to
-         * `transforms` and a `gapMs` matching the clouds' offset means yes, and the clock estimate
-         * could be deleted; any entry in `edgesWithout` means no (see core/tfFeed.ts).
+         * Whether tf could stand in for the clouds' own stamps.
+         *
+         * Read `quickestGapMs`, not `medianGapMs`. Here the median is ~115581 ms and the quickest
+         * ~8 ms: tf carries edges stamped on the sim's clock and edges stamped on wall time, and an
+         * offset is read off the quickest sample, so feeding this to the clock reads the wall-stamped
+         * ones and puts every cloud two minutes in the past. The median says they agree. They do not.
          */
         tfStampReport() {
             const gaps = [...tfStampHealth.gapMs].sort((a, b) => a - b)
@@ -118,6 +121,8 @@ export function installDebugHook(app: ViewerApp) {
                 transforms: tfStampHealth.transforms,
                 withStamp: tfStampHealth.withStamp,
                 medianGapMs: gaps.length ? gaps[Math.floor(gaps.length / 2)] : null,
+                // the one that matters: an offset is read off the quickest sample, not the median
+                quickestGapMs: Number.isFinite(tfStampHealth.quickestGapMs) ? tfStampHealth.quickestGapMs : null,
                 edgesWithout: [...tfStampHealth.edgesWithout].slice(0, 20),
             }
         },

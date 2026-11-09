@@ -79,28 +79,30 @@ Deno.test("a sample is never placed after it arrived", () => {
     assertEquals(clock.takenAt(arrival, arrival - OFFSET - 3_000) <= arrival, true)
 })
 
-Deno.test("a fast channel sets the floor even while a slow one feeds the same clock", () => {
-    // tf and the clouds cross the same pair of clocks, but a transform is a few dozen bytes at
-    // 50 Hz where a scan is hundreds of kilobytes at 10. Measured live, tf's quickest sample sat
-    // 32 ms below the best a cloud ever managed -- so tf is what the offset should be read from,
-    // and a cloud observing the same clock must not be able to drag it up.
+Deno.test("a quicker channel would set the floor -- which is why tf must not be fed to this", () => {
+    // Tempting idea, measured and rejected: tf crosses the same pair of clocks as the clouds and is
+    // far cheaper to send, so its quickest sample should be a better read of the offset. It is not,
+    // because tf is not one population. Live, its median gap was 115581 ms and its quickest 8 ms:
+    // some edges are stamped on the sim's clock and some on wall time. An offset is read off the
+    // QUICKEST sample, so feeding tf here reads the wall-stamped edges, and every cloud lands two
+    // minutes in the past -- outside the history, clamped to the newest transform, which is the
+    // arrival-time placement this whole file exists to avoid. This pins the mechanism.
     const clock = new CaptureClock()
-    const CLOCKS_APART = 9_000
-    const QUICK_TF = 6
-    let worst = 0
-    for (let index = 0; index < 600; index++) {
-        const taken = index * 20 // when it was really taken, on the arrival clock; tf at 50 Hz
-        const stamp = taken - CLOCKS_APART // what the sensor's clock calls that moment
-        const transit = index % 25 === 0 ? QUICK_TF : 90 // mostly quick, occasionally quicker
-        clock.observe(taken + transit, stamp)
-        if (index % 5 === 0) {
-            // a cloud on the same clock, always slow: it must not raise the floor
-            const placed = clock.takenAt(taken + 850, stamp)
-            worst = Math.max(worst, Math.abs(placed - taken))
-        }
+    const CLOCKS_APART = 115_600
+    for (let index = 0; index < 200; index++) {
+        const taken = index * 20
+        // the sim-stamped edges: a real read of the clocks being two minutes apart
+        clock.observe(taken + 90, taken - CLOCKS_APART)
+        // the wall-stamped edges: same traffic, a different clock, and a much smaller gap
+        clock.observe(taken + 8, taken)
     }
-    assertEquals(clock.offsetMs, CLOCKS_APART + QUICK_TF, "the quickest tf sample, not the quickest cloud")
-    assertEquals(worst <= QUICK_TF, true, `a cloud lands within ${QUICK_TF} ms of when it was taken, off by ${worst}`)
+    assertEquals(clock.offsetMs, 8, "the quickest wins, and here the quickest is the wrong clock")
+    const stamp = 10_000 - CLOCKS_APART
+    assertEquals(
+        clock.takenAt(10_000, stamp) < 10_000 - 100_000,
+        true,
+        "so a cloud is placed about two minutes before it arrived",
+    )
 })
 
 Deno.test("a chatty link cannot grow the window without bound", () => {

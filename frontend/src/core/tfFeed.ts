@@ -7,7 +7,6 @@ import type { Connection } from "./transport.ts"
 import type { TfTree } from "dimos-react/three"
 import type { Viewer } from "dimos-react/three"
 import type { TfHistory } from "./tfHistory.ts"
-import { captureClock } from "./captureClock.ts"
 
 /**
  * Whether tf arrives with usable capture stamps, read out of `__dim.tfStampReport()`.
@@ -21,6 +20,16 @@ export const tfStampHealth = {
     withStamp: 0,
     /** arrival - stamp, ms: the same gap a cloud shows if they share a clock. */
     gapMs: [] as number[],
+    /**
+     * The smallest gap ever seen, which is NOT just the median's quicker tail.
+     *
+     * Measured here: the median gap is ~115581 ms and the quickest is ~8 ms. Those are two
+     * populations, not one spread -- tf carries edges stamped on the sim's clock and edges stamped
+     * on wall time, from different publishers. It matters because an offset is read off the
+     * QUICKEST sample, so feeding this traffic to the clock reads the wall-stamped edges and puts
+     * every cloud two minutes in the past. The median hid that completely.
+     */
+    quickestGapMs: Number.POSITIVE_INFINITY,
     edgesWithout: new Set<string>(),
 }
 
@@ -35,7 +44,6 @@ function stampMsOf(header: { stamp?: { sec?: number; nsec?: number } } | undefin
 
 export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, history: TfHistory) {
     const subscribed = new Set<string>()
-    const clock = captureClock(connection)
     const sync = () => {
         for (const topic of connection.status.get().topics) {
             if (topic.type !== "tf2_msgs.TFMessage" || !isTreeTopic(topic.name) || subscribed.has(topic.key)) {
@@ -51,7 +59,6 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                 } catch {
                     return
                 }
-                let observed = false
                 for (const stamped of decoded.transforms ?? []) {
                     const { translation, rotation } = stamped.transform ?? {}
                     if (!translation || !rotation) {
@@ -68,25 +75,13 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                         tfStampHealth.edgesWithout.add(`${parent}->${child}`)
                     } else {
                         tfStampHealth.withStamp++
-                        tfStampHealth.gapMs.push(message.timestamp - stampMs)
+                        const gap = message.timestamp - stampMs
+                        tfStampHealth.gapMs.push(gap)
                         if (tfStampHealth.gapMs.length > 200) {
                             tfStampHealth.gapMs.shift()
                         }
-                        // The clouds' clock offset, learned from tf instead of from the clouds.
-                        //
-                        // Both cross the same pair of clocks, but a transform is a few dozen bytes at
-                        // 50 Hz where a scan is hundreds of kilobytes at 10 -- so tf's quickest sample
-                        // sat 32 ms BELOW the best a cloud ever managed. The offset is read off the
-                        // quickest sample there is, and the correction is only as good as that floor,
-                        // so the floor should come from the traffic that is cheapest to send.
-                        //
-                        // Once per message, not once per transform. One message carries a whole
-                        // tree's worth of them stamped alike, and this sim pushes ~660 a second: at
-                        // that rate the clock's window holds thousands of samples and re-fitting it
-                        // on every one is millions of operations a second, on the thread that draws.
-                        if (!observed) {
-                            observed = true
-                            clock.observe(message.timestamp, stampMs)
+                        if (gap < tfStampHealth.quickestGapMs) {
+                            tfStampHealth.quickestGapMs = gap
                         }
                     }
                 }
