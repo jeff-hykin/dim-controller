@@ -1,5 +1,7 @@
 // dimos's named locations wire contract (dimos/mapping/relocalization/module.py): its list read as labels and a
-// revision, and the whole lists (edited from that revision), request and goal the page sends.
+// revision, and the whole lists, request and goal the page sends. Anyone may publish the topic and the module applies
+// any list that isn't a no-op, so the page publishes straight away and the revision it carries is only the last one it
+// heard.
 import { assertEquals } from "jsr:@std/assert@1"
 import { decode } from "../src/core/lcm/lcm.ts"
 import { GOAL_KEY, listBytes, NamedLocations, type NamedPose, POINT_STAMPED, readList, renamedLocation, replaces, REQUEST_KEY, SNAPSHOT_KEY, stringBytes, UPDATE_TYPE, withLocation, withoutLocation } from "../src/core/namedLocations.ts"
@@ -77,6 +79,7 @@ Deno.test("add, move, rename and delete are new whole lists, in order", () => {
 Deno.test("edits carry the cached list's revision, and the page draws the latest list heard", async () => {
     const fake = fakeConnection()
     const named = new NamedLocations(fake.connection)
+    try {
     assertEquals(named.state.get().locations, null, "no module yet")
     fake.deliver(listBytes([at("kitchen", 1, "premap")], rev(3)))
     assertEquals(named.frame, "premap", "the list's frame, not a hardcoded map")
@@ -91,6 +94,9 @@ Deno.test("edits carry the cached list's revision, and the page draws the latest
     await named.goTo("galley")
     const goal = decode(POINT_STAMPED, fake.sent[1].bytes)
     assertEquals([fake.sent[1].key, goal.header.frame_id, goal.point], [GOAL_KEY, "premap", { x: 1, y: 0, z: 0 }])
+    } finally {
+        named.stop()
+    }
 })
 
 Deno.test("a list replaces the cache unless it's an older revision of the same run", () => {
@@ -101,21 +107,50 @@ Deno.test("a list replaces the cache unless it's an older revision of the same r
     assertEquals(replaces(rev(3), rev(0, "run2")), true, "a restarted module")
 })
 
-Deno.test("no edit before a list came", async () => {
-    const named = new NamedLocations(fakeConnection().connection)
-    let failed = false
-    await named.publish([at("hall", 1)]).catch(() => (failed = true))
-    assertEquals(failed, true)
+Deno.test("an edit before any list has come still goes out, with a zero revision", async () => {
+    const fake = fakeConnection()
+    const named = new NamedLocations(fake.connection)
+    try {
+        await named.publish([at("hall", 1)])
+        assertEquals(fake.sent.map((one) => one.key), [SNAPSHOT_KEY])
+        const sent = readList(fake.sent[0].bytes)
+        assertEquals(sent.revision, { server_id: "", seq_num: 0 }, "nothing heard yet: the module applies it anyway")
+        assertEquals(sent.locations.map((one) => one.label), ["hall"])
+    } finally {
+        named.stop()
+    }
 })
 
 Deno.test("each connect asks for the list", async () => {
     const fake = fakeConnection()
-    new NamedLocations(fake.connection)
-    fake.status.set({ state: "connected" })
-    fake.status.set({ state: "lost" })
-    fake.status.set({ state: "connected" })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assertEquals(fake.sent.map((one) => one.key), [REQUEST_KEY, REQUEST_KEY])
+    const named = new NamedLocations(fake.connection)
+    try {
+        fake.status.set({ state: "connected" })
+        fake.status.set({ state: "lost" })
+        fake.status.set({ state: "connected" })
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        assertEquals(fake.sent.map((one) => one.key), [REQUEST_KEY, REQUEST_KEY])
+    } finally {
+        named.stop()
+    }
+})
+
+Deno.test("it keeps asking while no list has come, and stops at the first one", async () => {
+    const fake = fakeConnection()
+    // a module that starts after this page has nobody to tell and this page has already asked, so it asks again
+    const named = new NamedLocations(fake.connection, 1)
+    try {
+        fake.status.set({ state: "connected" })
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        const asked = fake.sent.filter((one) => one.key === REQUEST_KEY).length
+        assertEquals(asked > 1, true, `asked ${asked} times`)
+        fake.deliver(listBytes([at("kitchen", 1)], rev(2)))
+        const after = fake.sent.length
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        assertEquals(fake.sent.length, after, "the list came: stop asking")
+    } finally {
+        named.stop()
+    }
 })
 
 Deno.test("strings are std_msgs.String", () => {

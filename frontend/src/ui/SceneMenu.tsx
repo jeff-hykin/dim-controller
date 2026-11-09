@@ -118,7 +118,9 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                 return
             }
             await app.labels.create(text.trim(), point)
-            setNote("Location sent to NamedLocations")
+            // the module keeps no store of its own: a name lasts past this run only if it was recorded, and that
+            // recording becomes the next run's map file
+            setNote(recorder.status.get().recording.active ? "Location sent to NamedLocations" : "Location added (not recording: this session only)")
             recorder.refresh()
         } catch (error) {
             setNote(`Couldn't ${editing === "rename" ? "rename" : "add"} the label: ${error instanceof Error ? error.message : error}`)

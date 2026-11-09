@@ -1,11 +1,14 @@
 // dimos's named locations (dimos/mapping/relocalization/module.py): named poses the module keeps in its map frame
 // ("map", or "premap" on the M20, whose LIO frame is already map). /named_locations is the whole list, one
-// InteractiveMarkerUpdate whose server_id/seq_num name the module run and the list's revision. The page replaces its
-// cache with each list it hears (one older than the cached revision of the same run excepted: the echo of a superseded
-// edit), and sends /named_locations_request on every connect. An add, move, rename or delete is a new whole list
-// carrying the server_id/seq_num of the list it was edited from: the module adopts it only if that's its current
-// revision, else drops it and republishes. Go to is the location's pose as a PointStamped on the planner's /goal.
-// `state.locations` is null until a list comes: then the module is there, and the 3D view's labels are these (core/labels.ts).
+// InteractiveMarkerUpdate whose server_id/seq_num name the module run and the list's revision. Anyone may publish the
+// topic and everyone who publishes it also listens: an add, move, rename or delete is a new whole list, the module
+// applies any list that isn't a no-op and publishes the result, and this page replaces its cache with each list it
+// hears (one older than the cached revision of the same run excepted: the echo of a superseded edit). So the page
+// publishes straight to the topic without waiting to be told it may -- last writer wins, and the echo redraws
+// everyone. The module publishes its list when it starts; /named_locations_request is the recovery path, asked on
+// every connect and retried while nothing has come. Go to is the location's pose as a PointStamped on the planner's
+// /goal. `state.locations` is null until a list comes: then the module is there, and the 3D view's labels are these
+// (core/labels.ts).
 import { decode, encode } from "./lcm/lcm.ts"
 import { Store } from "./store.ts"
 import { type Connection, dimosKey } from "./transport.ts"
@@ -16,6 +19,8 @@ export const STRING_TYPE = "std_msgs.String"
 export const SNAPSHOT_KEY = dimosKey("/named_locations", UPDATE_TYPE)
 export const REQUEST_KEY = dimosKey("/named_locations_request", STRING_TYPE)
 export const POINT_STAMPED = "geometry_msgs.PointStamped"
+/** How often to ask again while no list has come (the module may not be up yet). */
+const RETRY_MS = 5000
 export const GOAL_KEY = dimosKey("/goal", POINT_STAMPED)
 
 /** The module run and revision a list is (or was edited from). */
@@ -82,7 +87,7 @@ export const replaces = (cached: Revision | null, next: Revision) => !cached || 
 export class NamedLocations {
     readonly state = new Store<{ locations: LocationLabel[] | null; revision: Revision | null }>({ locations: null, revision: null })
 
-    constructor(readonly connection: Connection) {
+    constructor(readonly connection: Connection, retryMs = RETRY_MS) {
         const subscription = connection.subscribe(SNAPSHOT_KEY, { delivery: "reliable" }, (message) => {
             const list = readList(message.bytes)
             if (replaces(this.state.get().revision, list.revision)) {
@@ -103,6 +108,27 @@ export class NamedLocations {
             }
             state = next
         })
+        // The module publishes its list when it starts, so one ask per connect is normally enough. It is not when the
+        // module starts after this page: it has nobody to tell and this page has already asked. Keep asking until a
+        // list comes, then stop -- the cost is one empty String every RETRY_MS while there is no module at all.
+        this.#retry = setInterval(() => {
+            if (this.state.get().locations === null && this.connection.status.get().state === "connected") {
+                ask()
+            }
+        }, retryMs)
+        this.state.subscribe(() => {
+            if (this.state.get().locations !== null) {
+                this.stop()
+            }
+        })
+    }
+
+    #retry: number | undefined
+
+    /** Stops asking for the list (on the first one, and when the page is done with this). */
+    stop() {
+        clearInterval(this.#retry)
+        this.#retry = undefined
     }
 
     async #put(key: string, bytes: Uint8Array) {
@@ -123,12 +149,13 @@ export class NamedLocations {
         return this.current[0]?.frame_id ?? null
     }
 
-    /** Publishes a new whole list, edited from the cached revision; it's drawn when it comes back on the topic, like anyone's. */
+    /** Publishes a new whole list; it's drawn when it comes back on the topic, like anyone's.
+     *
+     * The revision it carries is the last one heard, or a zero one when nothing has come: the module applies any list
+     * that isn't a no-op, so this never has to wait for permission to edit. With no module listening the put simply
+     * goes nowhere and no list ever comes back, which is what the caller sees. */
     publish(list: NamedPose[]): Promise<void> {
-        const revision = this.state.get().revision
-        if (!revision) {
-            return Promise.reject(new Error("no list from the named locations module yet"))
-        }
+        const revision = this.state.get().revision ?? { server_id: "", seq_num: 0 }
         return this.#put(SNAPSHOT_KEY, listBytes(list, revision))
     }
 
