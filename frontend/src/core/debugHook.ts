@@ -92,6 +92,46 @@ export function installDebugHook(app: ViewerApp) {
         scene: app.viewer.scene,
         THREE,
         /**
+         * Is the last cloud actually placed at its own stamp, or clamped to "now"?
+         *
+         * `clamped` true on any edge means that edge had nothing kept at the cloud's time and
+         * returned its newest sample instead -- the behaviour the stamps were meant to replace,
+         * and indistinguishable on screen from no fix at all.
+         */
+        placementReport() {
+            const cloud = lastCloudShape
+            if (!cloud || cloud.takenAtMs === null || !cloud.frame) {
+                return { error: "no cloud with a stamp and a frame yet", cloud }
+            }
+            const fixed = app.viewer.fixedFrame
+            return {
+                frame: cloud.frame,
+                fixedFrame: fixed,
+                takenAtMs: cloud.takenAtMs,
+                arrivedAtMs: cloud.arrivedAtMs,
+                /** how far the two clocks are apart right now, read off one message */
+                arrivalMinusTakenMs: cloud.arrivedAtMs === null ? null : Math.round(cloud.arrivedAtMs - cloud.takenAtMs),
+                coverage: app.tfHistory.coverage(cloud.frame, fixed, cloud.takenAtMs),
+                // What the correction is actually worth: the pose used, against the pose "now".
+                // If these agree the by-stamp lookup is changing nothing and the fault is elsewhere.
+                versusNow: (() => {
+                    const taken = app.tfHistory.lookupAt(cloud.frame!, fixed, cloud.takenAtMs!)
+                    const now = app.tfHistory.lookupAt(cloud.frame!, fixed, Number.MAX_SAFE_INTEGER)
+                    if (!taken || !now) {
+                        return { error: "no transform", taken: !!taken, now: !!now }
+                    }
+                    const a = new THREE.Quaternion().setFromRotationMatrix(taken)
+                    const b = new THREE.Quaternion().setFromRotationMatrix(now)
+                    const pa = new THREE.Vector3().setFromMatrixPosition(taken)
+                    const pb = new THREE.Vector3().setFromMatrixPosition(now)
+                    return {
+                        degreesApart: Number((2 * Math.acos(Math.min(1, Math.abs(a.dot(b)))) * 180 / Math.PI).toFixed(3)),
+                        metresApart: Number(pa.distanceTo(pb).toFixed(4)),
+                    }
+                })(),
+            }
+        },
+        /**
          * Whether tf could stand in for the clouds' own stamps.
          *
          * Read `quickestGapMs`, not `medianGapMs`. Here the median is ~115581 ms and the quickest

@@ -62,6 +62,48 @@ export class TfHistory {
     }
 
     /**
+     * Per edge on the path: the samples kept, and whether `stamp` falls inside them.
+     *
+     * A lookup outside an edge's range silently returns that edge's newest sample, which is the
+     * "place it where the robot is now" behaviour the stamps exist to avoid -- and it looks
+     * identical on screen to having no fix at all. This says which it is.
+     */
+    coverage(frame: string, fixed: string, stamp: number): {
+        edge: string
+        samples: number
+        oldestMs: number
+        newestMs: number
+        /** stamp - newest: positive means the cloud is newer than any transform kept */
+        aheadOfNewestMs: number
+        clamped: boolean
+    }[] {
+        const out = []
+        for (const name of [frame, fixed]) {
+            for (let node = name, depth = 0; depth < 64; depth++) {
+                const edge = this.#edges.get(node)
+                if (!edge) {
+                    break
+                }
+                const samples = edge.samples
+                if (samples.length > 0) {
+                    const oldest = samples[0].stamp
+                    const newest = samples[samples.length - 1].stamp
+                    out.push({
+                        edge: `${edge.parent}->${node}`,
+                        samples: samples.length,
+                        oldestMs: Math.round(oldest),
+                        newestMs: Math.round(newest),
+                        aheadOfNewestMs: Math.round(stamp - newest),
+                        clamped: samples.length < 2 || stamp < oldest || stamp >= newest,
+                    })
+                }
+                node = edge.parent
+            }
+        }
+        return out
+    }
+
+    /**
      * T_fixed_frame at `stamp`: each edge interpolated between its samples around it, or its newest sample when the
      * stamp is outside what's kept. Falls back to the live tree's (latest) lookup when this history has no path
      * (e.g. world/map standing in for each other with no tf). A new matrix each call: the caller may keep it.

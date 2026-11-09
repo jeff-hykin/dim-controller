@@ -104,6 +104,10 @@ export let lastCloudShape: {
     headerKeys: string[] | null
     decodedKeys: string[] | null
     messageKeys: string[]
+    /** what it was placed at, and what it arrived at: the two clocks, side by side */
+    takenAtMs: number | null
+    arrivedAtMs: number | null
+    frame: string | null
 } | null = null
 
 const FRAME_RECHECK_MS = 30_000
@@ -173,6 +177,9 @@ class CloudLayer {
                 headerKeys: message.header ? Object.keys(message.header) : null,
                 decodedKeys: decoded ? Object.keys(decoded) : null,
                 messageKeys: Object.keys(message),
+                takenAtMs: captureMsOf(message.header),
+                arrivedAtMs: message.timestamp,
+                frame: this.#frame,
             }
             // each cloud's own frame_id, off its message header or else the encoding's output: one topic can mix frames
             // (a lidar and a camera's depth on the R1's /lidar), so each cloud is placed by its own
