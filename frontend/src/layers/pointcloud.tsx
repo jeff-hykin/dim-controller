@@ -4,7 +4,6 @@
 import * as THREE from "three"
 import { registerLayer, type LayerContext } from "../core/layers/registry.ts"
 import { headerFrameId } from "../core/lcm/lcm.ts"
-import { captureClock } from "../core/captureClock.ts"
 import { applyLook, GRADIENTS, makePointMaterial, RAMPS } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
@@ -189,11 +188,9 @@ class CloudLayer {
             if (decoded?.positions) {
                 // Placed by when the scan was taken, not by when it got here: a cloud is big and
                 // slow next to a TF message, and the difference is a pose the robot has already
-                // moved past (core/captureClock.ts).
-                const takenAt = captureClock(this.context.connection).takenAt(
-                    message.timestamp,
-                    captureMsOf(message.header),
-                )
+                // moved past. Its own stamp is enough, because tf is recorded at its stamp too --
+                // one clock on both sides of the lookup, nothing estimated between them.
+                const takenAt = captureMsOf(message.header) ?? message.timestamp
                 this.#onCloud(decoded.positions, decoded.intensity, takenAt, message.timestamp)
             }
         })

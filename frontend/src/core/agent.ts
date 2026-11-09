@@ -256,7 +256,11 @@ export class AgentLink {
                     if (decoded?.positions) {
                         cloud.positions = decoded.positions
                         cloud.at = performance.now()
-                        cloud.stamp = message.timestamp
+                        // its own stamp, the clock tf is recorded in; arrival only if it carries none
+                        const stamp = message.header?.stamp
+                        cloud.stamp = typeof stamp === "number" && Number.isFinite(stamp)
+                            ? stamp * 1000
+                            : message.timestamp
                     }
                 }))
                 const stopFrame = this.app.connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {

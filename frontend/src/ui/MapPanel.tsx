@@ -420,7 +420,10 @@ class MapSource {
                 return
             }
             this.empty = false
-            const placed = app.tfHistory.lookupAt(this.#cloudFrame, app.viewer.fixedFrame, message.timestamp) // as of the scan, not now
+            // as of the scan, not now: its own stamp, on the same clock tf is recorded in
+            const stamp = message.header?.stamp
+            const takenAt = typeof stamp === "number" && Number.isFinite(stamp) ? stamp * 1000 : message.timestamp
+            const placed = app.tfHistory.lookupAt(this.#cloudFrame, app.viewer.fixedFrame, takenAt)
             if (!placed) {
                 this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
                 return

@@ -8,7 +8,6 @@
 // It only reads. Nothing here changes what is drawn.
 import * as THREE from "three"
 import type { ViewerApp } from "./app.ts"
-import { captureClock } from "./captureClock.ts"
 import { lastCloudShape } from "../layers/pointcloud.tsx"
 import { tfStampHealth } from "./tfFeed.ts"
 
@@ -93,21 +92,6 @@ export function installDebugHook(app: ViewerApp) {
         scene: app.viewer.scene,
         THREE,
         /**
-         * How a cloud is being placed in time. `offsetMs` null means no capture stamp has ever
-         * arrived, so every cloud is being placed by when it turned up -- which is the fault this
-         * was written to cure, failing quietly. `driftMsPerSecond` is how fast the two clocks are
-         * pulling apart; zero after a minute of traffic means the rate is not being fitted.
-         */
-        clockReport(): { offsetMs: number | null; driftMsPerSecond: number; samples: number; cloud: unknown } {
-            const clock = captureClock(app.connection)
-            return {
-                offsetMs: clock.offsetMs,
-                driftMsPerSecond: clock.driftMsPerSecond,
-                samples: clock.sampleCount,
-                cloud: lastCloudShape,
-            }
-        },
-        /**
          * Whether tf could stand in for the clouds' own stamps.
          *
          * Read `quickestGapMs`, not `medianGapMs`. Here the median is ~115581 ms and the quickest
@@ -124,6 +108,17 @@ export function installDebugHook(app: ViewerApp) {
                 // the one that matters: an offset is read off the quickest sample, not the median
                 quickestGapMs: Number.isFinite(tfStampHealth.quickestGapMs) ? tfStampHealth.quickestGapMs : null,
                 edgesWithout: [...tfStampHealth.edgesWithout].slice(0, 20),
+                wallStampedCount: tfStampHealth.wallStamped.size,
+                simStampedCount: tfStampHealth.simStamped.size,
+                // the publishers to fix: these are stamping wall time where everything else is on sim time
+                wallStamped: [...tfStampHealth.wallStamped.entries()].slice(0, 40).map(([edge, gap]) => `${edge} +${Math.round(gap)}ms`),
+                simStampedSample: [...tfStampHealth.simStamped.keys()].slice(0, 8),
+                // the same edge from two publishers: the tree keeps whichever arrived last
+                doubled: [...tfStampHealth.topicsPerEdge.entries()]
+                    .filter(([, topics]) => topics.size > 1)
+                    .slice(0, 20)
+                    .map(([edge, topics]) => `${edge} on ${[...topics].join(" + ")}`),
+                bothClocks: [...tfStampHealth.wallStamped.keys()].filter((edge) => tfStampHealth.simStamped.has(edge)).slice(0, 20),
             }
         },
         /** What is on, what is drawn, and what is drawn twice. */

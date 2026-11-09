@@ -30,6 +30,21 @@ export const tfStampHealth = {
      * every cloud two minutes in the past. The median hid that completely.
      */
     quickestGapMs: Number.POSITIVE_INFINITY,
+    /**
+     * Which edges are on which clock, since there are two and that is the bug.
+     *
+     * A sim-stamped edge lags arrival by the sim's accumulated slowdown -- a minute and more here.
+     * A wall-stamped one lags only by its transit, milliseconds. Nothing between the two, so the
+     * split is unambiguous, and naming the edges on each side names the publishers to fix.
+     */
+    simStamped: new Map<string, number>(),
+    wallStamped: new Map<string, number>(),
+    /**
+     * Which topics each edge arrives on. More than one means two publishers are both claiming it,
+     * and the tree then holds whichever landed last -- so a stamp, a pose, or both can flip
+     * between them from message to message.
+     */
+    topicsPerEdge: new Map<string, Set<string>>(),
     edgesWithout: new Set<string>(),
 }
 
@@ -41,6 +56,9 @@ function stampMsOf(header: { stamp?: { sec?: number; nsec?: number } } | undefin
     }
     return stamp.sec * 1000 + (stamp.nsec ?? 0) / 1e6
 }
+
+/** One warning if any edge arrives unstamped: mixing clocks in one tree is silent and ruinous. */
+let warnedUnstamped = false
 
 export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, history: TfHistory) {
     const subscribed = new Set<string>()
@@ -68,11 +86,23 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                     const position: [number, number, number] = [translation.x, translation.y, translation.z]
                     const quaternion: [number, number, number, number] = [rotation.x, rotation.y, rotation.z, rotation.w]
                     tf.set(parent, child, position, quaternion, isStatic)
-                    history.record(parent, child, position, quaternion, message.timestamp, isStatic)
                     tfStampHealth.transforms++
                     const stampMs = stampMsOf(stamped.header)
+                    // Recorded at the time the transform says it is for, not the time it landed.
+                    // Both sides of the lookup are then on the robot's own clock and a cloud can
+                    // be placed by its own stamp, with nothing estimated. An edge that carries no
+                    // stamp falls back to arrival, which is where every edge used to sit.
+                    history.record(parent, child, position, quaternion, stampMs ?? message.timestamp, isStatic)
                     if (stampMs === null) {
                         tfStampHealth.edgesWithout.add(`${parent}->${child}`)
+                        if (!warnedUnstamped) {
+                            warnedUnstamped = true
+                            console.warn(
+                                "[dim-controller] a tf edge carries no capture stamp, so it is placed by arrival " +
+                                    "while the rest of the tree is on the robot's clock; see __dim.tfStampReport()",
+                                `${parent}->${child}`,
+                            )
+                        }
                     } else {
                         tfStampHealth.withStamp++
                         const gap = message.timestamp - stampMs
@@ -83,6 +113,12 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                         if (gap < tfStampHealth.quickestGapMs) {
                             tfStampHealth.quickestGapMs = gap
                         }
+                        const edge = `${parent}->${child}`
+                        const side = gap < 1000 ? tfStampHealth.wallStamped : tfStampHealth.simStamped
+                        side.set(edge, gap)
+                        const seenOn = tfStampHealth.topicsPerEdge.get(edge) ?? new Set<string>()
+                        seenOn.add(topic.name)
+                        tfStampHealth.topicsPerEdge.set(edge, seenOn)
                     }
                 }
                 viewer.noteData(message.timestamp)
