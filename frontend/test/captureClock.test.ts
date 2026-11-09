@@ -78,3 +78,38 @@ Deno.test("a sample is never placed after it arrived", () => {
     const arrival = 9_000
     assertEquals(clock.takenAt(arrival, arrival - OFFSET - 3_000) <= arrival, true)
 })
+
+Deno.test("a fast channel sets the floor even while a slow one feeds the same clock", () => {
+    // tf and the clouds cross the same pair of clocks, but a transform is a few dozen bytes at
+    // 50 Hz where a scan is hundreds of kilobytes at 10. Measured live, tf's quickest sample sat
+    // 32 ms below the best a cloud ever managed -- so tf is what the offset should be read from,
+    // and a cloud observing the same clock must not be able to drag it up.
+    const clock = new CaptureClock()
+    const CLOCKS_APART = 9_000
+    const QUICK_TF = 6
+    let worst = 0
+    for (let index = 0; index < 600; index++) {
+        const taken = index * 20 // when it was really taken, on the arrival clock; tf at 50 Hz
+        const stamp = taken - CLOCKS_APART // what the sensor's clock calls that moment
+        const transit = index % 25 === 0 ? QUICK_TF : 90 // mostly quick, occasionally quicker
+        clock.observe(taken + transit, stamp)
+        if (index % 5 === 0) {
+            // a cloud on the same clock, always slow: it must not raise the floor
+            const placed = clock.takenAt(taken + 850, stamp)
+            worst = Math.max(worst, Math.abs(placed - taken))
+        }
+    }
+    assertEquals(clock.offsetMs, CLOCKS_APART + QUICK_TF, "the quickest tf sample, not the quickest cloud")
+    assertEquals(worst <= QUICK_TF, true, `a cloud lands within ${QUICK_TF} ms of when it was taken, off by ${worst}`)
+})
+
+Deno.test("a chatty link cannot grow the window without bound", () => {
+    // The fit walks every sample it holds, so cost is rate times count. Three robots' tf arriving
+    // together must not turn that into millions of operations a second on the drawing thread.
+    const clock = new CaptureClock()
+    for (let index = 0; index < 20_000; index++) {
+        clock.observe(index * 0.5 + 100, index * 0.5) // 2 kHz, far above anything real
+    }
+    assertEquals(clock.sampleCount <= 1_200, true, `window held ${clock.sampleCount} samples`)
+    assertEquals(clock.offsetMs, 100, "and it still reads the offset correctly")
+})

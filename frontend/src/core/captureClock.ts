@@ -31,6 +31,13 @@ import { UNWRAPPED } from "./freeze.ts"
  * a step, where 20 s costs 400 ms and 30 s costs 650 ms for no better fit.
  */
 const WINDOW_MS = 12_000
+/**
+ * A ceiling on the window, whatever the traffic. The fit walks every sample it holds, so the cost
+ * is the sample RATE times the sample COUNT -- fine for one topic, not fine for three robots'
+ * worth of tf arriving together. At this cap a busy link still spans several seconds, which is all
+ * the rate fit needs, and the work stays off the thread that draws.
+ */
+const MAX_SAMPLES = 1_200
 /** Fitted rates past this are noise, not clock drift (two slow samples in a row). */
 const MAX_RATE = 0.5
 /**
@@ -63,6 +70,9 @@ export class CaptureClock {
         let drop = 0
         while (drop < this.#gaps.length - 2 && this.#gaps[drop].arrivalMs < cutoff) {
             drop++ // always leave two, so there is still a line to fit
+        }
+        if (this.#gaps.length - drop > MAX_SAMPLES) {
+            drop = this.#gaps.length - MAX_SAMPLES
         }
         if (drop > 0) {
             this.#gaps.splice(0, drop)

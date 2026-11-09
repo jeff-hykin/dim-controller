@@ -7,17 +7,14 @@ import type { Connection } from "./transport.ts"
 import type { TfTree } from "dimos-react/three"
 import type { Viewer } from "dimos-react/three"
 import type { TfHistory } from "./tfHistory.ts"
+import { captureClock } from "./captureClock.ts"
 
 /**
- * Whether tf arrives with usable capture stamps, which decides how a cloud can be placed in time.
+ * Whether tf arrives with usable capture stamps, read out of `__dim.tfStampReport()`.
  *
- * Right now tf is recorded at arrival and a cloud's capture stamp is converted into that clock by
- * estimating the clocks' difference off the traffic (core/captureClock.ts) -- good to about a
- * frame, but an estimate. Every TransformStamped carries its own stamp, so if they are all there
- * and all on the clouds' clock, both sides could be recorded at capture time and the estimate
- * could go. If some edges have a stamp and others do not, they cannot: the history would hold two
- * clocks tens of seconds apart and place things nowhere near right. So count, and read it out of
- * `__dim.tfStampReport()` before changing anything.
+ * Measured on this sim: 197530 transforms, 197530 of them stamped, none missing, and a median gap
+ * to arrival of 115580.9 ms against the clouds' offset of 115612.9 ms -- the same pair of clocks,
+ * to within 32 ms. That is what makes feeding the clock from tf sound.
  */
 export const tfStampHealth = {
     transforms: 0,
@@ -38,6 +35,7 @@ function stampMsOf(header: { stamp?: { sec?: number; nsec?: number } } | undefin
 
 export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, history: TfHistory) {
     const subscribed = new Set<string>()
+    const clock = captureClock(connection)
     const sync = () => {
         for (const topic of connection.status.get().topics) {
             if (topic.type !== "tf2_msgs.TFMessage" || !isTreeTopic(topic.name) || subscribed.has(topic.key)) {
@@ -53,6 +51,7 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                 } catch {
                     return
                 }
+                let observed = false
                 for (const stamped of decoded.transforms ?? []) {
                     const { translation, rotation } = stamped.transform ?? {}
                     if (!translation || !rotation) {
@@ -72,6 +71,22 @@ export function feedTf(connection: Connection, tf: TfTree, viewer: Viewer, histo
                         tfStampHealth.gapMs.push(message.timestamp - stampMs)
                         if (tfStampHealth.gapMs.length > 200) {
                             tfStampHealth.gapMs.shift()
+                        }
+                        // The clouds' clock offset, learned from tf instead of from the clouds.
+                        //
+                        // Both cross the same pair of clocks, but a transform is a few dozen bytes at
+                        // 50 Hz where a scan is hundreds of kilobytes at 10 -- so tf's quickest sample
+                        // sat 32 ms BELOW the best a cloud ever managed. The offset is read off the
+                        // quickest sample there is, and the correction is only as good as that floor,
+                        // so the floor should come from the traffic that is cheapest to send.
+                        //
+                        // Once per message, not once per transform. One message carries a whole
+                        // tree's worth of them stamped alike, and this sim pushes ~660 a second: at
+                        // that rate the clock's window holds thousands of samples and re-fitting it
+                        // on every one is millions of operations a second, on the thread that draws.
+                        if (!observed) {
+                            observed = true
+                            clock.observe(message.timestamp, stampMs)
                         }
                     }
                 }
