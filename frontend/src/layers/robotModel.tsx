@@ -14,6 +14,7 @@ import { type UrdfSource, urdfSource } from "../core/urdfSource.ts"
 import { ensureSparkRenderer, splatFiles } from "../core/splats.ts"
 import { rendering } from "../core/render/rendering.ts"
 import { applyMeshStyle } from "../core/render/meshStyle.ts"
+import { shownAt, shownVersion } from "../core/displayTime.ts"
 
 export interface RobotModelSettings {
     opacity: number
@@ -45,6 +46,7 @@ class RobotModelLayer {
     #drawing = false
     #fixedFrame = ""
     #tfVersion = -1
+    #shownVersion = -1
 
     constructor(readonly context: LayerContext, readonly settings: Store<RobotModelSettings>) {
         this.root.matrixAutoUpdate = false
@@ -131,10 +133,18 @@ class RobotModelLayer {
     }
 
     update(frame: { fixedFrame: string }) {
+        // Posed at the instant the view is showing, so the model and the data drawn beside it are
+        // the same moment. Without one -- no stamped data on screen -- this is tf's latest, which
+        // is what it always was.
+        const at = shownAt()
+        const inFrame = (link: string) =>
+            at === null
+                ? this.context.tf.lookup(link, frame.fixedFrame)
+                : this.context.tfHistory.lookupAt(link, frame.fixedFrame, at)
         const model = this.#model
         const kinematics = this.#kinematics
         const root = kinematics?.root
-        const placed = root ? this.context.tf.lookup(root, frame.fixedFrame) : null
+        const placed = root ? inFrame(root) : null
         const show = !!model && !!placed && !this.#source.state.get().armDraws
         if (this.root.visible !== show) {
             this.root.visible = show
@@ -147,14 +157,19 @@ class RobotModelLayer {
             this.#status()
         }
         // only when the tree moved
-        if (!show || !model || !kinematics || (this.context.tf.version === this.#tfVersion && frame.fixedFrame === this.#fixedFrame)) {
+        if (
+            !show || !model || !kinematics ||
+            (this.context.tf.version === this.#tfVersion && frame.fixedFrame === this.#fixedFrame &&
+                shownVersion() === this.#shownVersion)
+        ) {
             return
         }
         this.#tfVersion = this.context.tf.version
+        this.#shownVersion = shownVersion()
         this.#fixedFrame = frame.fixedFrame
         // every link at its TF frame; one without a frame at its parent's through the joint's origin (parents come first)
         const poses = new Map<string, THREE.Matrix4>()
-        const inFixed = (link: string) => this.context.tf.lookup(link, frame.fixedFrame)
+        const inFixed = inFrame
         const relative = (child: string, parent: string) => {
             const childPose = inFixed(child), parentPose = inFixed(parent)
             return childPose && parentPose ? parentPose.clone().invert().multiply(childPose) : null
