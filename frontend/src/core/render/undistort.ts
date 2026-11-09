@@ -5,6 +5,9 @@ import type { CameraModel } from "dimos-react/three"
 import type { Topic } from "../transport.ts"
 import { cameraInfoFor } from "../video.ts"
 
+/** the grid blank() probes, each side: 5x5 points across the picture */
+const BLANK_PROBE = 5
+
 export class UndistortCanvas {
     #gl: WebGL2RenderingContext
     #program: WebGLProgram
@@ -77,12 +80,13 @@ export class UndistortCanvas {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     }
 
-    /** Draws one picture (a playing video, a canvas or a decoded JPEG) undistorted, at the source's own size. */
-    draw(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap, model: CameraModel) {
+    /** Draws one picture (a playing video, a canvas or a decoded JPEG) undistorted, at the source's own size.
+     * False when the source has no picture yet, so a caller can tell "nothing drawn" from "drawn". */
+    draw(source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap, model: CameraModel): boolean {
         const width = source instanceof HTMLVideoElement ? source.videoWidth : source.width
         const height = source instanceof HTMLVideoElement ? source.videoHeight : source.height
         if (!width || !height) {
-            return
+            return false
         }
         const gl = this.#gl
         if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -102,6 +106,26 @@ export class UndistortCanvas {
         gl.clearColor(0, 0, 0, 0)
         gl.clear(gl.COLOR_BUFFER_BIT)
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+        return true
+    }
+
+    /** Whether what was last drawn is wholly transparent: a lens model that sends every output pixel past the source's
+     * edge undistorts to nothing, which on screen is an empty panel. Reading pixels back stalls the GPU, so a caller
+     * asks once, not per frame; a sparse grid is enough to tell "nothing at all" from "a picture with gaps". */
+    blank(): boolean {
+        const gl = this.#gl
+        const pixel = new Uint8Array(4)
+        for (let row = 0; row < BLANK_PROBE; row++) {
+            for (let column = 0; column < BLANK_PROBE; column++) {
+                const x = Math.floor((column + 0.5) * this.canvas.width / BLANK_PROBE)
+                const y = Math.floor((row + 0.5) * this.canvas.height / BLANK_PROBE)
+                gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+                if (pixel[3] > 0) {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     dispose() {
