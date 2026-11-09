@@ -498,6 +498,9 @@ h3.dr-h3.first { margin-top: 4px; }
 /* undistorting: the raw picture stays (it still decodes and takes the hold-zoom presses) under its straightened copy */
 .camera-media.undistorted, .depth-host.undistorted canvas { opacity: 0; }
 .camera-undistorted { pointer-events: none; }
+/* undistort gave up (no WebGL2, no pixels, or a lens model that maps the picture away): the canvas must not sit over
+   the raw picture that is now showing again */
+.camera-undistorted.gave-up { display: none; }
 .quality-info-pick { padding: 0 8px 6px; }
 .quality-info-pick .dr-select, .quality-info-pick select { width: 100%; }
 .camera-fit[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }

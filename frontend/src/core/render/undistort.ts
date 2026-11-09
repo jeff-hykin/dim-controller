@@ -109,23 +109,45 @@ export class UndistortCanvas {
         return true
     }
 
-    /** Whether what was last drawn is wholly transparent: a lens model that sends every output pixel past the source's
-     * edge undistorts to nothing, which on screen is an empty panel. Reading pixels back stalls the GPU, so a caller
-     * asks once, not per frame; a sparse grid is enough to tell "nothing at all" from "a picture with gaps". */
-    blank(): boolean {
+    /** What the last draw actually put on screen, read back over a sparse grid: `null` when it is a picture.
+     * "transparent" — a lens model that sends every output pixel past the source's edge undistorts to nothing.
+     * "flat" — every probed pixel is the same colour, which is what a browser that hands out no pixels of a
+     * hardware-decoded stream gives (Firefox on Android: a flat purple). A real camera picture is never one
+     * colour across the whole frame, so this reads the GPU's own result instead of guessing from the browser.
+     * Reading pixels back stalls the GPU, so a caller asks a few times at most, never per frame. */
+    shows(): "transparent" | "flat" | null {
         const gl = this.#gl
         const pixel = new Uint8Array(4)
+        let opaque = false
+        let first: string | null = null
+        let varied = false
         for (let row = 0; row < BLANK_PROBE; row++) {
             for (let column = 0; column < BLANK_PROBE; column++) {
                 const x = Math.floor((column + 0.5) * this.canvas.width / BLANK_PROBE)
                 const y = Math.floor((row + 0.5) * this.canvas.height / BLANK_PROBE)
                 gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
                 if (pixel[3] > 0) {
-                    return false
+                    opaque = true
+                }
+                const colour = pixel.join(",")
+                first ??= colour
+                if (colour !== first) {
+                    varied = true
                 }
             }
         }
-        return true
+        if (!opaque) {
+            return "transparent"
+        }
+        return varied ? null : "flat"
+    }
+
+    /** Wipes the canvas to fully transparent, so a panel that gave up on undistorting shows the raw picture
+     * underneath instead of whatever the last (failed) draw left covering it. */
+    clear() {
+        const gl = this.#gl
+        gl.clearColor(0, 0, 0, 0)
+        gl.clear(gl.COLOR_BUFFER_BIT)
     }
 
     dispose() {

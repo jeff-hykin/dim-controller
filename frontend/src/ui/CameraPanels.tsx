@@ -37,6 +37,9 @@ import type { CameraActions } from "./useCommands.ts"
 
 /** a browser that can't read the video back undistorts the camera's JPEGs, this many a second (each is a whole JPEG over the data channel) */
 const JPEG_UNDISTORT_HZ = 10
+/** frames of an empty or one-colour result before undistort gives up on this browser: a stream's first frame can
+ * legitimately be flat, so the verdict waits for a few in a row */
+const PROBE_FRAMES = 4
 
 /** the camera topic's next JPEG on a canvas (a snapshot's picture, the same size as the video's) */
 async function jpegCanvas(app: ViewerApp, topic: Topic): Promise<HTMLCanvasElement> {
@@ -444,19 +447,32 @@ function CameraPanel({ app, panel, topics, onChange }: {
             setUndistortProblem("no WebGL2")
             return
         }
-        let probed = false
+        // The GPU's own result decides whether this works, not a guess about the browser: a 2D-canvas readback is a
+        // different path from the WebGL one undistort draws through, so a browser is given the benefit of the doubt
+        // and judged on what it actually produced. A first frame can legitimately be one colour, so a verdict needs
+        // PROBE_FRAMES of it in a row.
+        let probes = 0
+        let verdict: "works" | "cannot" | null = null
         const drawFrom = (source: HTMLVideoElement | HTMLCanvasElement | ImageBitmap) => {
-            const drawn = renderer.draw(source, model!)
-            if (!drawn) {
+            if (verdict === "cannot" || !renderer.draw(source, model!)) {
                 return false
             }
-            // a lens model that sends the whole picture past the source's edge draws nothing at all: that is an empty
-            // panel, so keep the raw picture up instead. Asked once (a pixel read stalls the GPU), on the first frame.
-            if (!probed) {
-                probed = true
-                if (renderer.blank()) {
-                    setUndistortProblem(`${infoTopic?.name ?? "this CameraInfo"} undistorts the picture to nothing`)
+            if (!verdict) {
+                const shows = renderer.shows()
+                if (!shows) {
+                    verdict = "works"
+                } else if (++probes >= PROBE_FRAMES) {
+                    verdict = "cannot"
+                    // the probe frames left a failed picture on the canvas, which sits over the raw one: wipe it
+                    renderer.clear()
+                    setUndistortProblem(
+                        shows === "flat"
+                            ? "this browser hands out no pixels of this camera's video"
+                            : `${infoTopic?.name ?? "this CameraInfo"} undistorts the picture to nothing`,
+                    )
                     return false
+                } else {
+                    return false // undecided: don't show a frame that may be nothing
                 }
             }
             setUndistortDrawn(true)
@@ -468,9 +484,9 @@ function CameraPanel({ app, panel, topics, onChange }: {
         let stopJpeg: (() => void) | null = null
         if (!depth && element) {
             const drew = () => {
-                const readable = videoReadable(element)
-                // a browser that can't read the video back (Firefox on Android): the camera's own JPEGs instead
-                if (!stopJpeg && topic && hasJpegFrames(topic) && readable === false) {
+                // a browser that can't read the video back (Firefox on Android): the camera's own JPEGs instead, when
+                // the camera publishes them. m20's cameras publish CompressedVideo only, so there is nothing to fall back to.
+                if (!stopJpeg && topic && hasJpegFrames(topic) && videoReadable(element) === false) {
                     stopJpeg = jpegFrames(app.connection, topic, JPEG_UNDISTORT_HZ, (bitmap) => {
                         drawFrom(bitmap)
                         bitmap.close()
@@ -479,16 +495,11 @@ function CameraPanel({ app, panel, topics, onChange }: {
                 if (stopJpeg) {
                     return
                 }
-                // an unreadable video with no JPEG topic behind it can never be undistorted: say so and leave the raw picture up
-                if (readable === false) {
-                    setUndistortProblem("this browser hands out no pixels of this stream")
-                    return
+                drawFrom(element)
+                // a settled "cannot" never changes: stop asking for frames rather than probing the GPU forever
+                if (verdict !== "cannot") {
+                    frameCallback = element.requestVideoFrameCallback(drew)
                 }
-                // a video not read back yet isn't drawn (an unreadable one draws a flat purple)
-                if (readable) {
-                    drawFrom(element)
-                }
-                frameCallback = element.requestVideoFrameCallback(drew)
             }
             drew()
         } else if (depthRenderer.current) {
@@ -531,7 +542,7 @@ function CameraPanel({ app, panel, topics, onChange }: {
         return () => removeEventListener("pointerdown", close, true)
     }, [qualityOpen])
 
-    const info = size.width ? `${size.width}×${size.height}${size.fps && !stalled ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}${undistort && !model ? (infoTopic ? " · waiting for CameraInfo" : " · no CameraInfo") : ""}${undistortProblem ? ` · undistort: ${undistortProblem}` : ""}` : ""
+    const info = size.width ? `${size.width}×${size.height}${size.fps && !stalled ? ` · ${size.fps} fps` : ""}${depth && depthRange ? ` · ${depthRange[0].toFixed(1)}–${depthRange[1].toFixed(1)} m` : ""}${undistort && !model ? (infoTopic ? " · waiting for CameraInfo" : " · no CameraInfo") : ""}` : ""
     const overlays = topics.filter((other) => overlayTypeFor(other.type))
     const tabs = cameraTabs(topics)
     const nextTab = tabs.length > 1 ? tabs[(tabs.findIndex((tab) => tab.topic.key === panel.key) + 1) % tabs.length] : null
@@ -660,8 +671,11 @@ function CameraPanel({ app, panel, topics, onChange }: {
             }
         >
             {depth && depthError && <Unavailable what="Depth view" reason={depthError} />}
+            {undistortProblem && <Unavailable what="Undistort" reason={undistortProblem} />}
             {depth ? <div ref={depthHost} className={`camera-media depth-host ${undistortShowing ? "undistorted" : ""}`} style={zoom.style} {...zoom.handlers} /> : <video ref={video} className={`camera-media ${undistortShowing ? "undistorted" : ""}`} style={zoom.style} {...zoom.handlers} muted playsInline autoPlay disablePictureInPicture disableRemotePlayback />}
-            {undistorting && <canvas ref={undistortCanvas} className="camera-media camera-undistorted" style={zoom.style} />}
+            {/* stays mounted while undistorting so the renderer keeps its canvas, but a canvas that gave up must not
+                cover the raw picture it is drawn over */}
+            {undistorting && <canvas ref={undistortCanvas} className={`camera-media camera-undistorted ${undistortProblem ? "gave-up" : ""}`} style={zoom.style} />}
             <canvas ref={overlayCanvas} className="camera-overlay" style={zoom.style} />
             {topic && paused && (
                 <div className="camera-takeover" data-testid="camera-paused">
