@@ -8,6 +8,7 @@ import { captureClock } from "../core/captureClock.ts"
 import { applyLook, GRADIENTS, makePointMaterial, RAMPS } from "dimos-react/three"
 import { Store } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
+import type { MessageHeader } from "../vendor/zenoh-gateway/zenoh_gateway.ts"
 import { PointLookEditor } from "../ui/PointLookEditor.tsx"
 import { AccumulateControls } from "../ui/AccumulateControls.tsx"
 import { materialLook, type PointLook, rendering, splatFallback } from "../core/render/rendering.ts"
@@ -78,6 +79,34 @@ function defaultGradient(topic: Topic): string {
 }
 
 /** How often the cloud's frame_id is re-read from one raw message, when a cloud comes with neither a message header (zenoh-gateway 0.5.32+) nor a frameId in the encoding's output (zenoh-dimos-codecs 0.3.5+). */
+/**
+ * A cloud's capture time in ms, or null with a word about it.
+ *
+ * `takenAt` treats a missing stamp as "place it by arrival", which is the right fallback and an
+ * invisible one: a header that stops carrying a stamp turns the correction off and nothing says
+ * so. Hours were spent today on a smear that this would have named in a line.
+ */
+function captureMsOf(header: MessageHeader | undefined): number | null {
+    const stamp = header?.stamp
+    if (typeof stamp === "number" && Number.isFinite(stamp)) {
+        return stamp * 1000
+    }
+    if (!warnedNoStamp) {
+        warnedNoStamp = true
+        console.warn("[dim-controller] a point cloud carries no capture stamp; placing it by arrival", header)
+    }
+    return null
+}
+
+let warnedNoStamp = false
+
+/** What the most recent cloud carried, read out through debugHook when placement looks wrong. */
+export let lastCloudShape: {
+    headerKeys: string[] | null
+    decodedKeys: string[] | null
+    messageKeys: string[]
+} | null = null
+
 const FRAME_RECHECK_MS = 30_000
 
 class CloudLayer {
@@ -134,7 +163,18 @@ class CloudLayer {
         this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
         this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
-            const decoded = message.decoded as { positions?: Float32Array; intensity?: Uint8Array; frameId?: string } | undefined
+            const decoded = message.decoded as
+                | { positions?: Float32Array; intensity?: Uint8Array; frameId?: string }
+                | undefined
+            // What a cloud actually arrives carrying, for debugHook. The capture stamp has been
+            // read off `message.header` and that header turned out never to be attached, so the
+            // fallback to arrival time ran every single time and nothing said so. This records
+            // what is really on the wire rather than what the code hopes is.
+            lastCloudShape = {
+                headerKeys: message.header ? Object.keys(message.header) : null,
+                decodedKeys: decoded ? Object.keys(decoded) : null,
+                messageKeys: Object.keys(message),
+            }
             // each cloud's own frame_id, off its message header or else the encoding's output: one topic can mix frames
             // (a lidar and a camera's depth on the R1's /lidar), so each cloud is placed by its own
             const frameId = message.header?.frameId ?? decoded?.frameId
@@ -152,7 +192,7 @@ class CloudLayer {
                 // moved past (core/captureClock.ts).
                 const takenAt = captureClock(this.context.connection).takenAt(
                     message.timestamp,
-                    message.header?.stamp === undefined ? null : message.header.stamp * 1000,
+                    captureMsOf(message.header),
                 )
                 this.#onCloud(decoded.positions, decoded.intensity, takenAt, message.timestamp)
             }
