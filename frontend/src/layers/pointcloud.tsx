@@ -112,6 +112,20 @@ export let lastCloudShape: {
 
 const FRAME_RECHECK_MS = 30_000
 
+/** Where the last scan was put: its own time, the pose used, and some of its points. */
+export let lastPlacedSample: { stamp: number; matrix: number[]; points: number[] } | null = null
+
+/** Every nth point, so a probe can carry a scan out of the page without carrying all of it. */
+function sampleOf(positions: Float32Array, wanted: number): number[] {
+    const count = Math.floor(positions.length / 3)
+    const step = Math.max(1, Math.floor(count / wanted))
+    const out: number[] = []
+    for (let index = 0; index < count; index += step) {
+        out.push(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2])
+    }
+    return out
+}
+
 class CloudLayer {
     readonly root = new THREE.Group()
     #points: THREE.Points
@@ -388,6 +402,9 @@ class CloudLayer {
             return
         }
         this.#stamp = timestamp
+        // A sample of the scan where the viewer actually puts it, for checking the placement
+        // against the room itself rather than against an opinion about how it looks.
+        lastPlacedSample = { stamp: timestamp, matrix: placement.elements.slice(), points: sampleOf(positions, 900) }
         const transform = accumulate ? placement : null
         const wanted = accumulate ? Math.max(count, settings.maxPoints) : count
         if (wanted > this.#capacity || (!accumulate && this.#capacity > 4 * Math.max(wanted, 1024))) {

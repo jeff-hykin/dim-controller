@@ -8,7 +8,7 @@
 // It only reads. Nothing here changes what is drawn.
 import * as THREE from "three"
 import type { ViewerApp } from "./app.ts"
-import { lastCloudShape } from "../layers/pointcloud.tsx"
+import { lastCloudShape, lastPlacedSample } from "../layers/pointcloud.tsx"
 import { tfStampHealth } from "./tfFeed.ts"
 
 /** What a layer put in the scene, and where. */
@@ -160,6 +160,22 @@ export function installDebugHook(app: ViewerApp) {
                     .map(([edge, topics]) => `${edge} on ${[...topics].join(" + ")}`),
                 bothClocks: [...tfStampHealth.wallStamped.keys()].filter((edge) => tfStampHealth.simStamped.has(edge)).slice(0, 20),
             }
+        },
+        /** The last scan as the viewer placed it: points already in the fixed frame. */
+        placedPoints() {
+            const sample = lastPlacedSample
+            if (!sample) {
+                return { error: "no placed scan yet" }
+            }
+            const matrix = new THREE.Matrix4().fromArray(sample.matrix)
+            const point = new THREE.Vector3()
+            const world: number[] = []
+            for (let index = 0; index + 2 < sample.points.length; index += 3) {
+                point.set(sample.points[index], sample.points[index + 1], sample.points[index + 2])
+                point.applyMatrix4(matrix)
+                world.push(Number(point.x.toFixed(3)), Number(point.y.toFixed(3)), Number(point.z.toFixed(3)))
+            }
+            return { stamp: sample.stamp, fixedFrame: app.viewer.fixedFrame, count: world.length / 3, world }
         },
         /** What is on, what is drawn, and what is drawn twice. */
         sceneReport(): DrawnReport {
