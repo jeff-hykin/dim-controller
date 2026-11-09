@@ -5,7 +5,7 @@
 import { Store } from "./store.ts"
 import type { Connection, LiveHandle, SubscribeOptions } from "./transport.ts"
 
-/** a wrap()ped connection's own connection, for what's kept per connection (core/simSceneSource.ts) */
+/** a wrap()ped connection's own connection, for what is kept per connection */
 export const UNWRAPPED = Symbol("unwrapped connection")
 
 /** a held subscription's callback; `release()` forgets what it holds (it unsubscribed) */

@@ -5,7 +5,6 @@ import { layerTypeFor } from "./registry.ts"
 import { persistentStore, Store } from "../store.ts"
 import { type Connection, parseKey, type Topic } from "../transport.ts"
 import { FILE_REQUEST, urdfSource } from "../urdfSource.ts"
-import { SCENE_INFO, simSceneSource } from "../simSceneSource.ts"
 import type * as THREE from "three"
 import type { TfTree } from "dimos-react/three"
 import type { TfHistory } from "../tfHistory.ts"
@@ -56,51 +55,19 @@ export class LayerManager {
         }
         this.paused.subscribe(watchUrdf)
         watchUrdf()
-        // a sim that answers the UrdfManager way (no /scene_info) is listed under /scene_info once its scene has come
-        const sim = simSceneSource(connection)
-        let releaseSim: (() => void) | null = null
-        const watchSim = () => {
-            if (this.paused.get().paused) {
-                releaseSim?.()
-                releaseSim = null
-            } else {
-                releaseSim ??= sim.acquire()
-            }
-        }
-        this.paused.subscribe(watchSim)
-        watchSim()
         const modelTopic = parseKey(FILE_REQUEST)!
-        const simTopic = parseKey(SCENE_INFO)!
-        // Once this page has seen a USD description, the sim serves one, and that stays true across a
-        // reconnect. Asking only whether one is parsed right now reopens the old path for the whole time
-        // a restarted sim's stage is being re-fetched -- seconds of the world drawn twice, which is the
-        // z-fighting coming back and the scene's own lighting going away until it lands.
-        let everDescribed = false
+        // The world is drawn from the USD description and from nothing else. There used to be a second
+        // path here -- the sim's older scene_info/scene_data -- which describes the same room and the
+        // same robots all over again, and drawing both put every wall, floor and robot on screen twice
+        // and coplanar. That read as z-fighting. Gating it on "has a description arrived yet" only
+        // narrowed the window: a fresh page, or a sim restart, still drew the old path for as long as
+        // the stage took to fetch, and the flicker came back. It is gone instead of conditional.
         const sync = () => {
-            const topics = [...connection.status.get().topics]
-            everDescribed ||= !!urdf.state.get().description
-            const described = everDescribed
-            if (described) {
-                topics.push(modelTopic)
-            }
-            // A sim that serves its world as a USD description serves the whole of it -- the room and
-            // every robot standing in it, one stage. Its older scene_info/scene_data path describes
-            // that same world again, and drawing both put every wall, floor and robot on screen twice,
-            // coplanar, which is what read as z-fighting. The description is the one to keep: it is
-            // what tf places, and the older path is deprecated.
-            const simTopics = topics.filter((topic) => topic.key === simTopic.key)
-            if (described) {
-                for (const stale of simTopics) {
-                    topics.splice(topics.indexOf(stale), 1)
-                }
-            } else if (sim.state.get().data && !simTopics.length) {
-                topics.push(simTopic)
-            }
+            const topics = [...connection.status.get().topics, modelTopic]
             this.#sync(topics)
         }
         connection.status.subscribe(sync)
         urdf.state.subscribe(sync)
-        sim.state.subscribe(sync)
         // turned on or off elsewhere (another viewer, the agent: PATCH api/settings lv.layers.enabled)
         this.#enabled.subscribe(() => {
             for (const entry of this.entries.get().list) {
