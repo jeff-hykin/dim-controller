@@ -24,7 +24,7 @@ export interface DrawnReport {
 }
 
 /** Meshes that sit on top of each other, which is what z-fighting looks like from the graph. */
-function coincidentMeshes(
+export function coincidentMeshes(
     scene: THREE.Object3D,
     owner: (o: THREE.Object3D) => string,
 ) {
@@ -39,16 +39,29 @@ function coincidentMeshes(
         if (!mesh.geometry.boundingSphere) {
             mesh.geometry.computeBoundingSphere()
         }
+        if (!mesh.geometry.boundingBox) {
+            mesh.geometry.computeBoundingBox()
+        }
         const sphere = mesh.geometry.boundingSphere
         if (!sphere) {
             return
         }
         centre.copy(sphere.center).applyMatrix4(mesh.matrixWorld)
-        // a millimetre grid: two draws of one surface land in the same cell, neighbours do not
+        // A millimetre grid: two draws of one surface land in the same cell, neighbours do not.
+        //
+        // The bounding sphere alone is not enough to say "the same surface": two different parts of
+        // one asset that each span its full extent -- a shelf unit's frame and its shelves, a pair of
+        // mirrored panels -- share a centre and a radius exactly, and got reported as duplicates.
+        // Chasing one of those cost an hour, so the vertex count and the box go in the key too:
+        // geometry drawn twice matches on all of them, parts that merely sit inside each other do not.
+        const position = mesh.geometry.getAttribute("position")
+        const box = mesh.geometry.boundingBox
         const key = [centre.x, centre.y, centre.z].map((v) =>
             Math.round(v * 1000)
         ).join(",") +
-            `|r${Math.round(sphere.radius * 1000)}`
+            `|r${Math.round(sphere.radius * 1000)}` +
+            `|n${position ? position.count : 0}` +
+            `|b${box ? [box.min, box.max].map((corner) => [corner.x, corner.y, corner.z].map((v) => Math.round(v * 1000)).join(",")).join("/") : "?"}`
         const found = buckets.get(key) ?? { under: new Set<string>(), count: 0 }
         found.count++
         found.under.add(owner(mesh))
