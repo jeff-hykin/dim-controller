@@ -111,14 +111,14 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
         try {
             if (editing === "rename" && near) {
                 await app.labels.rename(near, text.trim())
-                setNote(app.labels.toModule ? "Rename sent to NamedLocations" : "Label renamed")
+                setNote("Rename sent to NamedLocations")
                 return
             }
             if (!point) {
                 return
             }
-            const { recorded } = await app.labels.create(text.trim(), point)
-            setNote(app.labels.toModule ? "Location sent to NamedLocations" : recorded ? "Label saved to the recording" : "Label added (no recording running)")
+            await app.labels.create(text.trim(), point)
+            setNote("Location sent to NamedLocations")
             recorder.refresh()
         } catch (error) {
             setNote(`Couldn't ${editing === "rename" ? "rename" : "add"} the label: ${error instanceof Error ? error.message : error}`)
@@ -173,7 +173,7 @@ export function SceneMenu({ app }: { app: ViewerApp }) {
                                 save()
                             }}
                         >
-                            <TextInput autoFocus data-testid="scene-menu-text" placeholder={app.labels.toModule ? "Name this location" : "What happened here?"} value={text} onChange={setText} />
+                            <TextInput autoFocus data-testid="scene-menu-text" placeholder="Name this location" value={text} onChange={setText} />
                             <Button type="submit" variant="primary" disabled={!text.trim()} data-testid="scene-menu-save">{menu.editing === "rename" ? "Rename" : "Add"}</Button>
                         </form>
                     ) : (

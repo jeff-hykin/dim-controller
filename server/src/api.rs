@@ -17,7 +17,6 @@ use serde_json::{json, Value};
 
 use crate::annotations::{self, Annotations};
 use crate::drive::{self, Drive};
-use crate::labels;
 use crate::manipulation::Manipulation;
 use crate::recorder;
 use crate::routes::Routes;
@@ -31,7 +30,7 @@ pub const API_VERSION: &str = "2.1.0";
 pub const WHEN: &str = "you need to drive a robot, watch it live in 3D, or record it";
 
 pub const DESCRIPTION: &str = "Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live 3D view \
-(point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels, live 3D annotations (boxes with labels every \
+(point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, named locations, live 3D annotations (boxes with labels every \
 open page shows), and the view's settings (layers, styles, fixed frame, follow). Coordinates are meters in the world frame, +z up. GET \
 api/status is the overview; GET api/view what the user sees.";
 
@@ -116,7 +115,7 @@ pub fn routes() -> Routes<Api> {
         "note": s("a second line under the label, e.g. \"1.76 m tall\""),
     });
     Routes::new()
-        .endpoint("GET", "api/status", "you want an overview: recording, driving, view, labels, boxes", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (the command being sent, speeds and topic), annotations and location labels, and how many pages are open. Returns {recording, recordingKeys, view, layersEnabled, rendering, drive, armed (always true), driving (the command being sent, or null), annotations, labels, pages}.", json!({}), status)
+        .endpoint("GET", "api/status", "you want an overview: recording, driving, view, boxes", "The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings (robot type, fixed frame, follow), layers turned on or off, driving (the command being sent, speeds and topic), annotations, and how many pages are open. Returns {recording, recordingKeys, view, layersEnabled, rendering, drive, armed (always true), driving (the command being sent, or null), annotations, pages}.", json!({}), status)
         .role("context")
         .endpoint("GET", "api/view", "you need to see what the user sees, or where the robot is", "What the user sees: the rendered 3D view (with annotation labels) as an image, the 3D camera's pose and intrinsics, the latest robot camera image (with a pixel grid) and its CameraInfo and pose, the robot's pose, the annotations, and the fixed frame. 503 if no page is open to render it.", json!({}), annotations::view)
         .role("view")
@@ -135,7 +134,7 @@ pub fn routes() -> Routes<Api> {
         .endpoint("POST", "api/layout/panel", "you want to open, move or close one panel (camera, 3D view, map, plot, settings)", "Open, move or close one panel on every open page: panel = an id (map, scene = the 3D view, settings, tf, camera:<id>, plot:<id>) or camera / plot for a new one (topic: a new camera's image topic key; series: a new plot's [{key, field}], field default data); to = main (the main view; the one there moves to the left side), left, right (a side, at index, default the end), float (box {x, y, width, height} px) or closed; device = desktop (default) or phone. Returns {panel (its id), layout}; 404 for an unknown panel, 400 for a bad to.", json!({ "panel": required(s("map, scene, settings, tf, camera:<id>, plot:<id>, or camera / plot (new)")), "to": s("main (default), left, right, float, closed"), "device": s("desktop (default) or phone"), "index": n("position in a side, from the top"), "box": { "type": "object", "description": "floating box {x, y, width, height} px" }, "topic": s("a new camera's image topic key, e.g. dimos/color_image/sensor_msgs.Image"), "series": { "type": "array", "description": "a new plot's numbers [{key, field}]" } }), crate::layout::panel)
         // recording
         .endpoint("GET", "api/recorder", "you want to know if it's recording, or list the recordings", "The recorder: whether it's recording (messages, bytes, dropped, skipped by a max rate, seconds, path), the keys and log dirs being recorded, the files in the recordings folder, the folder (and the default one, and Desktop's shared recordings folder) and its options (lv.record.options). Returns {recording {active, path, messages, bytes, dropped, skipped, seconds}, keys, logs {dirs, lines}, files [{name, path, bytes, seconds_old}], settings, directory, default_directory, recordings_root, options}.", json!({}), recorder::status)
-        .endpoint("POST", "api/recorder/start", "you need to start recording the robot's data to an mcap file", "Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Location labels are written into it. Returns the recording status {active, path, messages, bytes, dropped, skipped, seconds}; 409 with the reason if it can't start (e.g. already recording), 503 if the bus can't be reached.", json!({ "keys": json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above" }), "name": s("file name (default controller_<time>.mcap)") }), recorder::start)
+        .endpoint("POST", "api/recorder/start", "you need to start recording the robot's data to an mcap file", "Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the recorder (lv.record.topics), and topics that appear later join (unless recordNew is off); the running dimos's jsonl logs go in too (unless logs is off). Each stream is kept to its max rate (rates). Returns the recording status {active, path, messages, bytes, dropped, skipped, seconds}; 409 with the reason if it can't start (e.g. already recording), 503 if the bus can't be reached.", json!({ "keys": json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to record (dimos/<topic>/<pkg.Type>); default: as above" }), "name": s("file name (default controller_<time>.mcap)") }), recorder::start)
         .endpoint("POST", "api/recorder/stop", "you want to stop and save the running recording", "Stop the recording and close the file (it shows in Desktop's recordings), once the files it asked for (the robot's meshes, a sim's world) are in it or given up on. Returns the final status {active, path, messages, bytes, dropped, skipped, seconds}; 409 if not recording.", json!({}), recorder::stop)
         .endpoint("POST", "api/recorder/add", "you want more topics in the recording that's already running", "Add keys to the running recording. Returns {added} (how many of the keys were new); 409 if not recording.", json!({ "keys": required(json!({ "type": "array", "items": { "type": "string" }, "description": "dimos keys to add (dimos/<topic>/<pkg.Type>)" })) }), recorder::add)
         .endpoint("POST", "api/recorder/logs", "you want dimos logs added to the running recording", "Add dimos log dirs to the running recording (each run's log dir, or logs roots whose run dirs are followed). Returns {dirs} (the log dirs now recorded); 409 if not recording.", json!({ "log_dirs": json!({ "type": "array", "items": { "type": "string" }, "description": "a run's log dir each; its jsonl logs are tailed into the recording" }), "log_roots": json!({ "type": "array", "items": { "type": "string" }, "description": "logs roots; each run dir in them is followed" }) }), recorder::add_logs)
@@ -143,12 +142,8 @@ pub fn routes() -> Routes<Api> {
         .endpoint("GET", "api/recorder/streams", "you need to know which topics are on the bus and how heavy they are", "Each stream on the bus, biggest first: key, topic, type, bytesPerSecond and messagesPerSecond (measured live; the meter listens while this is asked for and stops 15 s after), whether it's recorded, and its maxRate. Returns {streams [...], seconds} (seconds = how long the meter has listened).", json!({}), recorder::streams)
         .endpoint("GET", "api/recorder/files/{name}", "you want to download a finished recording", "Download a recording from the recordings folder. Returns the file's bytes (application/octet-stream, as an attachment); 404 if there is no such file.", json!({ "name": required(s("the file name, as GET api/recorder lists it under files")) }), recorder::download_file)
         .endpoint("DELETE", "api/recorder/files/{name}", "you want to delete a finished recording", "Delete a recording from the recordings folder (not the running one). Returns {ok, removed}; 409 if it is the running recording, 404 if there is no such file.", json!({ "name": required(s("the file name, as GET api/recorder lists it under files")) }), recorder::delete_file)
-        // location labels and annotations
-        .endpoint("GET", "api/labels", "you want the named places pinned on the map", "Location labels pinned in the map (right-click in the 3D view): id, label, frame_id, position, orientation, created (ns). Returns {labels [...]}.", json!({}), labels::list)
-        .endpoint("POST", "api/labels", "you want to name a place on the map", "Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running it is written into it on /labels. Returns {label (with its new id), recorded (whether it went into a running recording)}; 400 if a field is missing.", json!({ "label": required(s("the text shown at the point")), "frame_id": required(s("the frame of position, e.g. world")), "position": required(vec3("[x, y, z] meters in frame_id")) }), labels::add)
-        .endpoint("PATCH", "api/labels/{id}", "you want to rename a named place on the map", "Give a location label new text (it stays where it is); if a recording is running the rename is written into it on /labels. Returns {label, recorded}; 404 if there is no such label, 400 for empty text.", json!({ "id": required(s("the label's id (in the path), from GET api/labels")), "label": required(s("the new text shown at the point")) }), labels::rename)
-        .endpoint("POST", "api/view/label", "you want to add, rename or remove a named place the way the user does in the 3D view (it goes to dimos's NamedLocations module when that runs)", "Has the open page make a label edit as its right-click menu does: with dimos's NamedLocations module running it goes to the module (a named location, kept in its map frame, that Go to can send the robot to), else into this session's labels (as POST api/labels). action add (label, position, frame_id), rename (id, label), remove (id) or list; a label's id is its name with the module. Returns {ok, via: named_locations | session, labels (what the view shows, before this edit lands)}; 400 for a missing field, 422 if no page is open or the page refused it (e.g. the name is taken).", json!({ "action": s("add (the default) | rename | remove | list"), "label": s("add, rename: the text (with NamedLocations: the location's name, unique)"), "position": json!({ "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 3, "description": "add: [x, y] or [x, y, z] meters in frame_id (z defaults to 0)" }), "frame_id": s("add: the frame of position (default the 3D view's fixed frame)"), "id": s("rename, remove: the label's id, from GET api/labels or the 3D view") }), labels::through_page)
-        .endpoint("DELETE", "api/labels/{id}", "you want to remove a named place from the map", "Remove a location label. Returns {ok, removed}; 404 if there is no such label.", json!({ "id": required(s("the label's id, from GET api/labels")) }), labels::remove)
+        // named locations (through the page) and annotations
+        .endpoint("POST", "api/view/label", "you want to add, rename or remove a named place the way the user does in the 3D view", "Has the open page make a named-location edit as its right-click menu does: it goes to dimos's NamedLocations module (a named location, kept in its map frame, that Go to can send the robot to). action add (label, position, frame_id), rename (id, label), remove (id) or list; a location's id is its name. Returns {ok, via: named_locations, labels (what the view shows, before this edit lands)}; 400 for a missing field, 422 if no page is open, the module is not running, or the page refused it (e.g. the name is taken).", json!({ "action": s("add (the default) | rename | remove | list"), "label": s("add, rename: the location's name (unique)"), "position": json!({ "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 3, "description": "add: [x, y] or [x, y, z] meters in frame_id (z defaults to 0)" }), "frame_id": s("add: the frame of position (default the 3D view's fixed frame)"), "id": s("rename, remove: the location's name, from the 3D view or action list") }), annotations::page_label)
         .endpoint("GET", "api/annotations", "you want the labeled 3D boxes shown in the view", "The live annotations (id, label, center, size, yaw, frame, note). Returns {annotations [...]}.", json!({}), annotations::list_annotations)
         .endpoint("POST", "api/annotations", "you want to mark something in the 3D view with a labeled box", "Add a live 3D box annotation with a label; every open page shows it immediately. Returns the annotation as stored (with its id); 400 for a bad field.", box_params, annotations::add_annotation)
         .endpoint("PATCH", "api/annotations/{id}", "you want to move, resize, relabel or rename a 3D box", "Change an annotation: label, note, center, size, yaw, color, or newId (to rename it). Only the fields given change. Returns the updated annotation; 404 if there is no such id.", json!({ "id": required(s("the annotation's id (in the path), from GET api/annotations")), "label": s("new text shown above the box"), "note": s("new second line under the label"), "center": vec3("new center"), "size": vec3("new size"), "yaw": n("new rotation, radians about +z"), "color": s("CSS color"), "newId": s("rename to this id") }), annotations::patch_annotation)
@@ -206,7 +201,6 @@ async fn status(Extract(api): Extract<Api>) -> Response {
         "armed": true,
         "driving": api.drive.running(),
         "annotations": api.annotations.list(),
-        "labels": api.recorder.labels.list(),
         "pages": api.annotations.page_count(),
     }))
     .into_response()
@@ -843,7 +837,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn camera_drive_and_labels() {
+    async fn camera_drive_and_named_locations() {
         let (api, router) = router();
         let mut events = api.annotations.events.subscribe();
         assert_eq!(
@@ -947,26 +941,6 @@ mod tests {
             true,
             "pages see dry runs too"
         );
-        let (status, made) = call(
-            &router,
-            "POST",
-            "/api/labels",
-            Some(json!({ "label": "door", "frame_id": "world", "position": [1, 2, 0] })),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "{made}");
-        assert_eq!(
-            call(
-                &router,
-                "POST",
-                "/api/labels",
-                Some(json!({ "label": "door" }))
-            )
-            .await
-            .0,
-            StatusCode::BAD_REQUEST
-        );
-        let id = made["label"]["id"].as_str().unwrap();
         for (body, expected) in [
             (json!({ "label": "dock" }), StatusCode::BAD_REQUEST),
             (json!({ "action": "rename", "label": "x" }), StatusCode::BAD_REQUEST),
@@ -976,38 +950,6 @@ mod tests {
         ] {
             assert_eq!(call(&router, "POST", "/api/view/label", Some(body.clone())).await.0, expected, "{body}");
         }
-        let (status, renamed) = call(
-            &router,
-            "PATCH",
-            &format!("/api/labels/{id}"),
-            Some(json!({ "label": "front door" })),
-        )
-        .await;
-        assert_eq!(
-            (status, renamed["label"]["label"].as_str()),
-            (StatusCode::OK, Some("front door"))
-        );
-        assert_eq!(
-            call(
-                &router,
-                "PATCH",
-                "/api/labels/nope",
-                Some(json!({ "label": "x" }))
-            )
-            .await
-            .0,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            call(&router, "DELETE", &format!("/api/labels/{id}"), None)
-                .await
-                .0,
-            StatusCode::OK
-        );
-        assert_eq!(
-            call(&router, "DELETE", "/api/labels/nope", None).await.0,
-            StatusCode::NOT_FOUND
-        );
         let (status, added) = call(
             &router,
             "POST",

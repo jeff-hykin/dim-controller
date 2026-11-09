@@ -25,7 +25,6 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::asks::{self, Asks};
 use crate::image::ImageFormat;
-use crate::labels::{self, Labels};
 use crate::logs::LogTailer;
 use crate::record::{self, Compression, Recorder};
 use crate::settings::Settings as Store;
@@ -213,8 +212,6 @@ pub struct State {
     session: AsyncMutex<Option<zenoh::Session>>,
     active: AsyncMutex<Option<Active>>,
     meter: AsyncMutex<Option<Meter>>,
-    /// the session's location labels (labels.rs); written into recordings
-    pub labels: Labels,
 }
 
 /// The keys plus the answer streams their announcements bring (a recorded /robot_description records /file_info too),
@@ -264,7 +261,6 @@ impl State {
             session: AsyncMutex::new(None),
             active: AsyncMutex::new(None),
             meter: AsyncMutex::new(None),
-            labels: Labels::default(),
         }
     }
 
@@ -392,10 +388,6 @@ impl State {
             options.compression,
             options.image_format,
         )?);
-        // the labels made so far are part of the picture: they open the recording
-        for label in self.labels.list() {
-            labels::write(&recorder, &label, "add");
-        }
         let tailer = LogTailer::start(recorder.clone());
         logs.watch(&tailer);
         let asks = Arc::new(Asks::default());
@@ -458,17 +450,6 @@ impl State {
         };
         logs.watch(&active.logs);
         Ok(active.logs.dirs())
-    }
-
-    /// Writes a label change into the recording if one is running; says whether it did.
-    pub async fn record_label(&self, label: &labels::Label, action: &str) -> bool {
-        match self.active.lock().await.as_ref() {
-            Some(active) => {
-                labels::write(&active.recorder, label, action);
-                true
-            }
-            None => false,
-        }
     }
 
     pub async fn stop(&self) -> anyhow::Result<record::RecordingStatus> {
@@ -1271,11 +1252,10 @@ mod tests {
         robot.close().await.unwrap();
     }
 
-    /// Through the HTTP API: a label made before the recording, one during it, one deleted, and dimos log lines written
-    /// during it all land in the mcap on their own channels.
+    /// Through the HTTP API: dimos log lines written while a recording runs land in the mcap on their own channel.
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_recording_holds_the_logs_and_the_labels() {
-        let dir = temp_dir("logs_labels");
+    async fn a_recording_holds_the_logs() {
+        let dir = temp_dir("logs");
         let run = dir.join("run");
         std::fs::create_dir_all(&run).unwrap();
         std::fs::write(
@@ -1287,21 +1267,9 @@ mod tests {
         let annotations = Arc::new(crate::annotations::Annotations::default());
         let _ = annotations;
         let app = crate::api::test_router(state.clone());
-        let label =
-            |text: &str| format!(r#"{{"label":"{text}","frame_id":"world","position":[1,2,0]}}"#);
-        let (status, body) = call(&app, "POST", "/api/labels", &label("before")).await;
-        assert_eq!(
-            (status, &body["recorded"]),
-            (StatusCode::OK, &serde_json::json!(false))
-        );
         let start = serde_json::json!({ "keys": [], "name": "full.mcap", "log_dirs": [run.display().to_string()] }).to_string();
         let (status, body) = call(&app, "POST", "/api/recorder/start", &start).await;
         assert_eq!(status, StatusCode::OK, "{body}");
-        let (_, body) = call(&app, "POST", "/api/labels", &label("during")).await;
-        assert_eq!(body["recorded"], true);
-        let id = body["label"]["id"].as_str().unwrap().to_string();
-        let (status, _) = call(&app, "DELETE", &format!("/api/labels/{id}"), "").await;
-        assert_eq!(status, StatusCode::OK);
         {
             use std::io::Write;
             let mut file = std::fs::OpenOptions::new()
@@ -1346,33 +1314,9 @@ mod tests {
         );
         assert_eq!(logs[0].3["message"], "went wrong");
         assert_eq!(logs[0].3["level"], 4);
-        let labels: Vec<(String, String)> = on("/labels")
-            .iter()
-            .map(|seen| {
-                (
-                    seen.3["label"].as_str().unwrap().to_string(),
-                    seen.3["action"].as_str().unwrap().to_string(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            labels,
-            vec![
-                ("before".into(), "add".into()),
-                ("during".into(), "add".into()),
-                ("during".into(), "delete".into())
-            ]
-        );
-        assert!(on("/labels")
-            .iter()
-            .all(|seen| seen.1 == "dimos.LocationLabel" && seen.3["frame_id"] == "world"));
-        let scene = on("/labels/scene");
-        assert_eq!(scene.len(), 3);
-        assert_eq!(scene[0].1, "foxglove.SceneUpdate");
-        assert_eq!(scene[2].3["deletions"][0]["id"], id.as_str());
         // the log line keeps its own time, which is before this recording: mcap's summary still covers it
         let summary = mcap::Summary::read(&bytes).unwrap().unwrap();
-        assert_eq!(summary.stats.unwrap().message_count, 7);
+        assert_eq!(summary.stats.unwrap().message_count, 1);
     }
 
     #[test]

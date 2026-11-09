@@ -11,7 +11,7 @@ Desktop's `live-viewer` recordings folder if it exists (else `controller`). Sett
 ## Endpoints
 
 Every action is an HTTP endpoint the page itself uses, and Desktop's agent calls the same ones: arming, driving,
-recording, labels, annotations, the camera, and every setting the panels change (layers on/off, layer styles, point
+recording, named locations, annotations, the camera, and every setting the panels change (layers on/off, layer styles, point
 style, fixed frame, follow, drive speeds/topic, which topics to record). `server/src/api.rs` registers each with its
 description; that table is the served `/openapi.json`, and `dimos.yaml`'s `provides:` repeats it (`deno task
 check-endpoints [--write]`, checked in CI). Settings live in the backend (`GET` / `PATCH api/settings`, saved in the
@@ -299,12 +299,12 @@ Foxglove's Log panel shows it; the original record is kept whole in its `fields`
 
 ## Location labels
 
-Right-click the 3D view → **Label this location…** pins a text label at the clicked point (the nearest cloud point
-under the cursor, else a mesh such as the map, else the ground plane), as a position in the fixed frame. Labels last for
-the session, show in every open viewer, and are removed from the same menu. While a recording runs, every add and
-remove (and the labels already made when it starts) is written to `/labels` as `dimos.LocationLabel` (JSON:
-`timestamp`, `frame_id`, `id`, `label`, `action` add/delete, `pose` with position and orientation) and to
-`/labels/scene` as a `foxglove.SceneUpdate` so Foxglove's 3D panel shows them.
+Right-click the 3D view → **Label this location…** names the clicked point (the nearest cloud point under the cursor,
+else a mesh such as the map, else the ground plane). A label is a dimos **named location** and nothing else: the page
+publishes the whole edited list straight onto the module's `named_locations` topic, and draws the list the module sends
+back, so every open viewer and any running recording see the same thing. Renaming and removing come from the same menu,
+and **Go to** sends the robot to one. With no NamedLocations module running there are no labels and the menu's edit is
+refused — the controller keeps no labels of its own.
 
 ## Joint control (wheeled base)
 

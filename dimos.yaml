@@ -62,7 +62,7 @@ provides:
         version: 2.1.0
         description: >-
             Controller: drive the running robot (keyboard / sticks, velocity commands, stop) while watching its live
-            3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, location labels,
+            3D view (point clouds, costmap, pose, planned path, TF) and cameras; recording to mcap, named locations,
             live 3D annotations (boxes with labels every open page shows), and the view's settings (layers, styles,
             fixed frame, follow). Coordinates are meters in the world frame, +z up. GET api/status is the overview;
             GET api/view what the user sees.
@@ -74,7 +74,6 @@ provides:
         - api/recorder/*
         - api/settings/*
         - api/annotations/*
-        - api/labels/*
         - api/topics/*
         - api/events/*
     paths:
@@ -83,10 +82,10 @@ provides:
                 description: >-
                     The overview: whether it's recording (seconds, size, path, topics, log lines), the view settings
                     (robot type, fixed frame, follow), layers turned on or off, driving (the command being sent,
-                    speeds and topic), annotations and location labels, and how many pages are open. Returns
-                    {recording, recordingKeys, view, layersEnabled, rendering, drive, armed (always true), driving
-                    (the command being sent, or null), annotations, labels, pages}.
-                x-when: 'you want an overview: recording, driving, view, labels, boxes'
+                    speeds and topic), annotations, and how many pages are open. Returns {recording, recordingKeys,
+                    view, layersEnabled, rendering, drive, armed (always true), driving (the command being sent, or
+                    null), annotations, pages}.
+                x-when: 'you want an overview: recording, driving, view, boxes'
                 x-dimos-role: context
         /api/view:
             get:
@@ -181,9 +180,9 @@ provides:
                     Start recording to mcap. Without keys: every topic on the bus except the ones turned off in the
                     recorder (lv.record.topics), and topics that appear later join (unless recordNew is off); the
                     running dimos's jsonl logs go in too (unless logs is off). Each stream is kept to its max rate
-                    (rates). Location labels are written into it. Returns the recording status {active, path,
-                    messages, bytes, dropped, skipped, seconds}; 409 with the reason if it can't start (e.g. already
-                    recording), 503 if the bus can't be reached.
+                    (rates). Returns the recording status {active, path, messages, bytes, dropped, skipped,
+                    seconds}; 409 with the reason if it can't start (e.g. already recording), 503 if the bus can't
+                    be reached.
                 x-when: you need to start recording the robot's data to an mcap file
                 requestBody:
                     content:
@@ -317,78 +316,6 @@ provides:
                         schema:
                             type: string
                         description: 'the file name, as GET api/recorder lists it under files'
-        /api/labels:
-            get:
-                description: >-
-                    Location labels pinned in the map (right-click in the 3D view): id, label, frame_id, position,
-                    orientation, created (ns). Returns {labels [...]}.
-                x-when: you want the named places pinned on the map
-            post:
-                description: >-
-                    Pin a text label at a point (the viewer's fixed frame, usually world); if a recording is running
-                    it is written into it on /labels. Returns {label (with its new id), recorded (whether it went
-                    into a running recording)}; 400 if a field is missing.
-                x-when: you want to name a place on the map
-                requestBody:
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    frame_id:
-                                        description: 'the frame of position, e.g. world'
-                                        type: string
-                                    label:
-                                        description: the text shown at the point
-                                        type: string
-                                    position:
-                                        description: '[x, y, z] meters in frame_id'
-                                        items:
-                                            type: number
-                                        maxItems: 3
-                                        minItems: 3
-                                        type: array
-                                required:
-                                    - frame_id
-                                    - label
-                                    - position
-                                type: object
-        '/api/labels/{id}':
-            delete:
-                summary: 'Remove a location label. Returns {ok, removed}; 404 if there is no such label.'
-                x-when: you want to remove a named place from the map
-                parameters:
-                    -
-                        name: id
-                        in: path
-                        required: true
-                        schema:
-                            type: string
-                        description: 'the label''s id, from GET api/labels'
-            patch:
-                description: >-
-                    Give a location label new text (it stays where it is); if a recording is running the rename is
-                    written into it on /labels. Returns {label, recorded}; 404 if there is no such label, 400 for
-                    empty text.
-                x-when: you want to rename a named place on the map
-                parameters:
-                    -
-                        name: id
-                        in: path
-                        required: true
-                        schema:
-                            type: string
-                        description: 'the label''s id (in the path), from GET api/labels'
-                requestBody:
-                    content:
-                        application/json:
-                            schema:
-                                properties:
-                                    label:
-                                        description: the new text shown at the point
-                                        type: string
-                                required:
-                                    - label
-                                type: object
         /api/annotations:
             delete:
                 summary: 'Remove every annotation. Returns {removed} (how many were removed).'
@@ -1025,16 +952,13 @@ provides:
         /api/view/label:
             post:
                 description: >-
-                    Has the open page make a label edit as its right-click menu does: with dimos's NamedLocations
-                    module running it goes to the module (a named location, kept in its map frame, that Go to can
-                    send the robot to), else into this session's labels (as POST api/labels). action add (label,
-                    position, frame_id), rename (id, label), remove (id) or list; a label's id is its name with the
-                    module. Returns {ok, via: named_locations | session, labels (what the view shows, before this
-                    edit lands)}; 400 for a missing field, 422 if no page is open or the page refused it (e.g. the
-                    name is taken).
-                x-when: >-
-                    you want to add, rename or remove a named place the way the user does in the 3D view (it goes to
-                    dimos's NamedLocations module when that runs)
+                    Has the open page make a named-location edit as its right-click menu does: it goes to dimos's
+                    NamedLocations module (a named location, kept in its map frame, that Go to can send the robot
+                    to). action add (label, position, frame_id), rename (id, label), remove (id) or list; a
+                    location's id is its name. Returns {ok, via: named_locations, labels (what the view shows,
+                    before this edit lands)}; 400 for a missing field, 422 if no page is open, the module is not
+                    running, or the page refused it (e.g. the name is taken).
+                x-when: 'you want to add, rename or remove a named place the way the user does in the 3D view'
                 requestBody:
                     content:
                         application/json:
@@ -1047,10 +971,10 @@ provides:
                                         description: 'add: the frame of position (default the 3D view''s fixed frame)'
                                         type: string
                                     id:
-                                        description: 'rename, remove: the label''s id, from GET api/labels or the 3D view'
+                                        description: 'rename, remove: the location''s name, from the 3D view or action list'
                                         type: string
                                     label:
-                                        description: 'add, rename: the text (with NamedLocations: the location''s name, unique)'
+                                        description: 'add, rename: the location''s name (unique)'
                                         type: string
                                     position:
                                         description: 'add: [x, y] or [x, y, z] meters in frame_id (z defaults to 0)'

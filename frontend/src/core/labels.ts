@@ -1,7 +1,7 @@
-// Location labels (server/src/labels.rs): text pinned to a point in the fixed frame, made from the 3D view's right-click
-// menu. The backend keeps them for the session, tells every page (the `labels` event, via AgentLink) and writes them
-// into a running recording. Drawn here as a marker plus its text, placed through TF like the annotations. With dimos's
-// NamedLocations module running (core/namedLocations.ts) the labels are its locations instead, and edits go to it.
+// Location labels: text pinned to a point, made from the 3D view's right-click menu. They are dimos's named locations
+// (core/namedLocations.ts) and nothing else: the page publishes each edit straight onto the module's topic and draws the
+// list the module sends back, so every page and the recording see the same thing. Drawn here as a marker plus its text,
+// placed through TF like the annotations. With no module running there are no labels and an edit is refused.
 import * as THREE from "three"
 import { LabelPool } from "dimos-react/three"
 import { Store } from "./store.ts"
@@ -20,12 +20,10 @@ export interface LocationLabel {
 }
 
 const COLOR = "#ffd166"
-const url = (path: string) => new URL(path, location.href).href
 
 export class LocationLabels {
-    /** what's drawn: the module's locations once it's there, else the backend's labels */
+    /** what's drawn: the module's locations, empty until it sends them */
     readonly list = new Store<LocationLabel[]>([])
-    #rest: LocationLabel[] = []
     readonly group = new THREE.Group()
     #text = new LabelPool("dr-scene-label dr-note")
     #markers = new Map<string, THREE.Mesh>()
@@ -38,25 +36,10 @@ export class LocationLabels {
         this.group.add(this.#text.group)
         app.viewer.scene.add(this.group)
         app.viewer.onFrame(() => this.#place())
-        fetch(url("api/labels"))
-            .then((response) => response.json())
-            .then((body) => this.apply(body.labels ?? []))
-            .catch(() => {})
-    }
-
-    /** whether edits go to the NamedLocations module (it has sent its locations) */
-    get toModule(): boolean {
-        return this.named.state.get().locations !== null
-    }
-
-    /** The backend's list (on load and on every change). */
-    apply(labels: LocationLabel[]) {
-        this.#rest = labels
-        this.#show()
     }
 
     #show() {
-        const labels = this.named.state.get().locations ?? this.#rest
+        const labels = this.named.state.get().locations ?? []
         this.list.set(labels)
         const wanted = new Set(labels.map((label) => label.id))
         for (const [id, marker] of this.#markers) {
@@ -123,54 +106,25 @@ export class LocationLabels {
         }
     }
 
-    /** Adds a label at `point` (in `frame`); resolves to whether a recording took it (the module's go out on its topic). */
-    async create(text: string, point: THREE.Vector3, frame = this.app.viewer.fixedFrame): Promise<{ recorded: boolean }> {
-        if (this.toModule) {
-            this.#taken(text)
-            await this.named.publish(withLocation(this.named.current, { label: text, ...this.#inListFrame(point, frame), orientation: [0, 0, 0, 1] }))
-            return { recorded: false }
-        }
-        const response = await fetch(url("api/labels"), {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ label: text, frame_id: frame, position: point.toArray(), orientation: [0, 0, 0, 1] }),
-        })
-        const body = await response.json().catch(() => ({}))
-        if (!response.ok) {
-            throw new Error(body.error ?? `${response.status}`)
-        }
-        return body
+    /** Adds a location at `point` (in `frame`), onto the module's topic. */
+    async create(text: string, point: THREE.Vector3, frame = this.app.viewer.fixedFrame): Promise<void> {
+        this.#taken(text)
+        await this.named.publish(withLocation(this.named.current, { label: text, ...this.#inListFrame(point, frame), orientation: [0, 0, 0, 1] }))
     }
 
-    /** Gives a label new text, where it is. */
+    /** Gives a location new text, where it is. */
     async rename(label: LocationLabel, text: string) {
-        if (this.toModule) {
-            if (text !== label.id) {
-                this.#taken(text)
-            }
-            return await this.named.publish(renamedLocation(this.named.current, label.id, text))
+        if (text !== label.id) {
+            this.#taken(text)
         }
-        const response = await fetch(url(`api/labels/${encodeURIComponent(label.id)}`), {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ label: text }),
-        })
-        if (!response.ok) {
-            throw new Error((await response.json().catch(() => ({}))).error ?? `${response.status}`)
-        }
+        return await this.named.publish(renamedLocation(this.named.current, label.id, text))
     }
 
     async remove(id: string) {
-        if (this.toModule) {
-            return await this.named.publish(withoutLocation(this.named.current, id))
-        }
-        const response = await fetch(url(`api/labels/${encodeURIComponent(id)}`), { method: "DELETE" })
-        if (!response.ok && response.status !== 404) {
-            throw new Error(`${response.status}`)
-        }
+        return await this.named.publish(withoutLocation(this.named.current, id))
     }
 
-    /** POST api/view/label (server/src/labels.rs through_page): an edit as the menu makes it, asked of this page. */
+    /** POST api/view/label (server/src/annotations.rs page_label): an edit as the menu makes it, asked of this page. */
     async fromAgent({ action = "add", id, label, position, frame_id }: { action?: string; id?: string; label?: string; position?: number[]; frame_id?: string }) {
         const found = this.list.get().find((one) => one.id === id)
         if ((action === "rename" || action === "remove") && !found) {
@@ -184,7 +138,7 @@ export class LocationLabels {
         } else if (action === "remove") {
             await this.remove(found!.id)
         }
-        return { ok: true, via: this.toModule ? "named_locations" : "session", labels: this.list.get() }
+        return { ok: true, via: "named_locations", labels: this.list.get() }
     }
 
     /** The label drawn nearest to a screen point (CSS px in the canvas), within `radius` px. */

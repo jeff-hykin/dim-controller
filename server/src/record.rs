@@ -160,7 +160,7 @@ impl Recorder {
     }
 
     /// Writes an already-encoded message at `log_time` (ns since the epoch). It waits for room in the queue
-    /// instead of shedding: these are logs and labels, rare next to sensor data and not worth losing.
+    /// instead of shedding: these are logs, rare next to sensor data and not worth losing.
     pub fn write_encoded(&self, topic: &str, encoded: Encoded, log_time: u64) {
         let Some(sender) = self.sender.lock().unwrap().clone() else {
             return;

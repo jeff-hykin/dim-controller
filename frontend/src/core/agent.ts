@@ -13,7 +13,6 @@ import { cameraInfoFor, isDepthTopic } from "./video.ts"
 import { isImage } from "./cameraChoice.ts"
 import { frontObject, groundLevel } from "./locate.ts"
 import { appEvents } from "dimos-react/dim-app/events.js"
-import type { LocationLabel } from "./labels.ts"
 import { applyRemoteSetting, loadSettings } from "./store.ts"
 import type { DriveEvent } from "./drive.ts"
 import { type ActionButton, actionButtons, loadActionButtons } from "./actionButtons.ts"
@@ -86,12 +85,10 @@ export class AgentLink {
     #listen() {
         const stop = appEvents((raw) => {
             // deno-lint-ignore no-explicit-any
-            const event = raw as { type: string; page?: string; annotations?: Annotation[]; labels?: LocationLabel[]; request?: string; kind?: string; args?: unknown; key?: string; value?: unknown; action?: string; target?: any; distance?: any }
+            const event = raw as { type: string; page?: string; annotations?: Annotation[]; request?: string; kind?: string; args?: unknown; key?: string; value?: unknown; action?: string; target?: any; distance?: any }
             if (event.type === "annotations" && event.annotations) {
                 this.#annotations = event.annotations
                 this.#rebuild()
-            } else if (event.type === "labels" && event.labels) {
-                this.app.labels.apply(event.labels)
             } else if (event.type === "action_buttons" && Array.isArray((raw as { buttons?: unknown }).buttons)) {
                 actionButtons.set({ buttons: (raw as { buttons: ActionButton[] }).buttons })
             } else if (event.type === "snapshots" && Array.isArray((raw as { snapshots?: unknown }).snapshots)) {
@@ -121,10 +118,6 @@ export class AgentLink {
                 this.#annotations = body.annotations ?? []
                 this.#rebuild()
             })
-            .catch(() => {})
-        fetch(this.#url("api/labels"))
-            .then((response) => response.json())
-            .then((body) => this.app.labels.apply(body.labels ?? []))
             .catch(() => {})
         loadSettings()
     }
