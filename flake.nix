@@ -49,7 +49,7 @@
                             aarch64-darwin = "sha256-eOi/6PvYy8WE4c9GK1vnQseCuSiScMo4+qzQ/40AKM8=";
                             x86_64-darwin = "";
                             x86_64-linux = "sha256-astI0hg05IxRVkMGbwYQ2dXuAB0NPHWmLKBM2iVyeZM=";
-                            aarch64-linux = "";
+                            aarch64-linux = "sha256-x0ndC8ij8Pkz41vXDUvBi5egGOWcXKEnzIv9UfgXIks=";
                         }.${pkgs.stdenv.hostPlatform.system};
                     };
 

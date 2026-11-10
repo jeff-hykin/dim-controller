@@ -100,7 +100,7 @@ Deno.test("every connect asks again; a link that only dipped (degraded) doesn't"
     await wait(300)
 })
 
-Deno.test("an empty URDF isn't a URDF: what's loaded stays", () => {
+Deno.test("an empty URDF isn't a URDF: what's loaded stays", async () => {
     const { connection, urdf } = fakeConnection()
     const source = new UrdfSource(connection)
     const release = source.acquire()
@@ -109,6 +109,8 @@ Deno.test("an empty URDF isn't a URDF: what's loaded stays", () => {
     assertEquals(source.state.get().description?.name, "box")
     assertEquals(source.state.get().problem, null)
     release()
+    // the loaded URDF's mesh hashing is still in flight
+    await wait(300)
 })
 
 Deno.test("the robot's meshes are asked for first: a scene fixed to the root after, its splats last", async () => {
