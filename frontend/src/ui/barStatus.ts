@@ -6,6 +6,20 @@ import type { DriveHalt } from "../core/drive.ts"
 import type { GamepadStatus } from "../core/gamepad.ts"
 import type { LeaseState } from "../core/lease.ts"
 import { spreadText, type VideoLatency } from "../core/videoLatency.ts"
+import {
+    ABORTED,
+    ACTIVE,
+    NAV_DONE_MS,
+    NAV_STALE_MS,
+    type NavStatus,
+    PENDING,
+    PREEMPTED,
+    PREEMPTING,
+    RECALLED,
+    RECALLING,
+    REJECTED,
+    SUCCEEDED,
+} from "../core/navStatusFeed.ts"
 
 export type Tone = "ok" | "warn" | "bad"
 
@@ -123,5 +137,48 @@ export function leaseChip(lease: LeaseState, mobile = false): { text: string; to
         text: mobile ? TAKE_BACK_TEXT : `${TAKEN_OVER_TEXT} · ${TAKE_BACK_TEXT}`,
         tone: "bad",
         detail: `${TAKEN_OVER_TEXT}: a newer viewer drove, so the gateway drops this page's commands (watching goes on). Click, or drive again after a pause, to take control back${lease.reason ? ` (${lease.reason})` : ""}.`,
+    }
+}
+
+/**
+ * What the global planner says about the goal (core/navStatusFeed.ts), for the bar's nav chip. Null when there is
+ * nothing to say: no goal yet, one that finished a while ago, or a status that stopped coming.
+ *
+ * The point of this chip is the case that otherwise looks like success: a goal the planner cannot route to makes the
+ * robot stop where it is, and without the status the page shows a stopped robot and no reason.
+ */
+export function navChip(status: NavStatus | null, now: number): { text: string; tone: Tone; detail: string } | null {
+    if (!status) {
+        return null
+    }
+    const age = now - status.receivedAt
+    if (age > NAV_STALE_MS) {
+        return null
+    }
+    const settled = [SUCCEEDED, PREEMPTED, RECALLED].includes(status.status)
+    if (settled && age > NAV_DONE_MS) {
+        return null
+    }
+    const said = status.text.trim()
+    const reason = said ? ` (${said})` : ""
+    const chip = (text: string, tone: Tone, why: string) => ({ text, tone, detail: `${why}${reason}` })
+    switch (status.status) {
+        case ACTIVE:
+            return chip("navigating", "ok", "driving to the goal")
+        case PENDING:
+            return chip("goal pending", "warn", "the goal is taken but nothing is planned for it yet")
+        case SUCCEEDED:
+            return chip("arrived", "ok", "the goal was reached")
+        case PREEMPTING:
+        case PREEMPTED:
+        case RECALLING:
+        case RECALLED:
+            return chip("goal cancelled", "warn", "the goal was replaced or cancelled")
+        case ABORTED:
+            return chip("no route", "bad", "the planner gave up on the goal: it could not plan or follow a path there")
+        case REJECTED:
+            return chip("goal refused", "bad", "the planner would not take the goal")
+        default:
+            return chip("goal lost", "bad", "the planner stopped reporting on the goal")
     }
 }

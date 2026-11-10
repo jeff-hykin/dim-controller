@@ -6,7 +6,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import { splatFallback } from "../core/render/rendering.ts"
 import { useEffect, useRef, useState } from "react"
-import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, smoothed } from "./barStatus.ts"
+import { gamepadChip, leaseChip, LINK_REDRAW_MS, LINK_SAMPLE_MS, linkChip, navChip, smoothed } from "./barStatus.ts"
 import { Modal } from "dimos-react"
 import { Icon } from "./icons.tsx"
 import { NetworkPanel } from "./NetworkPanel.tsx"
@@ -17,6 +17,7 @@ import type { WorkspaceApi } from "./Workspace.tsx"
 import { batteryChip, batteryReadings } from "../core/batteryFeed.ts"
 import { slowestVideo, type VideoLatency } from "../core/videoLatency.ts"
 import { maxLatencyOf } from "../core/linkWatch.ts"
+import { navStatus } from "../core/navStatusFeed.ts"
 
 /** The robot's battery (every BatteryState topic; core/batteryFeed.ts), Go2-app style: the outline filled to the charge, a bolt while charging. */
 export function BatteryChip() {
@@ -153,6 +154,7 @@ export function StatusChips({ app, api, battery = true, gamepad = true }: { app:
                     <span className="bar-value">splats → cubes</span>
                 </button>
             )}
+            <NavStatusChip />
             {battery && <BatteryChip />}
             <CpuChip />
             {gamepad && pad && (
@@ -162,6 +164,29 @@ export function StatusChips({ app, api, battery = true, gamepad = true }: { app:
                 </span>
             )}
         </>
+    )
+}
+
+/**
+ * What the planner is doing with the goal (core/navStatusFeed.ts): "navigating" while it drives, and the reason when
+ * it stops -- "no route" is the one worth having, since otherwise a goal it cannot plan looks like a robot that
+ * simply halted. Nothing to say: no chip.
+ */
+export function NavStatusChip() {
+    const { latest } = useStore(navStatus)
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), 1000)
+        return () => clearInterval(timer)
+    }, [])
+    const chip = navChip(latest, now)
+    if (!chip) {
+        return null
+    }
+    return (
+        <span className={`bar-chip tone-${chip.tone} bar-nav`} title={`Navigation · ${chip.detail}`} data-testid="bar-nav">
+            <span className="bar-value">{chip.text}</span>
+        </span>
     )
 }
 

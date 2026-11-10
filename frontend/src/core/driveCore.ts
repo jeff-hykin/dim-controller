@@ -5,6 +5,7 @@
 import { Connection, dimosKey } from "./transport.ts"
 import { zenohKey } from "./cmdvel.ts"
 import { feedBattery } from "./batteryFeed.ts"
+import { feedNavStatus } from "./navStatusFeed.ts"
 import { Drive } from "./drive.ts"
 import { JOY_TYPE, JoyPublisher, joySettings, joyTopic } from "./joy.ts"
 import { ArmControl } from "./arm.ts"
@@ -77,6 +78,7 @@ export class DriveCore {
         joySettings.subscribe(leasePublish)
         this.arm = new ArmControl(this.connection, this.drive, profileFor("arm").arm!)
         feedBattery(this.connection, () => this.profile.name)
+        feedNavStatus(this.connection)
         this.connection.status.subscribe(() => this.#updateDriveCandidates())
         this.connection.start()
         this.runs.state.subscribe(() => {
