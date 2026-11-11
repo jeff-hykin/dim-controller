@@ -1,4 +1,4 @@
-// zenoh-gateway's browser client, vendored as is from https://github.com/jeff-hykin/zenoh-gateway v0.5.32 (2104633) client/zenoh_gateway.ts; do not edit (re-copy a newer tag instead)
+// zenoh-gateway's browser client, vendored as is from https://github.com/dimensionalOS/zenoh-gateway v0.5.32 (2104633) client/zenoh_gateway.ts; do not edit (re-copy a newer tag instead)
 /// <reference no-default-lib="true" />
 /// <reference lib="dom" />
 /// <reference lib="dom.iterable" />
