@@ -1,7 +1,7 @@
 # Changing the UI
 
 The frontend is React + three.js under `frontend/src`, compiled by Vite under Deno (no npm). Shared pieces (URDF,
-gamepad, the 3D viewer, buttons, sliders) come from [dimos-react](https://github.com/jeff-hykin/dimos-react).
+gamepad, the 3D viewer, buttons, sliders) come from [dimos-react](https://github.com/dimensionalOS/dimos-react).
 
 ```
 frontend/src/
