@@ -18,7 +18,7 @@ import { CameraFeed } from "../core/render/cameraFeed.ts"
 import { ClearVoxels } from "../core/render/clearVoxels.ts"
 import { isImage, pickDefault } from "../core/cameraChoice.ts"
 import { isDepthTopic } from "../core/video.ts"
-import { hasDiffTopic, isDiffTopic, MapDiffFeed } from "../core/mapDiff.ts"
+import { hasDiffTopic, isDiffTopic, sampleDiffMap, subscribeDiffMap } from "../core/mapDiff.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
 
 export interface CloudSettings {
@@ -146,7 +146,7 @@ class CloudLayer {
     /** the bridge subscription at this viewer's preset (core/cloudQuality.ts) */
     #stream: CloudStream | null = null
     /** a map_update: the global map kept from a keyframe and the diffs after it, in place of #stream */
-    #diff: MapDiffFeed | null = null
+    #diff = false
     /** a global_map with a map_update beside it, which draws the map instead */
     #drawnByDiffs = false
     #rateSince = performance.now()
@@ -187,13 +187,14 @@ class CloudLayer {
         this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
         if (isDiffTopic(topic)) {
-            this.#diff = new MapDiffFeed(context.connection, topic, (map, stampMs, arrivedAt) => {
+            this.#diff = true
+            this.#unsubscribe.push(subscribeDiffMap(context.connection, topic, (map, stampMs, arrivedAt) => {
                 if (map.frameId !== this.#frame) {
                     this.#frame = map.frameId
                     this.#clear()
                 }
                 this.#onCloud(map.positions(), undefined, stampMs ?? arrivedAt, arrivedAt)
-            })
+            }))
         } else {
             this.#stream = this.#openStream()
         }
@@ -588,7 +589,7 @@ class CloudLayer {
         if (frame.now - this.#rateSince > 1000) {
             this.#rateSince = frame.now
             this.#watchForDiffs()
-            const rate = this.#diff?.sample(frame.now) ?? this.#stream?.sample(frame.now) ?? { hz: 0, pointsPerSecond: 0, bytesPerSecond: 0 }
+            const rate = (this.#diff ? sampleDiffMap(this.topic, frame.now) : this.#stream?.sample(frame.now)) ?? { hz: 0, pointsPerSecond: 0, bytesPerSecond: 0 }
             setCloudRate(this.topic.key, rate)
             const shown = this.#drawnByDiffs ? "drawn by map_update · " : this.#diff ? "from diffs · " : this.#settings.get().mode === "accumulate" ? `${formatCount(this.#filled)} kept · ` : ""
             const camera = this.#feed ? ` · camera colors: ${this.#camera.uCamColor.value ? this.#feed.topic.name : `waiting for ${this.#feed.waitingFor ?? "a TF path"}`}` : ""
@@ -612,7 +613,6 @@ class CloudLayer {
         this.#stopFrameReads()
         this.#unsubscribe.forEach((stop) => stop())
         this.#stream?.close()
-        this.#diff?.close()
         setCloudRate(this.topic.key, null)
         this.#feed?.dispose()
         this.#cameraPass.dispose()

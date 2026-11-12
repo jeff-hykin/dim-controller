@@ -150,6 +150,36 @@ export let lastMapDiff: { keyframes: number; diffs: number; staleDiffs: number; 
 /** The feeds running now, so the page can start them all again from a keyframe. */
 const feeds = new Set<MapDiffFeed>()
 
+/** topic key → its one feed and who draws from it: the 3D view and the 2D map share a keyframe and a subscription */
+const shared = new Map<string, { feed: MapDiffFeed; listeners: Set<MapListener> }>()
+
+type MapListener = (map: DiffMap, stampMs: number | null, arrivedAt: number) => void
+
+/** Draw from the global map a map_update topic keeps; the feed opens with the first listener and closes with the last. */
+export function subscribeDiffMap(connection: Connection, update: Topic, onMap: MapListener): () => void {
+    let entry = shared.get(update.key)
+    if (!entry) {
+        const listeners = new Set<MapListener>()
+        const feed = new MapDiffFeed(connection, update, (map, stampMs, arrivedAt) => listeners.forEach((listener) => listener(map, stampMs, arrivedAt)))
+        entry = { feed, listeners }
+        shared.set(update.key, entry)
+    } else if (entry.feed.map.keyframeStampMs !== null) {
+        onMap(entry.feed.map, entry.feed.map.keyframeStampMs, Date.now())
+    }
+    const { feed, listeners } = entry
+    listeners.add(onMap)
+    return () => {
+        listeners.delete(onMap)
+        if (listeners.size === 0) {
+            feed.close()
+            shared.delete(update.key)
+        }
+    }
+}
+
+/** messages and bytes a second on a shared feed, or null when it isn't open */
+export const sampleDiffMap = (update: Topic, now = performance.now()) => shared.get(update.key)?.feed.sample(now) ?? null
+
 /** Ask every global map kept from diffs for a fresh keyframe. */
 export function requestKeyframes() {
     feeds.forEach((feed) => feed.requestKeyframe())

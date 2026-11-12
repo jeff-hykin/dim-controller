@@ -1,6 +1,7 @@
 // The 2D map panel's model (no DOM): the north-up view transform, a top-down point cloud heatmap or an OccupancyGrid as
 // an RGBA image, the robot's pose and trail on the floor plane, and which topics to draw.
 import type { Topic } from "./transport.ts"
+import { isDiffTopic } from "./mapDiff.ts"
 
 export type Rgba = [number, number, number, number]
 
@@ -314,10 +315,10 @@ export class Trail {
 export const isGridTopic = (topic: Topic) => topic.type === "nav_msgs.OccupancyGrid"
 export const isCloudTopic = (topic: Topic) => topic.type === "sensor_msgs.PointCloud2"
 
-/** an accumulated cloud map (the 3D view's global map) first, other map clouds, single scans, then occupancy grids */
+/** an accumulated cloud map (the 3D view's global map, or the map_update a diff-mode one is kept from) first, other map clouds, single scans, then occupancy grids */
 const rank = (topic: Topic) =>
     isCloudTopic(topic)
-        ? (/^\/global_map$/.test(topic.name) ? 0 : /map|global|voxel/i.test(topic.name) ? 1 : 2)
+        ? (isDiffTopic(topic) ? -1 : /^\/global_map$/.test(topic.name) ? 0 : /map|global|voxel/i.test(topic.name) ? 1 : 2)
         : 10 + (/^\/map$/.test(topic.name) ? 0 : /global/.test(topic.name) ? 1 : /map/.test(topic.name) ? 2 : 3)
 
 /** What the map draws as its base: the lidar map (a point cloud as a top-down heatmap) or a costmap (an occupancy grid). */

@@ -3,7 +3,7 @@
 // cloud_keyframe_request until one comes, and again on a reconnect.
 import { assertEquals } from "jsr:@std/assert@1"
 import { encode } from "../src/core/lcm/lcm.ts"
-import { DiffMap, hasDiffTopic, isDiffTopic, MapDiffFeed, readFlaggedCloud } from "../src/core/mapDiff.ts"
+import { DiffMap, hasDiffTopic, isDiffTopic, MapDiffFeed, readFlaggedCloud, subscribeDiffMap } from "../src/core/mapDiff.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, Topic } from "../src/core/transport.ts"
 
@@ -93,4 +93,30 @@ Deno.test("the feed asks for a keyframe until one comes, and again on a reconnec
     assertEquals(puts.length, 2, "a reconnect asks again")
     feed.close()
     assertEquals(deliver.size, 0)
+})
+
+Deno.test("the 3D view and the 2D map share one feed: one keyframe ask, one subscription each, closed with the last", () => {
+    const puts: string[] = []
+    const open = new Map<string, number>()
+    const deliver = new Map<string, (message: unknown) => void>()
+    const connection = {
+        status: new Store<{ state: string }>({ state: "connected" }),
+        client: { publisher: (key: string) => ({ put: () => puts.push(key) }) },
+        subscribe(key: string, _options: unknown, onMessage: (message: unknown) => void) {
+            open.set(key, (open.get(key) ?? 0) + 1)
+            deliver.set(key, onMessage)
+            return () => open.set(key, open.get(key)! - 1)
+        },
+    } as unknown as Connection
+    const update: Topic = { key: "dimos/map_update/sensor_msgs.PointCloud2", name: "/map_update", type: "sensor_msgs.PointCloud2" }
+    const seen: string[] = []
+    const stopView = subscribeDiffMap(connection, update, (map) => seen.push(`view ${map.size}`))
+    deliver.get("dimos/global_map/sensor_msgs.PointCloud2")!({ bytes: cloudBytes([[0.5, 0.5, 0.5, 0]], ["premap"], 5), timestamp: 0 })
+    const stopMap = subscribeDiffMap(connection, update, (map) => seen.push(`map ${map.size}`))
+    assertEquals(seen, ["view 1", "map 1"], "a late listener gets the map it already holds")
+    assertEquals([puts.length, open.get(update.key)], [1, 1])
+    stopView()
+    assertEquals(open.get(update.key), 1)
+    stopMap()
+    assertEquals(open.get(update.key), 0)
 })

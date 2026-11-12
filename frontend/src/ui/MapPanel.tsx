@@ -12,6 +12,7 @@ import type { ViewerApp } from "../core/app.ts"
 import { useStore } from "../core/store.ts"
 import type { Topic } from "../core/transport.ts"
 import { decode, headerFrameId, type LcmValue } from "../core/lcm/lcm.ts"
+import { isDiffTopic, subscribeDiffMap } from "../core/mapDiff.ts"
 import { poseMatrix } from "../core/layers/helpers.ts"
 import { rememberTopics } from "../core/transport.ts"
 import {
@@ -407,6 +408,19 @@ class MapSource {
             }))
             return
         }
+        if (isDiffTopic(topic)) {
+            // the global map kept from diffs (the 3D view's, shared), redrawn at most once a second
+            let drawnAt = 0
+            this.#stop.push(subscribeDiffMap(connection, topic, (map, stampMs, arrivedAt) => {
+                if (arrivedAt - drawnAt < 1000) {
+                    return
+                }
+                drawnAt = arrivedAt
+                this.#cloudFrame = kept.cloudFrame = map.frameId
+                this.#onCloud(map.positions(), stampMs ?? arrivedAt, kept)
+            }))
+            return
+        }
         // a cloud: its frame from one raw message (the compact encoding drops the header), then 1 Hz compact clouds
         let frameStop: (() => void) | null = connection.subscribe(topic.key, { delivery: "latest", maxHz: 1 }, (message) => {
             this.#cloudFrame = kept.cloudFrame = headerFrameId(topic.type, message.bytes) ?? ""
@@ -416,24 +430,31 @@ class MapSource {
         this.#stop.push(() => frameStop?.())
         this.#stop.push(connection.subscribe(topic.key, { delivery: "latest", maxHz: 1, encoding: "dimos_lcm_pointcloud2", bandwidthPriority: PRIORITY_TIERS.background }, (message) => {
             const positions = (message.decoded as { positions?: Float32Array } | undefined)?.positions
-            if (!positions || this.#cloudFrame === null) {
+            if (!positions) {
                 return
             }
-            this.empty = false
             // as of the scan, not now: its own stamp, on the same clock tf is recorded in
             const stamp = message.header?.stamp
-            const takenAt = typeof stamp === "number" && Number.isFinite(stamp) ? stamp * 1000 : message.timestamp
-            const placed = app.tfHistory.lookupAt(this.#cloudFrame, app.viewer.fixedFrame, takenAt)
-            if (!placed) {
-                this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${app.viewer.fixedFrame}"`)
-                return
-            }
-            this.#cloudPositions = kept.cloudPositions = positions
-            this.#cloudMatrix = kept.cloudMatrix = placed.elements.slice()
-            this.rebuild()
-            kept.cloudInfo = `${Math.round(positions.length / 3).toLocaleString()} pts`
-            this.#status(kept.cloudInfo, "")
+            this.#onCloud(positions, typeof stamp === "number" && Number.isFinite(stamp) ? stamp * 1000 : message.timestamp, kept)
         }))
+    }
+
+    /** A cloud placed by its frame as of `takenAt`, drawn as the base. */
+    #onCloud(positions: Float32Array, takenAt: number, kept: Retained) {
+        if (this.#cloudFrame === null) {
+            return
+        }
+        this.empty = false
+        const placed = this.app.tfHistory.lookupAt(this.#cloudFrame, this.app.viewer.fixedFrame, takenAt)
+        if (!placed) {
+            this.#status(this.info, `no TF from "${this.#cloudFrame}" to "${this.app.viewer.fixedFrame}"`)
+            return
+        }
+        this.#cloudPositions = kept.cloudPositions = positions
+        this.#cloudMatrix = kept.cloudMatrix = placed.elements.slice()
+        this.rebuild()
+        kept.cloudInfo = `${Math.round(positions.length / 3).toLocaleString()} pts`
+        this.#status(kept.cloudInfo, "")
     }
 
     dispose() {
