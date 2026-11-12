@@ -10,6 +10,7 @@ import * as THREE from "three"
 import type { ViewerApp } from "./app.ts"
 import { lastCloudShape, lastPlacedSample } from "../layers/pointcloud.tsx"
 import { tfStampHealth } from "./tfFeed.ts"
+import { lastMapDiff, requestKeyframes } from "./mapDiff.ts"
 
 /** What a layer put in the scene, and where. */
 export interface DrawnReport {
@@ -98,6 +99,12 @@ export function installDebugHook(app: ViewerApp) {
          * returned its newest sample instead -- the behaviour the stamps were meant to replace,
          * and indistinguishable on screen from no fix at all.
          */
+        /** A global map kept from diffs: keyframes and diffs taken, stale diffs dropped, keyframe asks, and the map it holds. */
+        mapDiffReport() {
+            return lastMapDiff
+        },
+        /** Start every map kept from diffs again from a fresh keyframe (mapDiffReport then compares the two). */
+        requestKeyframes,
         placementReport() {
             const cloud = lastCloudShape
             if (!cloud || cloud.takenAtMs === null || !cloud.frame) {

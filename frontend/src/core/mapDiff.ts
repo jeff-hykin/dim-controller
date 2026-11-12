@@ -5,8 +5,8 @@ import { decode, encode } from "./lcm/lcm.ts"
 import { type Connection, dimosKey, type Topic } from "./transport.ts"
 import type { Publisher } from "../vendor/zenoh-gateway/zenoh_gateway.ts"
 
-/** How often the keyframe is asked for again until it comes. */
-const KEYFRAME_ASK_MS = 2000
+/** How often the keyframe is asked for again until it comes (a whole map can take seconds to arrive). */
+const KEYFRAME_ASK_MS = 10_000
 
 /** A cloud's points as read off the wire: xyz, and each u8 flag field it carries. */
 export interface FlaggedCloud {
@@ -138,16 +138,26 @@ const keyOf = (p: Float32Array, index: number) => `${p[index * 3]},${p[index * 3
 /** The topic beside `topic` with another last name (/robot/global_map → /robot/map_update). */
 export const siblingName = (topic: Topic, last: string) => topic.name.replace(/[^/]+$/, last)
 
-/** Whether a global map topic has a map_update beside it, so it is kept from diffs. */
-export const diffTopicOf = (topic: Topic, topics: Topic[]): Topic | null =>
-    topics.find((other) => other.name === siblingName(topic, "map_update") && other.type === "sensor_msgs.PointCloud2") ?? null
+/** A ray tracer's diff topic: the global map is drawn from it (its global_map only carries keyframes, so may never show on the bus). */
+export const isDiffTopic = (topic: Topic) => /(^|\/)map_update$/.test(topic.name) && topic.type === "sensor_msgs.PointCloud2"
+
+/** Whether a global map has a map_update beside it, which draws the map in its place. */
+export const hasDiffTopic = (topic: Topic, topics: Topic[]) => topics.some((other) => isDiffTopic(other) && other.name === siblingName(topic, "map_update"))
 
 /** What MapDiffFeed tells the page (debugHook reads it). */
-export let lastMapDiff: { keyframes: number; diffs: number; staleDiffs: number; requests: number; voxels: number; removedTotal: number; premap: number } | null = null
+export let lastMapDiff: { keyframes: number; diffs: number; staleDiffs: number; requests: number; voxels: number; removedTotal: number; premap: number; keyframeVoxels: number | null; voxelsBeforeKeyframe: number | null } | null = null
+
+/** The feeds running now, so the page can start them all again from a keyframe. */
+const feeds = new Set<MapDiffFeed>()
+
+/** Ask every global map kept from diffs for a fresh keyframe. */
+export function requestKeyframes() {
+    feeds.forEach((feed) => feed.requestKeyframe())
+}
 
 /**
  * Keeps a global map from its diffs: asks for a keyframe on cloud_keyframe_request (true) when it starts and every
- * KEYFRAME_ASK_MS until one comes (and again on a reconnect), takes global_map whole and map_update reliably and raw (a thinned or skipped diff
+ * askEveryMs until one comes (and again on a reconnect), takes global_map whole and map_update reliably and raw (a thinned or skipped diff
  * would leave the map wrong for good), and hands the map on after each change.
  */
 export class MapDiffFeed {
@@ -155,15 +165,18 @@ export class MapDiffFeed {
     #stops: (() => void)[] = []
     #publisher: Publisher | null = null
     #asking: ReturnType<typeof setInterval> | null = null
-    #counts = { keyframes: 0, diffs: 0, staleDiffs: 0, requests: 0 }
+    #counts = { keyframes: 0, diffs: 0, staleDiffs: 0, requests: 0, keyframeVoxels: null as number | null, voxelsBeforeKeyframe: null as number | null }
     #sampled = { messages: 0, bytes: 0, since: performance.now() }
 
-    constructor(readonly connection: Connection, readonly global: Topic, readonly update: Topic, readonly onMap: (map: DiffMap, stampMs: number | null, arrivedAt: number) => void) {
-        this.#stops.push(connection.subscribe(global.key, { delivery: "reliable" }, (message) => {
+    constructor(readonly connection: Connection, readonly update: Topic, readonly onMap: (map: DiffMap, stampMs: number | null, arrivedAt: number) => void, readonly askEveryMs = KEYFRAME_ASK_MS) {
+        this.#stops.push(connection.subscribe(dimosKey(siblingName(update, "global_map"), update.type), { delivery: "reliable" }, (message) => {
             this.#count(message.bytes)
             const cloud = this.#read(message.bytes)
             if (cloud) {
+                // what the diffs had built, beside what the keyframe says the map is: equal when no diff went missing
+                this.#counts.voxelsBeforeKeyframe = this.map.keyframeStampMs === null ? null : this.map.size
                 this.map.applyKeyframe(cloud)
+                this.#counts.keyframeVoxels = this.map.size
                 this.#counts.keyframes++
                 this.#stopAsking()
                 this.#publish(cloud.stampMs, message.timestamp)
@@ -193,16 +206,17 @@ export class MapDiffFeed {
             connected = now
         }))
         this.requestKeyframe()
+        feeds.add(this)
     }
 
-    /** Ask for the whole map again (a reset), every KEYFRAME_ASK_MS until it comes. */
+    /** Ask for the whole map again (a reset), every askEveryMs until it comes. */
     requestKeyframe() {
         this.#stopAsking()
         const ask = () => {
             try {
                 const client = this.connection.client
                 if (client && !this.#publisher) {
-                    this.#publisher = client.publisher(dimosKey(siblingName(this.global, "cloud_keyframe_request"), "std_msgs.Bool"), { delivery: "reliable" })
+                    this.#publisher = client.publisher(dimosKey(siblingName(this.update, "cloud_keyframe_request"), "std_msgs.Bool"), { delivery: "reliable" })
                 }
                 this.#publisher?.put(encode("std_msgs.Bool", { data: true }))
                 this.#counts.requests++
@@ -211,7 +225,7 @@ export class MapDiffFeed {
                 // not open yet: the next one goes
             }
         }
-        this.#asking = setInterval(ask, KEYFRAME_ASK_MS)
+        this.#asking = setInterval(ask, this.askEveryMs)
         ask()
     }
 
@@ -254,6 +268,7 @@ export class MapDiffFeed {
     }
 
     close() {
+        feeds.delete(this)
         this.#stopAsking()
         this.#stops.forEach((stop) => stop())
     }

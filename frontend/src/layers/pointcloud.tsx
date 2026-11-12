@@ -18,7 +18,7 @@ import { CameraFeed } from "../core/render/cameraFeed.ts"
 import { ClearVoxels } from "../core/render/clearVoxels.ts"
 import { isImage, pickDefault } from "../core/cameraChoice.ts"
 import { isDepthTopic } from "../core/video.ts"
-import { diffTopicOf, MapDiffFeed } from "../core/mapDiff.ts"
+import { hasDiffTopic, isDiffTopic, MapDiffFeed } from "../core/mapDiff.ts"
 import { CLOUD_PRESETS, cloudQualities, cloudQualityOf, CloudStream, type CloudQuality, formatBytes, formatCount, setCloudQuality, setCloudRate } from "../core/cloudQuality.ts"
 
 export interface CloudSettings {
@@ -144,9 +144,11 @@ class CloudLayer {
     #rangeSeen = false
     #unsubscribe: (() => void)[] = []
     /** the bridge subscription at this viewer's preset (core/cloudQuality.ts) */
-    #stream: CloudStream
-    /** a global map with a map_update beside it: kept from a keyframe and the diffs after it, in place of #stream */
+    #stream: CloudStream | null = null
+    /** a map_update: the global map kept from a keyframe and the diffs after it, in place of #stream */
     #diff: MapDiffFeed | null = null
+    /** a global_map with a map_update beside it, which draws the map instead */
+    #drawnByDiffs = false
     #rateSince = performance.now()
     /** the raw re-reads of the frame_id, running only while clouds come without one */
     #frameTimer: ReturnType<typeof setInterval> | null = null
@@ -184,7 +186,26 @@ class CloudLayer {
         addEventListener("dimos-react-theme", retheme)
         this.#unsubscribe.push(() => removeEventListener("dimos-react-theme", retheme))
         this.#resize(1024)
-        this.#stream = new CloudStream(context.connection, topic.key, cloudQualityOf(topic.key), (message) => {
+        if (isDiffTopic(topic)) {
+            this.#diff = new MapDiffFeed(context.connection, topic, (map, stampMs, arrivedAt) => {
+                if (map.frameId !== this.#frame) {
+                    this.#frame = map.frameId
+                    this.#clear()
+                }
+                this.#onCloud(map.positions(), undefined, stampMs ?? arrivedAt, arrivedAt)
+            })
+        } else {
+            this.#stream = this.#openStream()
+        }
+        this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
+        this.#unsubscribe.push(rendering.subscribe(() => this.#onSettings()), splatFallback.subscribe(() => this.#onSettings()))
+        this.#unsubscribe.push(cloudQualities.subscribe(() => this.#stream?.setQuality(cloudQualityOf(topic.key))))
+        this.#onSettings()
+    }
+
+    /** The bridge subscription at this viewer's preset, each scan placed by its own frame_id and stamp. */
+    #openStream(): CloudStream {
+        return new CloudStream(this.context.connection, this.topic.key, cloudQualityOf(this.topic.key), (message) => {
             const decoded = message.decoded as
                 | { positions?: Float32Array; intensity?: Uint8Array; frameId?: string }
                 | undefined
@@ -220,10 +241,6 @@ class CloudLayer {
                 this.#onCloud(decoded.positions, decoded.intensity, takenAt, message.timestamp)
             }
         })
-        this.#unsubscribe.push(settings.subscribe(() => this.#onSettings()))
-        this.#unsubscribe.push(rendering.subscribe(() => this.#onSettings()), splatFallback.subscribe(() => this.#onSettings()))
-        this.#unsubscribe.push(cloudQualities.subscribe(() => this.#stream.setQuality(cloudQualityOf(topic.key))))
-        this.#onSettings()
     }
 
     #onSettings() {
@@ -571,38 +588,30 @@ class CloudLayer {
         if (frame.now - this.#rateSince > 1000) {
             this.#rateSince = frame.now
             this.#watchForDiffs()
-            const rate = this.#diff ? this.#diff.sample(frame.now) : this.#stream.sample(frame.now)
+            const rate = this.#diff?.sample(frame.now) ?? this.#stream?.sample(frame.now) ?? { hz: 0, pointsPerSecond: 0, bytesPerSecond: 0 }
             setCloudRate(this.topic.key, rate)
-            const shown = this.#diff ? "from diffs · " : this.#settings.get().mode === "accumulate" ? `${formatCount(this.#filled)} kept · ` : ""
+            const shown = this.#drawnByDiffs ? "drawn by map_update · " : this.#diff ? "from diffs · " : this.#settings.get().mode === "accumulate" ? `${formatCount(this.#filled)} kept · ` : ""
             const camera = this.#feed ? ` · camera colors: ${this.#camera.uCamColor.value ? this.#feed.topic.name : `waiting for ${this.#feed.waitingFor ?? "a TF path"}`}` : ""
             this.context.setStatus({ info: this.#frame === null ? "waiting for frame_id…" : `${shown}${formatCount(this.#lastCount)} pts · ${rate.hz.toFixed(1)} Hz · ${formatBytes(rate.bytesPerSecond)}/s · ${this.#frame || "no frame"}${camera}` })
         }
     }
 
-    /** A global map whose ray tracer is in diff mode (a map_update beside it) is kept from its diffs from then on. */
+    /** A global map whose ray tracer is in diff mode (a map_update beside it) leaves drawing to the map_update. */
     #watchForDiffs() {
-        if (this.#diff || lastName(this.topic) !== "global_map") {
+        if (this.#drawnByDiffs || lastName(this.topic) !== "global_map" || !hasDiffTopic(this.topic, this.context.topics())) {
             return
         }
-        const update = diffTopicOf(this.topic, this.context.topics())
-        if (!update) {
-            return
-        }
-        this.#stream.close()
+        this.#drawnByDiffs = true
+        this.#stream?.close()
+        this.#stream = null
         this.#stopFrameReads()
-        this.#diff = new MapDiffFeed(this.context.connection, this.topic, update, (map, stampMs, arrivedAt) => {
-            if (map.frameId !== this.#frame) {
-                this.#frame = map.frameId
-                this.#clear()
-            }
-            this.#onCloud(map.positions(), undefined, stampMs ?? arrivedAt, arrivedAt)
-        })
+        this.#clear()
     }
 
     dispose() {
         this.#stopFrameReads()
         this.#unsubscribe.forEach((stop) => stop())
-        this.#stream.close()
+        this.#stream?.close()
         this.#diff?.close()
         setCloudRate(this.topic.key, null)
         this.#feed?.dispose()
@@ -681,8 +690,6 @@ registerLayer<CloudSettings>({
             ...(lastName(topic) === "nodes" ? { style: "disc" as const } : {}),
         },
     }),
-    // a diff on its own is a scatter of changes; the global map beside it draws what they add up to
-    enabledByDefault: (topic) => lastName(topic) !== "map_update",
     create: (context, topic, settings) => new CloudLayer(context, topic, settings),
     Settings: CloudSettingsEditor,
     RowControls: AccumulateControls,

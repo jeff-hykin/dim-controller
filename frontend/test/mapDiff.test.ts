@@ -3,7 +3,7 @@
 // cloud_keyframe_request until one comes, and again on a reconnect.
 import { assertEquals } from "jsr:@std/assert@1"
 import { encode } from "../src/core/lcm/lcm.ts"
-import { DiffMap, diffTopicOf, MapDiffFeed, readFlaggedCloud } from "../src/core/mapDiff.ts"
+import { DiffMap, hasDiffTopic, isDiffTopic, MapDiffFeed, readFlaggedCloud } from "../src/core/mapDiff.ts"
 import { Store } from "../src/core/store.ts"
 import type { Connection, Topic } from "../src/core/transport.ts"
 
@@ -53,12 +53,13 @@ Deno.test("a keyframe and the diffs after it are the map, premap flags and remov
     assertEquals(map.size, 3)
 })
 
-Deno.test("a global map with a map_update beside it is kept from diffs", () => {
+Deno.test("a map_update draws the global map, and the global_map beside it leaves it to it", () => {
     const global: Topic = { key: "dimos/robot/global_map/sensor_msgs.PointCloud2", name: "/robot/global_map", type: "sensor_msgs.PointCloud2" }
     const update: Topic = { key: "dimos/robot/map_update/sensor_msgs.PointCloud2", name: "/robot/map_update", type: "sensor_msgs.PointCloud2" }
     const other: Topic = { key: "dimos/map_update/sensor_msgs.PointCloud2", name: "/map_update", type: "sensor_msgs.PointCloud2" }
-    assertEquals(diffTopicOf(global, [other]), null)
-    assertEquals(diffTopicOf(global, [other, update]), update)
+    assertEquals([isDiffTopic(update), isDiffTopic(global), isDiffTopic({ ...update, name: "/robot/map_updates" })], [true, false, false])
+    assertEquals(hasDiffTopic(global, [other]), false)
+    assertEquals(hasDiffTopic(global, [other, update]), true)
 })
 
 Deno.test("the feed asks for a keyframe until one comes, and again on a reconnect", async () => {
@@ -76,7 +77,7 @@ Deno.test("the feed asks for a keyframe until one comes, and again on a reconnec
     const global: Topic = { key: "dimos/global_map/sensor_msgs.PointCloud2", name: "/global_map", type: "sensor_msgs.PointCloud2" }
     const update: Topic = { key: "dimos/map_update/sensor_msgs.PointCloud2", name: "/map_update", type: "sensor_msgs.PointCloud2" }
     const shown: number[] = []
-    const feed = new MapDiffFeed(connection, global, update, (map) => shown.push(map.size))
+    const feed = new MapDiffFeed(connection, update, (map) => shown.push(map.size), 50)
     assertEquals(puts, ["dimos/cloud_keyframe_request/std_msgs.Bool"])
 
     deliver.get(update.key)!({ bytes: cloudBytes([[1.5, 0.5, 0.5, 0, 1]], ["premap", "change"], 5), timestamp: 0 })
@@ -85,7 +86,7 @@ Deno.test("the feed asks for a keyframe until one comes, and again on a reconnec
     deliver.get(update.key)!({ bytes: cloudBytes([[1.5, 0.5, 0.5, 0, 1]], ["premap", "change"], 6), timestamp: 0 })
     assertEquals(shown, [1, 2])
 
-    await new Promise((resolve) => setTimeout(resolve, 2100))
+    await new Promise((resolve) => setTimeout(resolve, 200))
     assertEquals(puts.length, 1, "no more asking once the keyframe came")
     status.set({ state: "lost" })
     status.set({ state: "connected" })
