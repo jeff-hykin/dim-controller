@@ -6,7 +6,7 @@ import { getZenoh } from "dimos-react/dim-app/zenoh.js"
 import { Store } from "./store.ts"
 import { NetHistory, wireCounts, type WireCounts } from "./netHistory.ts"
 import { LeaseKeeper, type LeaseClient } from "./lease.ts"
-import { activeDomain, chooseDomain, domainChange, domainOf, namespacedClient, namespacedTopics, seenDomains, seenNamespaces, undomained } from "./namespace.ts"
+import { activeDomain, chooseDomain, domainChange, domainOf, namespacedClient, namespacedTopics, seenDomains, seenNamespaces, sentKeys, undomained } from "./namespace.ts"
 import { applyOverride, bandwidthOverrides, defaultBandwidthPriority, isVideoOptions, localLinkBandwidth, optionDiff, type StreamOverride, withChanges } from "./bandwidth.ts"
 
 export { Priority }
@@ -242,7 +242,7 @@ export class Connection {
             try {
                 const [plain, domained] = await Promise.all([client.listTopics("dimos/**", { probeMs: 800 }), client.listTopics("dimos-domains/**", { probeMs: 800 }).catch(() => [])])
                 const now = Date.now()
-                for (const name of seenDomains(domained.map((topic) => topic.key))) {
+                for (const name of seenDomains(domained.map((topic) => topic.key), sentKeys)) {
                     domainsSeen.set(name, now)
                 }
                 for (const [name, at] of domainsSeen) {

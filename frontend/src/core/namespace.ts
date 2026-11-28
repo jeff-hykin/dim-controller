@@ -93,8 +93,12 @@ export const domainOf = (key: string) => DOMAIN_KEY_PATTERN.exec(key)?.[1] ?? ""
 /** `dimos-domains/<d>/…` → `dimos/…`; anything else unchanged */
 export const undomained = (key: string) => key.replace(DOMAIN_KEY_PATTERN, "dimos/")
 
-/** the run domains keys are in, sorted */
-export const seenDomains = (keys: string[]) => [...new Set(keys.map(domainOf).filter(Boolean))].sort()
+/** the run domains keys are in, sorted; a key whose plain form is one this page sends doesn't count (its own retries would keep a dead run's domain alive) */
+export const seenDomains = (keys: string[], sent: ReadonlySet<string> = new Set()) =>
+    [...new Set(keys.filter((key) => !sent.has(fromWire(key, active, domainOf(key)))).map(domainOf).filter(Boolean))].sort()
+
+/** the plain dimos keys this page has sent on (puts, publishers, the lease's publish keys), each tab sending the same kinds */
+export const sentKeys = new Set<string>()
 
 /**
  * The run domain the page belongs in: the running run's own (Desktop's /active runId) when it's on the bus; none when a
@@ -304,12 +308,9 @@ const KEYED = new Set(["publisher", "get", "querier", "put", "delete", "declareQ
 /**
  * The zenoh-gateway client with every dimos key mapped into the namespace and the run domain: subscriptions (their
  * messages come back with the page's key), publishers, puts, gets, the lease's keys. Topic discovery (listTopics) stays
- * raw: the transport lists everything and picks (namespacedTopics). Without either it's the client itself.
+ * raw: the transport lists everything and picks (namespacedTopics). Also notes the keys the page sends on (sentKeys).
  */
 export function namespacedClient<T extends object>(client: T, namespace = active, runDomain = domain): T {
-    if (!namespace && !runDomain) {
-        return client
-    }
     const toWireKey = (key: string) => toWire(key, namespace, runDomain)
     const fromWireKey = (key: string) => fromWire(key, namespace, runDomain)
     return new Proxy(client, {
@@ -324,12 +325,18 @@ export function namespacedClient<T extends object>(client: T, namespace = active
                         callback(message && typeof message.key === "string" ? Object.assign(message, { key: fromWireKey(message.key) }) : message))
             }
             if (KEYED.has(prop as string)) {
-                return (key: unknown, ...rest: unknown[]) => value.call(target, typeof key === "string" ? toWireKey(key) : key, ...rest)
+                return (key: unknown, ...rest: unknown[]) => {
+                    if ((prop === "put" || prop === "publisher") && typeof key === "string") {
+                        sentKeys.add(key)
+                    }
+                    return value.call(target, typeof key === "string" ? toWireKey(key) : key, ...rest)
+                }
             }
             if (prop === "lease") {
                 return (options: unknown, ...rest: unknown[]) => {
                     if (options && typeof options === "object") {
                         const lease = options as { publish?: string[]; subscribe?: string[] }
+                        lease.publish?.forEach((key) => sentKeys.add(key))
                         options = { ...lease, publish: lease.publish?.map((key) => toWireKey(key)), subscribe: lease.subscribe?.map((key) => toWireKey(key)) }
                     }
                     return value.call(target, options, ...rest)

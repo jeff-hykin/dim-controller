@@ -1,7 +1,7 @@
 // The robot namespace (core/namespace.ts): keys into it and back, the topics a page sees, the namespaces found, frames
 // stripped on the way in and given back on the way out, and the client that maps every key.
 import { assertEquals } from "jsr:@std/assert@1"
-import { cleanDomain, cleanNamespace, domainChange, domainOf, forgetFrames, fromWire, levelsOf, namespacedClient, namespacedTopics, pickDomain, prefixFrames, seenDomains, seenNamespaces, stripFrames, toWire, undomained } from "../src/core/namespace.ts"
+import { cleanDomain, cleanNamespace, domainChange, domainOf, forgetFrames, fromWire, levelsOf, namespacedClient, namespacedTopics, pickDomain, prefixFrames, seenDomains, seenNamespaces, sentKeys, stripFrames, toWire, undomained } from "../src/core/namespace.ts"
 import { parseKey, type Topic } from "../src/core/transport.ts"
 
 const topic = (key: string) => parseKey(key) as Topic
@@ -124,7 +124,7 @@ Deno.test("the client maps every key: subscribe (and the messages' keys back), p
         ["lease", ["dimos/robot0/cmd_vel/geometry_msgs.Twist"]],
         ["listTopics", "dimos/**"],
     ])
-    assertEquals([heard, client.state, namespacedClient(raw, "")], [["dimos/odom/nav_msgs.Odometry"], "connected", raw])
+    assertEquals([heard, client.state], [["dimos/odom/nav_msgs.Odometry"], "connected"])
 })
 
 // ---- the run domain: a hosted run's streams at dimos-domains/<run id>/… ----
@@ -197,5 +197,14 @@ Deno.test("run domain: the client maps every key into it, and the messages' keys
         ["listTopics", "dimos-domains/**"],
     ])
     assertEquals(heard, ["dimos/odom/nav_msgs.Odometry"])
-    assertEquals(namespacedClient(raw, "", ""), raw)
+    calls.length = 0
+    namespacedClient(raw, "", "").publisher("dimos/goal/geometry_msgs.PointStamped")
+    assertEquals(calls, [["publisher", "dimos/goal/geometry_msgs.PointStamped"]])
+    assertEquals([...sentKeys].sort(), ["dimos/cmd_vel/geometry_msgs.Twist", "dimos/goal/geometry_msgs.PointStamped", "dimos/goal/geometry_msgs.PoseStamped", "dimos/tele_cmd_vel/geometry_msgs.Twist"])
+})
+
+Deno.test("run domain: a domain only the page's own sends are in (a dead run it keeps asking) isn't one", () => {
+    const sent = new Set(["dimos/named_locations_request/std_msgs.String"])
+    assertEquals(seenDomains(["dimos-domains/old/named_locations_request/std_msgs.String"], sent), [])
+    assertEquals(seenDomains(["dimos-domains/old/named_locations_request/std_msgs.String", "dimos-domains/new/odom/nav_msgs.Odometry"], sent), ["new"])
 })
